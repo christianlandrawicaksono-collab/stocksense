@@ -282,7 +282,7 @@ export const STOCKS_DATA: StockFundamental[] = [
   }
 ];
 
-// Data Historis Penutupan Kuartalan / Triwulanan (29 titik data dari 2020-01 hingga 2026-11)
+// Data Ilustrasi Penutupan Kuartalan / Triwulanan (29 titik data dari 2020-01 hingga 2026-11 untuk visualisasi & simulasi strategi)
 export const HISTORICAL_SERIES: Record<string, HistoricalDataPoint[]> = {
   BBCA: [
     { date: "2020-01", price: 6800 },

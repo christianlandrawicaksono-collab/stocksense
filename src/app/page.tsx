@@ -71,7 +71,7 @@ export default function Home() {
           </div>
 
           <div className="text-slate-400 text-center sm:text-right">
-            <span>Data historis penutupan bulanan 2020–2026. Untuk keperluan riset & simulasi.</span>
+            <span>Data ilustrasi penutupan kuartalan 2020–2026. Untuk riset antarmuka & simulasi strategi.</span>
           </div>
         </div>
       </footer>

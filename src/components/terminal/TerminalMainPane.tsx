@@ -75,31 +75,31 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       return {
         label: "Diskon ekstrim (di bawah -2 SD)",
         color: "text-[#2EB886] bg-[#2EB886]/10 border-[#2EB886]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada di bawah batas -2 SD (${sd2Minus}x), ${absDiff}% di bawah rerata historis 5 tahun (${mean}x). Area deviasi terendah secara historis.`
+        verdict: `Rasio P/E saat ini (${pe}x) berada di bawah batas -2 SD (${sd2Minus}x), ${absDiff}% di bawah rerata acuan (${mean}x). Area deviasi terendah secara komparatif.`
       };
     } else if (pe <= sd1Minus) {
       return {
         label: "Undervalued (antara -2 SD dan -1 SD)",
         color: "text-[#2EB886] bg-[#2EB886]/10 border-[#2EB886]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada pada rentang deviasi rendah (${sd2Minus}x – ${sd1Minus}x), ${absDiff}% di bawah rerata historis 5 tahun (${mean}x).`
+        verdict: `Rasio P/E saat ini (${pe}x) berada pada rentang deviasi rendah (${sd2Minus}x – ${sd1Minus}x), ${absDiff}% di bawah rerata acuan (${mean}x).`
       };
     } else if (pe <= mean) {
       return {
         label: "Valuasi wajar (antara -1 SD dan rerata)",
         color: "text-[#1E7B85] bg-[#1E7B85]/10 border-[#1E7B85]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada mendekati rerata historis 5 tahun (${mean}x), ${absDiff}% di bawah titik tengah.`
+        verdict: `Rasio P/E saat ini (${pe}x) berada mendekati rerata acuan (${mean}x), ${absDiff}% di bawah titik tengah.`
       };
     } else if (pe <= sd1Plus) {
       return {
         label: "Cukup premium (antara rerata dan +1 SD)",
         color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada ${absDiff}% di atas rerata historis 5 tahun (${mean}x), berada di bawah batas atas +1 SD (${sd1Plus}x).`
+        verdict: `Rasio P/E saat ini (${pe}x) berada ${absDiff}% di atas rerata acuan (${mean}x), berada di bawah batas atas +1 SD (${sd1Plus}x).`
       };
     } else {
       return {
         label: "Overvalued (di atas +1 SD)",
         color: "text-[#DC525F] bg-[#DC525F]/10 border-[#DC525F]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) melampaui batas deviasi atas +1 SD (${sd1Plus}x), ${absDiff}% di atas rerata historis 5 tahun (${mean}x).`
+        verdict: `Rasio P/E saat ini (${pe}x) melampaui batas deviasi atas +1 SD (${sd1Plus}x), ${absDiff}% di atas rerata acuan (${mean}x).`
       };
     }
   }, [stock]);
@@ -289,7 +289,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         <div className="p-4 bg-[#111622]">
           {/* Responsive Header: Stacked vertically on mobile, row on tablet/desktop */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-slate-400 mb-2">
-            <span>Grafik harga penutupan kuartalan (2020–2026)</span>
+            <span>Grafik harga penutupan kuartalan (data ilustrasi, 2020–2026)</span>
             <span className="font-mono tnum text-slate-300">
               {hoverIndex !== null && filteredChartSeries[hoverIndex]
                 ? `${filteredChartSeries[hoverIndex].date}: ${formatRupiah(filteredChartSeries[hoverIndex].price)}`
@@ -534,7 +534,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1E2736]">
               <div>
                 <span className="text-xs text-slate-400 block">
-                  Diagnosis valuasi historis 5 tahun (dihitung otomatis)
+                  Diagnosis valuasi P/E (dihitung otomatis dari data acuan)
                 </span>
                 <span className="text-sm font-semibold text-slate-100 mt-0.5 block">
                   {valuationDiagnosis.verdict}
@@ -550,7 +550,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               {/* Left: Deviation Level Breakdown */}
               <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
                 <span className="text-xs text-slate-400 block mb-1">
-                  Pita deviasi P/E historis (berdasarkan EPS saat ini: {formatRupiah(impliedEPS)})
+                  Pita deviasi P/E (berdasarkan EPS saat ini: {formatRupiah(impliedEPS)})
                 </span>
                 <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
                   <span>+2 SD (Mahal ekstrim - {stock.peSd2Plus}x)</span>
@@ -561,7 +561,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1PlusPrice)}</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-[#1E7B85]/30 bg-[#1E7B85]/10 px-1 rounded text-slate-100 font-medium">
-                  <span>Mean (Harga wajar historis - {stock.historicalPeMean}x)</span>
+                  <span>Mean (Harga wajar acuan - {stock.historicalPeMean}x)</span>
                   <span className="font-mono tnum">{formatRupiah(targetMeanPrice)}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
@@ -578,7 +578,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               <div className="space-y-3">
                 <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736]">
                   <span className="text-xs text-slate-400 block mb-0.5">
-                    Target harga wajar (mean historis):
+                    Target harga wajar (mean acuan):
                   </span>
                   <span className="text-lg font-bold font-mono text-slate-100 tnum">
                     {formatRupiah(targetMeanPrice)}
@@ -676,7 +676,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               <div className="bg-[#0C1017] rounded-xl border border-[#1E2736] overflow-hidden">
                 <div className="p-3 bg-[#0E131C] border-b border-[#1E2736] flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-200">
-                    Hasil kalkulasi simulasi DCA ({simStartYear} – 2026, {simulationResults.totalQuarters} kuartal)
+                    Hasil kalkulasi simulasi DCA (data ilustrasi: {simStartYear} – 2026, {simulationResults.totalQuarters} kuartal)
                   </span>
                   <span className="text-slate-400">
                     Durasi: {simulationResults.years.toFixed(1)} tahun
@@ -725,7 +725,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
                   {/* CAGR */}
                   <div className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-slate-400">Laju pertumbuhan tahunan majemuk (CAGR):</span>
+                    <span className="text-slate-400">Laju pertumbuhan tahunan majemuk (CAGR simulasi):</span>
                     <span className="text-slate-200 font-mono tnum">
                       {simulationResults.cagr !== null
                         ? `+${simulationResults.cagr.toFixed(2)}% / tahun`
@@ -751,7 +751,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
                   {/* Alpha vs IHSG */}
                   <div className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-slate-400">Selisih performa vs acuan IHSG (Alpha):</span>
+                    <span className="text-slate-400">Selisih kalkulasi vs acuan IHSG (Alpha):</span>
                     <span
                       className={`font-mono tnum font-semibold ${
                         simulationResults.alphaVsIhsg >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"
@@ -760,14 +760,14 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                       {simulationResults.alphaVsIhsg >= 0 ? "+" : ""}
                       {simulationResults.alphaVsIhsg.toFixed(1)}%{" "}
                       <span className="font-sans font-normal text-xs text-slate-400">
-                        ({simulationResults.alphaVsIhsg >= 0 ? "mengungguli IHSG" : "di bawah IHSG"})
+                        ({simulationResults.alphaVsIhsg >= 0 ? "mengungguli simulasi IHSG" : "di bawah simulasi IHSG"})
                       </span>
                     </span>
                   </div>
                 </div>
 
-                <div className="p-2.5 bg-[#0A0D14] border-t border-[#1E2736] text-[11px] text-slate-500">
-                  Perhitungan berbasis 29 titik kuartalan aktual. Setiap siklus mewakili penutupan 1 kuartal (3 bulan).
+                <div className="p-2.5 bg-[#0A0D14] border-t border-[#1E2736] text-[11px] text-slate-400">
+                  Perhitungan berbasis 29 titik kuartalan data ilustrasi. Setiap siklus mewakili penutupan 1 kuartal (3 bulan). Angka CAGR dan Alpha merupakan hasil kalkulasi simulasi atas data ilustrasi ini.
                 </div>
               </div>
             ) : (

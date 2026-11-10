@@ -223,7 +223,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       {/* Pane Footer Note */}
       <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex items-center justify-between">
         <span>Basis data: 9 emiten IDX</span>
-        <span>Harga: Penutupan terakhir</span>
+        <span>Harga: Snapshot data ilustrasi</span>
       </div>
     </div>
   );
