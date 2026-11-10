@@ -1,20 +1,32 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono, Literata } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const plexSans = IBM_Plex_Sans({
+  variable: "--font-plex-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const literata = Literata({
+  variable: "--font-literata",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "StocksSense — Smart Indonesian Stock & Macro Intelligence Terminal",
-  description: "Terminal intelijen pasar saham Indonesia (IHSG), transmisi dampak makroekonomi/geopolitik, simulator strategi investasi DCA, dan PE Valuation Bands.",
+  title: "StocksSense — Analisis Pasar & Saham Indonesia",
+  description: "Terminal intelijen pasar saham Indonesia (IHSG), analisis valuasi P/E band, simulator DCA, dan transmisi makroekonomi.",
 };
 
 export default function RootLayout({
@@ -25,11 +37,11 @@ export default function RootLayout({
   return (
     <html
       lang="id"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${plexSans.variable} ${plexMono.variable} ${literata.variable} h-full antialiased dark`}
       suppressHydrationWarning
     >
-      <body 
-        className="min-h-full flex flex-col bg-[#070b13] text-slate-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-300"
+      <body
+        className="min-h-full flex flex-col bg-[#0C1017] text-slate-100 font-sans selection:bg-[#1E7B85]/30 selection:text-[#5CE1E6]"
         suppressHydrationWarning
       >
         {children}

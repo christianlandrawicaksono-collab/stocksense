@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0C1017;
+  --foreground: #E2E8F0;
+  --accent-nordic: #1E7B85;
+  --accent-sage: #2EB886;
+  --accent-brick: #DC525F;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-plex-mono), "Courier New", monospace;
+  --font-serif: var(--font-literata), Georgia, Cambria, serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom scrollbars for dense terminal tables */
+.terminal-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.terminal-scroll::-webkit-scrollbar-track {
+  background: #0C1017;
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: #20293A;
+  border-radius: 2px;
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: #2E3B52;
 }
