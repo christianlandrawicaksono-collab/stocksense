@@ -38,11 +38,9 @@ export default function RootLayout({
     <html
       lang="id"
       className={`${plexSans.variable} ${plexMono.variable} ${literata.variable} h-full antialiased dark`}
-      suppressHydrationWarning
     >
       <body
-        className="min-h-full flex flex-col bg-[#0C1017] text-slate-100 font-sans selection:bg-[#1E7B85]/30 selection:text-[#5CE1E6]"
-        suppressHydrationWarning
+        className="min-h-full flex flex-col bg-[#0C1017] text-slate-100 font-sans selection:bg-[#1E7B85]/30"
       >
         {children}
       </body>

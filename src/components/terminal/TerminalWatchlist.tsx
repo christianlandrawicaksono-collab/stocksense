@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { STOCKS_DATA } from "@/data/stocksData";
-import { formatNumber } from "@/utils/format";
+import { formatNumber } from "@/lib/format";
 import { Search, ArrowUpDown } from "lucide-react";
 
 interface TerminalWatchlistProps {
