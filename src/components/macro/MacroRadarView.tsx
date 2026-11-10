@@ -18,8 +18,7 @@ import {
   ArrowRight,
   Flame,
   Calendar,
-  Building2,
-  Landmark
+  Building2
 } from "lucide-react";
 
 interface MacroRadarViewProps {

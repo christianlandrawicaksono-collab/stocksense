@@ -5,40 +5,44 @@ import { LIVE_MARKET_TICKERS } from "@/data/macroData";
 
 export const MarketTicker: React.FC = () => {
   return (
-    <div className="w-full bg-[#0A0D14] border-b border-[#1A2230] text-[11px] overflow-x-auto terminal-scroll py-1.5 px-4 select-none">
-      <div className="flex items-center space-x-6 min-w-max">
-        <div className="flex items-center space-x-2 font-mono text-slate-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
-          <span className="font-semibold tracking-wider text-[10px] text-slate-400">
-            INDIKATOR ACUAN (SNAPSHOT):
-          </span>
+    <div className="w-full bg-[#0A0D14] border-b border-[#1A2230] text-xs py-2 px-4 select-none">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2">
+        {/* Left: Ticker list */}
+        <div className="flex items-center space-x-4 overflow-x-auto terminal-scroll pb-1 md:pb-0">
+          <div className="flex items-center space-x-1.5 text-slate-400 font-sans text-xs whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+            <span>Indikator acuan:</span>
+          </div>
+
+          <div className="flex items-center space-x-5 min-w-max">
+            {LIVE_MARKET_TICKERS.map((ticker) => {
+              const isUp = ticker.change > 0;
+              const isZero = ticker.change === 0;
+
+              return (
+                <div key={ticker.symbol} className="flex items-center space-x-1.5">
+                  <span className="text-slate-300 font-mono text-xs font-semibold">{ticker.symbol}</span>
+                  <span className="text-slate-100 font-mono text-xs tnum">{ticker.value}</span>
+                  <span
+                    className={`text-[11px] font-mono tnum px-1 py-0.5 rounded ${
+                      isZero
+                        ? "text-slate-400 bg-slate-800/40"
+                        : isUp
+                        ? "text-[#2EB886] bg-[#2EB886]/10"
+                        : "text-[#DC525F] bg-[#DC525F]/10"
+                    }`}
+                  >
+                    {isUp ? `+${ticker.change}%` : `${ticker.change}%`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        {LIVE_MARKET_TICKERS.map((ticker) => {
-          const isUp = ticker.change > 0;
-          const isZero = ticker.change === 0;
-
-          return (
-            <div key={ticker.symbol} className="flex items-center space-x-2 font-mono tnum">
-              <span className="text-slate-300 font-semibold">{ticker.symbol}</span>
-              <span className="text-slate-100">{ticker.value}</span>
-              <span
-                className={`text-[10px] font-medium px-1 rounded ${
-                  isZero
-                    ? "text-slate-400 bg-slate-800/50"
-                    : isUp
-                    ? "text-[#2EB886] bg-[#2EB886]/10"
-                    : "text-[#DC525F] bg-[#DC525F]/10"
-                }`}
-              >
-                {isUp ? `+${ticker.change}%` : `${ticker.change}%`}
-              </span>
-            </div>
-          );
-        })}
-
-        <div className="text-[10px] text-slate-400 font-mono pl-4 border-l border-slate-800">
-          Status: Data Statis Contoh
+        {/* Right: Full, clear, unwrapped status badge */}
+        <div className="text-[11px] text-slate-400 font-sans whitespace-nowrap pl-1 md:pl-4 md:border-l md:border-slate-800 self-start md:self-auto">
+          Status: Data statis contoh
         </div>
       </div>
     </div>

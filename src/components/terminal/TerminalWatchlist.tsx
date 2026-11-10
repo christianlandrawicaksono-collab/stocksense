@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import { STOCKS_DATA } from "@/data/stocksData";
-import { StockFundamental } from "@/types/market";
-import { Search, ArrowUpDown, ChevronDown } from "lucide-react";
+import { formatNumber } from "@/utils/format";
+import { Search, ArrowUpDown } from "lucide-react";
 
 interface TerminalWatchlistProps {
   selectedTicker: string;
@@ -24,7 +24,6 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
 
   const filteredAndSortedStocks = useMemo(() => {
     return STOCKS_DATA.filter((s) => {
-      // Search filter
       if (search.trim()) {
         const q = search.toLowerCase();
         const match =
@@ -34,7 +33,6 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         if (!match) return false;
       }
 
-      // Presets
       if (filterPreset === "DIVIDEND") return s.dividendYield >= 5.0;
       if (filterPreset === "UNDERVALUED") return s.peRatio <= 12.0;
       if (filterPreset === "PROFITABLE") return s.roe >= 18.0;
@@ -60,18 +58,18 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg">
+    <div className="h-full flex flex-col bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg font-sans">
       {/* Pane Header & Search */}
       <div className="p-3 border-b border-[#1E2736] bg-[#0E131C] space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="w-1.5 h-1.5 rounded-full bg-[#1E7B85]"></span>
-            <span className="font-mono text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Daftar Pantau & Screener
+            <span className="text-xs font-semibold text-slate-300">
+              Daftar pantau dan penyaring
             </span>
           </div>
-          <span className="font-mono text-[11px] text-slate-500 tnum">
-            {filteredAndSortedStocks.length} dari {STOCKS_DATA.length} Saham
+          <span className="text-[11px] text-slate-400 font-mono tnum">
+            {filteredAndSortedStocks.length} dari {STOCKS_DATA.length} saham
           </span>
         </div>
 
@@ -80,15 +78,15 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Cari kode, nama, atau sektor..."
+            placeholder="Cari kode saham, emiten, atau sektor..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#1E7B85] font-sans"
+            className="w-full pl-8 pr-3 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#1E7B85]"
           />
         </div>
 
-        {/* Filter Presets Chips */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto terminal-scroll pb-1 text-[11px]">
+        {/* Filter Presets Chips (Wrapped to second line when needed) */}
+        <div className="flex flex-wrap gap-1.5 pt-0.5">
           {[
             { id: "ALL", label: "Semua" },
             { id: "DIVIDEND", label: "Dividen > 5%" },
@@ -99,7 +97,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
             <button
               key={preset.id}
               onClick={() => setFilterPreset(preset.id as FilterPreset)}
-              className={`px-2 py-1 rounded text-[11px] font-mono whitespace-nowrap transition ${
+              className={`px-2.5 py-1 rounded text-xs transition ${
                 filterPreset === preset.id
                   ? "bg-[#1E7B85] text-white font-medium shadow-sm"
                   : "bg-[#171F2C] text-slate-400 hover:text-slate-200 border border-[#232F42]"
@@ -111,8 +109,8 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         </div>
       </div>
 
-      {/* Table Headers */}
-      <div className="grid grid-cols-12 gap-1 px-3 py-2 bg-[#0C1017] border-b border-[#1E2736] text-[10px] font-mono text-slate-400 uppercase tracking-wider select-none">
+      {/* Table Column Headers (Sentence case, IBM Plex Sans) */}
+      <div className="grid grid-cols-12 gap-1 px-3 py-2 bg-[#0C1017] border-b border-[#1E2736] text-[11px] text-slate-400 select-none">
         <button
           onClick={() => handleSort("ticker")}
           className="col-span-4 flex items-center space-x-1 text-left hover:text-slate-200"
@@ -147,7 +145,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       {/* Table Rows (Watchlist) */}
       <div className="flex-1 overflow-y-auto terminal-scroll divide-y divide-[#1A2230]">
         {filteredAndSortedStocks.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-500 font-mono">
+          <div className="p-8 text-center text-xs text-slate-500">
             Tidak ada emiten yang sesuai kriteria filter.
           </div>
         ) : (
@@ -166,36 +164,36 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                     : "hover:bg-[#151C2A] border-l-2 border-transparent"
                 }`}
               >
-                {/* Ticker & Name */}
+                {/* Ticker (Mono) & Name (Sans) */}
                 <div className="col-span-4 flex flex-col justify-center min-w-0 pr-1">
                   <div className="flex items-center space-x-1.5">
                     <span
                       className={`font-mono font-bold text-xs ${
-                        isSelected ? "text-[#5CE1E6]" : "text-white"
+                        isSelected ? "text-white" : "text-slate-200"
                       }`}
                     >
                       {stock.ticker}
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-400 truncate">
+                  <span className="text-[11px] text-slate-400 truncate">
                     {stock.name}
                   </span>
                 </div>
 
-                {/* Price */}
-                <div className="col-span-3 text-right flex flex-col justify-center font-mono tnum">
-                  <span className="font-semibold text-slate-100 text-xs">
-                    {stock.currentPrice.toLocaleString("id-ID")}
+                {/* Price (Mono, tnum) */}
+                <div className="col-span-3 text-right flex flex-col justify-center">
+                  <span className="font-mono font-semibold text-slate-100 text-xs tnum">
+                    {formatNumber(stock.currentPrice)}
                   </span>
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[11px] text-slate-400 font-mono tnum">
                     PBV {stock.pbvRatio}x
                   </span>
                 </div>
 
-                {/* 1D Change % */}
-                <div className="col-span-2 text-right flex items-center justify-end font-mono tnum">
+                {/* 1D Change % (Mono, tnum) */}
+                <div className="col-span-2 text-right flex items-center justify-end">
                   <span
-                    className={`text-[11px] font-medium px-1 py-0.5 rounded ${
+                    className={`text-[11px] font-mono tnum px-1 py-0.5 rounded ${
                       isUp
                         ? "text-[#2EB886] bg-[#2EB886]/10"
                         : isDown
@@ -207,18 +205,12 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                   </span>
                 </div>
 
-                {/* Valuation & Dividend */}
-                <div className="col-span-3 text-right flex flex-col justify-center font-mono tnum">
-                  <span
-                    className={`font-medium text-xs ${
-                      stock.peRatio <= stock.historicalPeMean
-                        ? "text-[#2EB886]"
-                        : "text-slate-300"
-                    }`}
-                  >
+                {/* Valuation & Dividend (Mono, tnum) */}
+                <div className="col-span-3 text-right flex flex-col justify-center">
+                  <span className="font-mono text-xs text-slate-200 tnum">
                     {stock.peRatio}x
                   </span>
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[11px] text-slate-400 font-mono tnum">
                     Div {stock.dividendYield}%
                   </span>
                 </div>
@@ -229,9 +221,9 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       </div>
 
       {/* Pane Footer Note */}
-      <div className="p-2 border-t border-[#1E2736] bg-[#0E131C] text-[10px] font-mono text-slate-400 flex items-center justify-between">
-        <span>Basis Data: 9 Bluechips IDX</span>
-        <span>Harga: Penutupan Terakhir</span>
+      <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex items-center justify-between">
+        <span>Basis data: 9 emiten IDX</span>
+        <span>Harga: Penutupan terakhir</span>
       </div>
     </div>
   );
