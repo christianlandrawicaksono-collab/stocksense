@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Navbar, ActiveTab } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
 import { MacroRadarView } from "@/components/macro/MacroRadarView";
@@ -11,10 +11,28 @@ import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 import { Globe2, BarChart3, Layers, Search, Sparkles, Terminal, Heart } from "lucide-react";
 
 export default function Home() {
+  const [mounted, setMounted] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("macro");
   const [selectedTicker, setSelectedTicker] = useState<string>("BBCA");
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [aiPresetQuery, setAiPresetQuery] = useState<string>("");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#070b13] text-slate-400 font-mono text-xs">
+        <div className="flex items-center space-x-2.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="font-semibold text-slate-200 tracking-wider">
+            INITIALIZING STOCKSSENSE TERMINAL...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const handleSelectTickerFromMacro = (ticker: string) => {
     setSelectedTicker(ticker);
