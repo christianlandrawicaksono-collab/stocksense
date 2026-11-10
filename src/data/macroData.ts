@@ -226,3 +226,4 @@ export const MACRO_NEWS_DATA: MacroNewsItem[] = [
     ]
   }
 ];
+

@@ -68,3 +68,4 @@ export interface HistoricalDataPoint {
   price: number;
   dividend?: number;
 }
+

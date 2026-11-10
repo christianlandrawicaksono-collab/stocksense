@@ -612,3 +612,4 @@ export const StrategySimulator: React.FC<StrategySimulatorProps> = ({
     </div>
   );
 };
+

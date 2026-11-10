@@ -369,3 +369,4 @@ export const ValuationBandView: React.FC<ValuationBandViewProps> = ({
     </div>
   );
 };
+

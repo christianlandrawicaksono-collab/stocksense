@@ -280,3 +280,4 @@ Disiplin menerapkan strategi Dollar Cost Averaging (DCA) di zona valuasi P/E -1 
     </div>
   );
 };
+

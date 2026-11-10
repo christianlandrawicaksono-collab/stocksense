@@ -473,3 +473,4 @@ export const IHSG_HISTORICAL: HistoricalDataPoint[] = [
   { date: "2026-09", price: 7350 },
   { date: "2026-11", price: 7314 }
 ];
+

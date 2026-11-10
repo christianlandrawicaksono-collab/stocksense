@@ -113,7 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <a
-              href="https://github.com"
+              href="https://github.com/christianlandrawicaksono-collab/stocksense"
               target="_blank"
               rel="noreferrer"
               className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 bg-slate-900 border border-slate-800 hover:text-white hover:border-slate-700 transition"

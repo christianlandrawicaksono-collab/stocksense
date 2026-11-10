@@ -400,3 +400,4 @@ export const MacroRadarView: React.FC<MacroRadarViewProps> = ({
     </div>
   );
 };
+

@@ -106,7 +106,7 @@ Pastikan kamu sudah memiliki [Node.js](https://nodejs.org/) (v18.17+ atau v20+) 
 
 1. **Clone repository ini:**
    ```bash
-   git clone https://github.com/USERNAME_KAMU/stocksense.git
+   git clone https://github.com/christianlandrawicaksono-collab/stocksense.git
    cd stocksense
    ```
 
