@@ -1,229 +1,223 @@
 import { MacroNewsItem, MarketTickerItem } from "../types/market";
 
 export const LIVE_MARKET_TICKERS: MarketTickerItem[] = [
-  { symbol: "IHSG", name: "Indeks Harga Saham Gabungan", value: "7,314.50", change: 0.62, isPositive: true },
-  { symbol: "USD/IDR", name: "Kurs Rupiah", value: "15,820", change: -0.35, isPositive: true },
-  { symbol: "BI-RATE", name: "Suku Bunga Acuan BI", value: "6.00%", change: 0.0, isPositive: true },
-  { symbol: "BRENT", name: "Minyak Mentah Brent", value: "$74.80/bbl", change: 1.45, isPositive: true },
-  { symbol: "NICKEL", name: "LME Nickel Cash", value: "$16,250/t", change: -0.80, isPositive: false },
-  { symbol: "COAL", name: "Newcastle Coal", value: "$142.10/t", change: 0.95, isPositive: true },
-  { symbol: "GOLD", name: "Emas Antam /gr", value: "Rp 1,510,000", change: 0.40, isPositive: true },
+  { symbol: "IHSG", name: "Indeks Harga Saham Gabungan", value: "7.314,50", change: 0.62, isPositive: true },
+  { symbol: "USD/IDR", name: "Kurs Rupiah", value: "15.820", change: -0.35, isPositive: true },
+  { symbol: "BI-RATE", name: "Suku Bunga Acuan BI", value: "6,00%", change: 0.0, isPositive: true },
+  { symbol: "BRENT", name: "Minyak Mentah Brent", value: "$74,80/bbl", change: 1.45, isPositive: true },
+  { symbol: "NICKEL", name: "LME Nickel Cash", value: "$16.250/t", change: -0.80, isPositive: false },
+  { symbol: "COAL", name: "Newcastle Coal", value: "$142,10/t", change: 0.95, isPositive: true },
+  { symbol: "GOLD", name: "Emas Antam /gr", value: "Rp 1.510.000", change: 0.40, isPositive: true },
 ];
 
-export const MACRO_RISK_SUMMARY = {
-  currentRiskLevel: "MODERATE", // LOW | MODERATE | ELEVATED | HIGH
-  score: 62, // 0 - 100
-  marketRegime: "Cautious Accumulation",
-  keyDriver: "Transisi suku bunga global The Fed vs Pertumbuhan domestik & stimulus APBN",
-  foreignFlowStatus: "Net Inflow Mingguan +Rp 1.42 T (Rebound di Big Banks)",
-  summaryBrief: "Kondisi pasar saham Indonesia saat ini ditopang oleh solidnya laba perbankan tier-1 dan penguatan tipis Rupiah, namun dibayangi kekhawatiran daya beli kelas menengah domestik (imbas wacana PPN & pajak) serta arah kebijakan tarif perdagangan global."
+export const MACRO_MARKET_SUMMARY = {
+  summaryBrief: "Kondisi pasar saham Indonesia saat ini ditopang oleh solidnya laba perbankan tier-1 dan penguatan tipis Rupiah, namun dibayangi kekhawatiran daya beli kelas menengah domestik serta arah kebijakan tarif perdagangan global."
 };
 
 export const MACRO_NEWS_DATA: MacroNewsItem[] = [
-  // --- WEEKLY FLASH (1 MINGGU TERAKHIR) ---
+  // --- MINGGUAN (1 MINGGU TERAKHIR) ---
   {
     id: "news-w1",
-    title: "The Fed Tahan Suku Bunga di Rentang 4.75% - 5.00%: BI Diproyeksi Jaga BI-Rate di 6.00%",
+    title: "Bank sentral AS menahan suku bunga di rentang 4,75% – 5,00%: Bank Indonesia diproyeksikan jaga BI-Rate di level 6,00%",
     period: "1W",
-    date: "10 November 2026",
+    date: "Skenario contoh W-01",
     category: "MONETARY_CURRENCY",
-    source: "Bloomberg / Bank Indonesia",
-    summary: "Rapat FOMC The Fed mengisyaratkan pendekatan bertahap dalam pemangkasan suku bunga acuan seiring data ketenagakerjaan AS yang masih resilien. Bank Indonesia diprediksi tetap mempertahankan BI-Rate di level 6.00% demi menjaga stabilitas nilai tukar Rupiah terhadap DXY.",
-    catalyst: "Keputusan Suku Bunga Global & Spread Imbal Hasil Obligasi",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Rapat penentuan suku bunga mengisyaratkan pendekatan bertahap dalam pelonggaran moneter seiring data ketenagakerjaan yang masih resilien. Bank Indonesia diprediksi tetap mempertahankan BI-Rate di level 6,00% demi menjaga stabilitas nilai tukar Rupiah terhadap mata uang global.",
+    catalyst: "Keputusan suku bunga global dan selisih imbal hasil obligasi",
     marketSentiment: "NEUTRAL",
     overallImpact: "Meredakan kepanikan depresiasi Rupiah, namun membatasi ruang pelonggaran likuiditas perbankan jangka pendek.",
     sectorImpacts: [
       {
-        sector: "Perbankan (Big Banks)",
+        sector: "Perbankan besar",
         sentiment: "BULLISH",
         tickers: ["BBCA", "BMRI", "BBRI", "BBNI"],
-        impactDescription: "Margin bunga bersih (NIM) tetap terjaga tinggi di level 5-6%, potensi foreign inflow kembali masuk ke saham likuid berfundamental prima."
+        impactDescription: "Margin bunga bersih tetap terjaga di level 5–6%, potensi aliran modal masuk kembali ke saham likuid berfundamental prima."
       },
       {
-        sector: "Properti & Real Estate",
+        sector: "Properti",
         sentiment: "BEARISH",
         tickers: ["BSDE", "CTRA", "SMRA"],
-        impactDescription: "Suku bunga KPR belum akan turun signifikan, pertumbuhan pra-penjualan (marketing sales) properti residensial berpotensi melambat."
+        impactDescription: "Suku bunga kredit pemilikan rumah belum akan turun signifikan, pertumbuhan pra-penjualan properti berpotensi melambat."
       }
     ]
   },
   {
     id: "news-w2",
-    title: "Eskalasi Ketegangan Selat Hormuz & Rute Maritim Global: Minyak Mentah Rebound ke $75/Barel",
+    title: "Eskalasi ketegangan jalur pasokan maritim: Harga minyak mentah dunia naik ke level $74,80 per barel",
     period: "1W",
-    date: "8 November 2026",
+    date: "Skenario contoh W-02",
     category: "GLOBAL_MACRO",
-    source: "Reuters / Energy Information Admin",
-    summary: "Gangguan jalur pasokan energi di kawasan Timur Tengah memicu premi risiko geopolitik baru, mendorong harga minyak mentah Brent naik 3.8% dalam sepekan. Hal ini memicu kekhawatiran beban subsidi BBM APBN namun memberikan katalis positif bagi emiten eksplorasi energi.",
-    catalyst: "Ketegangan Geopolitik Timur Tengah & Risiko Logistik Maritim",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Gangguan jalur pelayaran energi internasional memicu premi risiko geopolitik baru, mendorong harga minyak mentah Brent naik 3,8% dalam sepekan. Hal ini memicu kekhawatiran beban impor energi namun memberikan dorongan laba bagi emiten eksplorasi migas.",
+    catalyst: "Ketegangan geopolitik jalur pasokan dan risiko logistik maritim",
     marketSentiment: "NEUTRAL",
-    overallImpact: "Tekanan inflasi energi impor untuk emiten manufaktur, tetapi berkah laba untuk emiten hulu migas.",
+    overallImpact: "Tekanan inflasi energi impor bagi emiten manufaktur, tetapi memberikan kenaikan pendapatan bagi emiten hulu migas.",
     sectorImpacts: [
       {
-        sector: "Minyak & Gas Bumi (Hulu)",
+        sector: "Minyak dan gas bumi",
         sentiment: "BULLISH",
         tickers: ["MEDC", "ENRG", "ELSA"],
-        impactDescription: "Peningkatan rata-rata harga jual (ASP) minyak dan gas langsung mendongkrak margin operasional dan arus kas kas operasi."
+        impactDescription: "Peningkatan rata-rata harga jual minyak dan gas langsung mendongkrak margin operasional dan arus kas."
       },
       {
-        sector: "Konsumer & Manufaktur",
+        sector: "Barang konsumsi dan manufaktur",
         sentiment: "BEARISH",
         tickers: ["ICBP", "INDF", "MYOR"],
-        impactDescription: "Risiko lonjakan biaya logistik kemasan plastik turunan petrokimia dan distribusi bahan baku."
+        impactDescription: "Risiko peningkatan biaya logistik kemasan turunan petrokimia dan distribusi bahan baku impor."
       }
     ]
   },
   {
     id: "news-w3",
-    title: "Kemenkeu Rilis Realisasi Penerimaan Pajak & Diskusi Skema PPN: Pasar Ritel Wait and See",
+    title: "Diskusi kebijakan penyesuaian tarif pajak pertambahan nilai: Sektor ritel bersikap menunggu dan mengamati",
     period: "1W",
-    date: "6 November 2026",
+    date: "Skenario contoh W-03",
     category: "DOMESTIC_POLITICS",
-    source: "Kementerian Keuangan RI / CNBC Indonesia",
-    summary: "Pemerintah dan DPR membahas mitigasi dampak kenaikan tarif pajak pertambahan nilai (PPN) terhadap daya beli masyarakat kelas menengah, termasuk wacana pemberian insentif khusus pada bahan pokok dan barang esensial agar tidak menekan laju konsumsi domestik.",
-    catalyst: "Regulasi Fiskal Domestik & Kebijakan Tarif Pajak",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Pemerintah dan pembuat kebijakan mengkaji mitigasi dampak penyesuaian tarif pajak pertambahan nilai terhadap daya beli masyarakat kelas menengah, termasuk wacana insentif khusus pada bahan pokok agar tidak menekan laju konsumsi domestik.",
+    catalyst: "Regulasi fiskal domestik dan penataan kebijakan tarif pajak",
     marketSentiment: "BEARISH",
-    overallImpact: "Sentimen wait-and-see menyelimuti sektor ritel modern dan otomotif karena konsumen menahan belanja sekunder.",
+    overallImpact: "Sikap menunggu dan mengamati menyelimuti sektor ritel modern dan otomotif karena konsumen menahan belanja sekunder.",
     sectorImpacts: [
       {
-        sector: "Ritel Modern & Gaya Hidup",
+        sector: "Otomotif dan ritel modern",
         sentiment: "BEARISH",
-        tickers: ["ACES", "MAPI", "ERAA"],
-        impactDescription: "Konsumen kelas menengah cenderung berhemat pada pos belanja barang non-esensial dan perangkat elektronik."
+        tickers: ["ASII", "ACES", "MAPI", "ERAA"],
+        impactDescription: "Konsumen kelas menengah cenderung menunda pembelian kendaraan baru serta pos belanja barang non-esensial."
       },
       {
-        sector: "Konsumer Primer (FMCG)",
+        sector: "Barang konsumsi primer",
         sentiment: "BULLISH",
         tickers: ["ICBP", "INDF", "AMRT"],
-        impactDescription: "Sifat defensif barang konsumsi pokok (makanan instan & minimarket) membuat aliran dana domestik beralih ke emiten ini."
+        impactDescription: "Karakteristik defensif barang kebutuhan pokok makanan dan minimarket membuat arus modal beralih ke emiten ini."
       }
     ]
   },
   {
     id: "news-w4",
-    title: "Moratorium Pembangunan Smelter Nikel Kelas II (RKEF) Diperketat: Pasokan Terkendali, Saham Tambang Naik",
+    title: "Pengetatan izin pembangunan fasilitas pengolahan nikel: Pasokan terkendali menopang harga logam industri",
     period: "1W",
-    date: "4 November 2026",
+    date: "Skenario contoh W-04",
     category: "COMMODITIES",
-    source: "Kementerian ESDM / Kontan",
-    summary: "Pemerintah menegaskan pembatasan izin baru untuk smelter nikel Rotary Kiln Electric Furnace (RKEF) berbasis Nickel Pig Iron (NPI) demi menjaga ketahanan cadangan bijih nikel saprolit dan mendorong produksi nikel sulfat untuk baterai EV (HPAL).",
-    catalyst: "Kebijakan Tata Kelola Hilirisasi Mineral Nasional",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Otoritas terkait menegaskan pembatasan izin baru untuk fasilitas pengolahan nikel kelas rendah demi menjaga ketahanan cadangan bijih nikel dan mendorong hilirisasi produk bernilai tambah tinggi untuk rantai pasok baterai kendaraan listrik.",
+    catalyst: "Kebijakan tata kelola hilirisasi mineral nasional",
     marketSentiment: "BULLISH",
-    overallImpact: "Mencegah oversupply nikel dunia berlanjut, menahan kejatuhan harga acuan nikel di bursa LME.",
+    overallImpact: "Mencegah kelebihan pasokan nikel dunia berlanjut, menahan pelemahan harga acuan nikel di pasar komoditas internasional.",
     sectorImpacts: [
       {
-        sector: "Pertambangan Nikel & Mineral",
+        sector: "Pertambangan nikel dan mineral",
         sentiment: "BULLISH",
         tickers: ["ANTM", "INCO", "NCKL", "MBMA"],
-        impactDescription: "Harga jual bijih nikel domestik (HPM) diproyeksikan stabil naik, profitabilitas penambang bijih nikel murni terlindungi."
+        impactDescription: "Harga jual bijih nikel domestik diproyeksikan stabil, profitabilitas penambang bijih nikel terlindungi."
       }
     ]
   },
 
-  // --- MONTHLY DEEP DIVE (1 BULAN TERAKHIR) ---
+  // --- BULANAN (1 BULAN TERAKHIR) ---
   {
     id: "news-m1",
-    title: "Review Arah Kebijakan Kabinet Baru: Fokus Ketahanan Pangan, Energi, dan Efisiensi BUMN",
+    title: "Arah prioritas anggaran belanja negara: Ketahanan pangan, swasembada energi, dan efisiensi BUMN",
     period: "1M",
-    date: "Oktober - November 2026",
+    date: "Skenario contoh M-01",
     category: "DOMESTIC_POLITICS",
-    source: "Sekretariat Negara / Riset Mandiri Sekuritas",
-    summary: "Konsolidasi program kerja pemerintahan baru memperlihatkan alokasi anggaran masif pada sektor pangan, swasembada energi terbarukan, serta dorongan pembentukan superholding dividen BUMN. Sektor pertanian, logistik cold-chain, dan perbankan penyalur KUR menjadi penerima manfaat langsung APBN.",
-    catalyst: "Arah Belanja APBN Pemerintahan Baru",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Konsolidasi program kerja memperlihatkan alokasi anggaran belanja pada sektor pangan, energi terbarukan, serta dorongan efisiensi dividen BUMN. Sektor perkebunan, logistik pendukung, dan perbankan penyalur program menjadi penerima manfaat langsung belanja negara.",
+    catalyst: "Arah belanja anggaran pendapatan dan belanja negara",
     marketSentiment: "BULLISH",
-    overallImpact: "Katalis pertumbuhan struktural jangka panjang untuk emiten BUMN berkinerja tinggi serta industri agribisnis pendukung.",
+    overallImpact: "Peluang pertumbuhan struktural jangka panjang untuk emiten BUMN berkinerja stabil serta industri agribisnis pendukung.",
     sectorImpacts: [
       {
-        sector: "Perbankan BUMN (Himbara)",
+        sector: "Perbankan BUMN",
         sentiment: "BULLISH",
         tickers: ["BBRI", "BMRI", "BBNI"],
-        impactDescription: "Penyaluran kredit program prioritas nasional dan stabilitas dividen jumbo untuk setoran kas negara."
+        impactDescription: "Penyaluran kredit program prioritas dan stabilitas pembagian dividen berkala untuk setoran kas negara."
       },
       {
-        sector: "Pertanian & Perkebunan",
+        sector: "Pertanian dan perkebunan",
         sentiment: "BULLISH",
         tickers: ["TAPG", "DSNG", "SIMP"],
-        impactDescription: "Dorongan program biodiesel mandiri (B40/B50) memperkuat serapan minyak sawit mentah (CPO) dalam negeri."
+        impactDescription: "Program bauran bahan bakar nabati memperkuat serapan minyak sawit mentah di pasar dalam negeri."
       },
       {
-        sector: "Semen & Bahan Bangunan",
+        sector: "Semen dan bahan bangunan",
         sentiment: "NEUTRAL",
         tickers: ["SMGR", "INTP"],
-        impactDescription: "Fokus anggaran bergeser dari mega-proyek fisik baru ke program perlindungan sosial dan fasilitas pedesaan."
+        impactDescription: "Fokus anggaran bergeser ke program perlindungan sosial dan fasilitas pedesaan sehingga serapan proyek infrastruktur stabil melandai."
       }
     ]
   },
   {
     id: "news-m2",
-    title: "Dinamika Pemilu AS & Potensi Gelombang Tarif Dagang Baru: Implikasi terhadap Mitra Dagang Asia",
+    title: "Perkembangan kebijakan perdagangan global: Potensi relokasi industri manufaktur ke kawasan Asia Tenggara",
     period: "1M",
-    date: "Oktober - November 2026",
+    date: "Skenario contoh M-02",
     category: "GLOBAL_MACRO",
-    source: "Financial Times / CSIS",
-    summary: "Perkembangan politik Washington mengisyaratkan proteksionisme tarif impor terhadap produk asal Asia (khususnya Tiongkok). Meskipun menimbulkan ketidakpastian arus perdagangan, Indonesia berpeluang menjadi target relokasi rantai pasok industri global (friend-shoring).",
-    catalyst: "Kebijakan Tarif & Ketegangan Perdagangan AS-Tiongkok",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Dinamika kebijakan perdagangan internasional meningkatkan ketidakpastian arus ekspor langsung, namun Indonesia berpeluang menjadi tujuan diversifikasi rantai pasok industri global bagi fasilitas manufaktur yang merelokasi operasinya.",
+    catalyst: "Kebijakan tarif dan proteksionisme perdagangan internasional",
     marketSentiment: "NEUTRAL",
-    overallImpact: "Volatilitas indeks saham regional meningkat, namun kawasan industri di Indonesia menikmati lonjakan permintaan lahan pabrik baru.",
+    overallImpact: "Volatilitas indeks saham kawasan meningkat, namun pengembang kawasan industri berpeluang mencatat kenaikan permintaan lahan pabrik.",
     sectorImpacts: [
       {
-        sector: "Kawasan Industri",
+        sector: "Kawasan industri",
         sentiment: "BULLISH",
         tickers: ["DMAS", "SSIA", "BEST"],
-        impactDescription: "Lonjakan minat investasi pabrik manufaktur dan data center internasional yang merelokasi fasilitas keluar dari Tiongkok."
+        impactDescription: "Peningkatan minat investasi pabrik manufaktur dan pusat data internasional yang mendiversifikasi fasilitas pabrik."
       },
       {
-        sector: "Otomotif & Komponen",
+        sector: "Otomotif dan komponen",
         sentiment: "BEARISH",
         tickers: ["ASII", "AUTO"],
-        impactDescription: "Kompetisi sengit dari masuknya mobil listrik (EV) murah asal produsen Tiongkok yang mencari pasar alternatif di ASEAN."
+        impactDescription: "Persaingan harga meningkat dari masuknya kendaraan listrik impor yang mencari pasar alternatif di Asia Tenggara."
       }
     ]
   },
   {
     id: "news-m3",
-    title: "Tren Musim Laporan Keuangan Q3 Emiten IDX: Laba Perbankan Pecah Rekor, Saham Komoditas Tahan Banting",
+    title: "Musim laporan keuangan kuartal III: Laba perbankan solid dan arus kas emiten energi terjaga",
     period: "1M",
-    date: "Oktober - November 2026",
+    date: "Skenario contoh M-03",
     category: "DOMESTIC_POLITICS",
-    source: "Bursa Efek Indonesia (IDX)",
-    summary: "Rangkuman laba kuartal III 2026 mencatat BBCA, BMRI, dan BBRI sukses mencetak rekor laba bersih kumulatif berkat penurunan beban provisi (Cost of Credit). Sementara emiten batubara seperti ADRO dan PTBA membukukan kas berlimpah yang membuka peluang pembagian dividen interim menarik.",
-    catalyst: "Kinerja Laba Bersih & Prospek Dividen Akhir Tahun",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Rangkuman laba kuartal III 2026 mencatat bank-bank tier-1 membukukan kenaikan laba bersih berkat terjaganya kualitas aset dan efisiensi biaya kredit. Sementara emiten komoditas energi membukukan posisi kas yang memadai untuk dividen interim.",
+    catalyst: "Kinerja laba bersih kuartalan dan prospek dividen",
     marketSentiment: "BULLISH",
-    overallImpact: "Memicu 'dividend hunter rally' menjelang penutupan tahun buku di saham-saham pembagi dividen yield tinggi.",
+    overallImpact: "Memicu perburuan dividen menjelang penutupan tahun buku pada emiten dengan tingkat imbal hasil dividen menarik.",
     sectorImpacts: [
       {
-        sector: "Energi & Batubara",
+        sector: "Energi dan batubara",
         sentiment: "BULLISH",
         tickers: ["ADRO", "PTBA", "ITMG"],
-        impactDescription: "Yield dividen interim historis di kisaran 8-14% menjadi jangkar penahan penurunan harga saham saat koreksi."
+        impactDescription: "Imbal hasil dividen berkala di kisaran 8–14% menjadi penopang valuasi saham saat terjadi fluktuasi harga komoditas."
       },
       {
         sector: "Telekomunikasi",
         sentiment: "NEUTRAL",
         tickers: ["TLKM", "ISAT", "EXCL"],
-        impactDescription: "Pertumbuhan ARPU stabil, namun beban capex infrastruktur fiber dan data center AI masih membebani arus kas bebas."
+        impactDescription: "Pertumbuhan pendapatan per pengguna stabil, namun alokasi belanja modal jaringan serat optik tetap membutuhkan pendanaan berkelanjutan."
       }
     ]
   },
   {
     id: "news-m4",
-    title: "Arus Dana Asing (Foreign Flow) Bulanan: Reversal Akumulasi Rp 4.8 Triliun Setelah 3 Bulan Outflow",
+    title: "Arus dana investor asing bulanan: Akumulasi beli bersih tercatat Rp 4,8 triliun setelah periode arus keluar",
     period: "1M",
-    date: "Oktober - November 2026",
+    date: "Skenario contoh M-04",
     category: "MONETARY_CURRENCY",
-    source: "IDX Data Service",
-    summary: "Investor institusi asing kembali mencatatkan net buy signifikan sebesar Rp 4.8 Triliun di pasar reguler, mengakhiri tren pelepasan aset beruntun sejak kuartal kedua. Valuasi saham IDX yang relatif diskon (P/E trailing 13.2x) dibandingkan rerata 5 tahun (15.5x) memicu aksi buyback asing.",
-    catalyst: "Valuasi Diskon Saham Indonesia & Rebalancing Portofolio Global",
+    source: "Contoh skenario transmisi kebijakan",
+    summary: "Investor institusi asing mencatatkan akumulasi beli bersih sebesar Rp 4,8 triliun di pasar reguler. Valuasi saham IDX yang berada di area diskon dengan rasio P/E berjalan 13,2x dibandingkan rerata 5 tahun sebesar 15,5x mendorong masuknya kembali dana global.",
+    catalyst: "Valuasi komparatif saham domestik dan penyeimbangan portofolio global",
     marketSentiment: "BULLISH",
-    overallImpact: "IHSG berhasil bertahan di atas level psikologis 7,300 dengan likuiditas harian menembus rata-rata Rp 11.5 T per hari.",
+    overallImpact: "Indeks saham bertahan di atas level psikologis 7.300 dengan rata-rata transaksi harian mencapai Rp 11,5 triliun.",
     sectorImpacts: [
       {
-        sector: "Indeks LQ45 & Bluechip",
+        sector: "Saham berkapitalisasi besar",
         sentiment: "BULLISH",
         tickers: ["BBCA", "BMRI", "ASII", "TLKM", "BBRI"],
-        impactDescription: "Menjadi keranjang utama pembelian asing, mendorong penguatan harga rata-rata bobot terbesar indeks."
+        impactDescription: "Menjadi pilihan utama akumulasi portofolio investor institusi, menopang pergerakan saham berbobot terbesar."
       }
     ]
   }
 ];
-

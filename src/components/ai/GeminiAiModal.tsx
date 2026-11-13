@@ -6,10 +6,7 @@ import {
   Sparkles, 
   Send, 
   Key, 
-  Cpu, 
   Terminal, 
-  CheckCircle,
-  HelpCircle,
   Loader2
 } from "lucide-react";
 
@@ -79,9 +76,10 @@ Pertanyaan: ${userPrompt}`
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         setResponse(text || "Tidak ada respons dari Gemini API.");
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        setResponse(`Gagal menghubungi Gemini API: ${err.message}. Beralih ke analisis kecerdasan buatan terpasang.`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setResponse(`Gagal menghubungi Gemini API: ${errMsg}. Beralih ke analisis kecerdasan buatan terpasang.`);
       } finally {
         setIsLoading(false);
       }

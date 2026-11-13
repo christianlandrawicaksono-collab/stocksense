@@ -21,15 +21,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 4.8,
     dividendYield: 2.85,
     payoutRatio: 65.0,
-    description: "Bank swasta terbesar di Indonesia dengan keunggulan likuiditas dana murah (CASA) mencapai lebih dari 80%, menjadikannya emiten perbankan paling efisien dan tahan banting di ASEAN.",
+    description: "Bank komersial swasta dengan fokus pada transaksi perbankan ritel, korporasi, serta penghimpunan simpanan berbiaya rendah (CASA).",
     strengths: [
-      "Rasio CASA dominan > 80% menekan cost of funds ke level terendah",
-      "Kualitas aset superior dengan NPL gross konsisten di bawah 2%",
-      "Pertumbuhan laba bersih stabil 12-15% per tahun secara konsisten"
+      "Porsi simpanan dana murah (CASA) di atas 80% menopang efisiensi biaya dana",
+      "Rasio kredit bermasalah (NPL gross) berada di bawah 2%",
+      "Pertumbuhan laba operasional tahunan konsisten"
     ],
     risks: [
-      "Valuasi P/E premium relatif tinggi dibanding perbankan regional",
-      "Pertumbuhan kredit terbatas jika pertumbuhan ekonomi nasional melambat"
+      "Valuasi rasio P/E berada pada premi relatif terhadap perbankan kawasan",
+      "Pertumbuhan kredit berpotensi melambat jika konsumsi domestik melemah"
     ]
   },
   {
@@ -52,15 +52,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 5.6,
     dividendYield: 7.20,
     payoutRatio: 80.0,
-    description: "Penguasa segmen kredit mikro dan ultra-mikro (Holding Pegadaian & PNM) di Indonesia dengan penetrasi jaringan agen BRILink terbesar hingga pelosok nusantara.",
+    description: "Bank BUMN yang memfokuskan penyaluran pembiayaan pada segmen UMKM, ultra-mikro, dan jaringan keagenan perbankan pedesaan.",
     strengths: [
-      "Yield dividen sangat tinggi (7-8%) dengan komitmen payout ratio 80%",
-      "Monopoli segmen kredit mikro dengan pricing power kuat",
-      "Valuasi P/E saat ini berada di area diskon -1 SD historis"
+      "Jangkauan jaringan pembiayaan mikro dan integrasi entitas pembiayaan ultra-mikro",
+      "Rasio pembagian dividen historis berkisar antara 70% hingga 80%",
+      "Valuasi P/E berada di area deviasi bawah historis"
     ],
     risks: [
-      "Sensitivitas tinggi terhadap daya beli masyarakat bawah dan petani",
-      "Kenaikan rasio LAR (Loan at Risk) pasca restrukturisasi Covid"
+      "Sensitivitas kualitas kredit terhadap dinamika daya beli segmen masyarakat berpendapatan rendah",
+      "Pengelolaan rasio kredit dalam restrukturisasi"
     ]
   },
   {
@@ -83,15 +83,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 5.8,
     dividendYield: 5.80,
     payoutRatio: 60.0,
-    description: "Bank dengan aset konsolidasi terbesar di Indonesia, memimpin segmen korporasi sekaligus berhasil bertransformasi digital melalui superapp Livin' dan Kopra.",
+    description: "Bank BUMN yang melayani segmen korporasi komersial, pembiayaan rantai pasok industri, dan transaksi digital perbankan institusi.",
     strengths: [
-      "Kinerja profitabilitas (ROE > 22%) melesat tertinggi di antara Big 4 Banks",
-      "Ekosistem wholesale supply chain mengalirkan CASA korporasi berbiaya murah",
-      "Valuasi P/E 10.8x tergolong atraktif untuk pertumbuhan laba > 15%"
+      "Pertumbuhan pembiayaan korporasi dan transaksi digital wholesale",
+      "Rasio pengembalian ekuitas (ROE) konsisten di atas 20%",
+      "Pertumbuhan penghimpunan dana murah korporasi"
     ],
     risks: [
-      "Eksposur pinjaman korporasi besar sensitif terhadap pelemahan Rupiah",
-      "Potensi peningkatan provisi pada segmen BUMN konstruksi"
+      "Eksposur debitur korporasi skala besar terhadap fluktuasi nilai tukar",
+      "Kebutuhan pencadangan provisi pada pembiayaan sektor infrastruktur"
     ]
   },
   {
@@ -114,15 +114,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 0.72,
     dividendYield: 9.80,
     payoutRatio: 65.0,
-    description: "Konglomerasi terbesar di Indonesia yang menguasai >50% pangsa pasar mobil dan >70% motor nasional, sekaligus memiliki lini bisnis alat berat (UNTR), perkebunan, dan infrastruktur.",
+    description: "Perusahaan induk konglomerasi dengan lini bisnis utama distribusi kendaraan bermotor, alat berat, jasa keuangan, dan agribisnis.",
     strengths: [
-      "Valuasi sangat murah (PBV di bawah 1x dan P/E 6.8x)",
-      "Yield dividen hampir dua digit (~9.8%), ideal bagi investor income",
-      "Posisi neraca kas bersih (net cash) sangat sehat"
+      "Struktur neraca keuangan dengan posisi kas bersih positif",
+      "Rasio imbal hasil dividen (dividend yield) historis di kisaran 7-9%",
+      "Diversifikasi sumber pendapatan dari beberapa divisi operasional"
     ],
     risks: [
-      "Penetrasi mobil listrik murah asal Tiongkok (BYD, Wuling) menggerus pangsa pasar",
-      "Pelemahan penjualan otomotif roda empat domestik"
+      "Persaingan pasar kendaraan roda empat dari merek baru",
+      "Fluktuasi volume penjualan otomotif domestik"
     ]
   },
   {
@@ -145,15 +145,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 0.28,
     dividendYield: 14.50,
     payoutRatio: 60.0,
-    description: "Raksasa produsen batubara kalori menengah dan metallurgical coal dengan biaya operasional terendah, kini memimpin transisi ke smelter aluminium hijau dan energi hidro.",
+    description: "Perusahaan pertambangan batubara termal dan metalurgi yang sedang mengembangkan fasilitas pengolahan aluminium dan energi terbarukan.",
     strengths: [
-      "Raja dividen IHSG dengan yield konsisten > 12-15%",
-      "Cadangan kas bersih triliunan rupiah tanpa utang berbunga signifikan",
-      "Diversifikasi smelter aluminium di Kaltara siap beroperasi"
+      "Struktur biaya tunai penambangan batubara yang efisien",
+      "Riwayat pembagian dividen dengan imbal hasil persentase tinggi",
+      "Diversifikasi operasional ke fasilitas pengolahan mineral"
     ],
     risks: [
-      "Fluktuasi harga batubara termal global (Newcastle Coal Index)",
-      "Rencana restrukturisasi dan spin-off bisnis thermal coal"
+      "Volatilitas harga acuan batubara di pasar internasional",
+      "Pelaksanaan rencana restrukturisasi portofolio aset batubara termal"
     ]
   },
   {
@@ -176,15 +176,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 0.85,
     dividendYield: 6.20,
     payoutRatio: 75.0,
-    description: "Operator telekomunikasi BUMN pemilik infrastruktur jaringan fiber optik dan menara telekomunikasi (MTEL) terluas di seluruh kepulauan Indonesia.",
+    description: "Badan usaha milik negara penyedia infrastruktur jaringan telekomunikasi kabel serat optik, menara, dan konektivitas seluler.",
     strengths: [
-      "Monopoli backbone fiber optik dan data center hyperscale di Indonesia",
-      "Valuasi historis berada di level -1.5 SD terendah dalam 5 tahun terakhir",
-      "Cash flow dividen teratur dengan yield di atas 6%"
+      "Kepemilikan jaringan kabel serat optik dan infrastruktur pusat data di Indonesia",
+      "Posisi valuasi P/E berada pada batas deviasi bawah historis",
+      "Arus kas operasional dari layanan konektivitas data dan pelanggan tetap"
     ],
     risks: [
-      "Perang tarif paket data seluler dan persaingan Fixed Mobile Convergence",
-      "Kebutuhan belanja modal (Capex) infrastruktur fiber yang masif"
+      "Tingkat persaingan harga pada paket data seluler",
+      "Kebutuhan belanja modal (capex) berkelanjutan untuk perluasan infrastruktur"
     ]
   },
   {
@@ -207,15 +207,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 1.15,
     dividendYield: 3.80,
     payoutRatio: 45.0,
-    description: "Produsen mi instan legendaris 'Indomie' dan beragam produk konsumsi bermerek terkemuka, menjangkau pasar ekspor di lebih dari 60 negara termasuk Timur Tengah dan Afrika.",
+    description: "Produsen makanan dan minuman kemasan bermerek konsumen dengan jaringan distribusi domestik dan ekspor ke kawasan regional.",
     strengths: [
-      "Pricing power absolut; mampu menaikkan harga jual tanpa kehilangan volume",
-      "Sektor defensif tahan krisis dan kebal fluktuasi siklus ekonomi makro",
-      "Ekspansi Pinehill mendongkrak penjualan internasional secara signifikan"
+      "Jangkauan jaringan distribusi produk kebutuhan konsumen sehari-hari",
+      "Karakteristik permintaan produk pangan relatif stabil",
+      "Kontribusi pendapatan dari pasar ekspor internasional"
     ],
     risks: [
-      "Utang obligasi valas (USD) akibat akuisisi Pinehill terdampak depresiasi Rupiah",
-      "Volatilitas harga bahan baku gandum dan minyak kelapa sawit"
+      "Eksposur kewajiban pinjaman mata uang asing (USD) terhadap kurs Rupiah",
+      "Fluktuasi harga komoditas bahan baku gandum dan minyak nabati"
     ]
   },
   {
@@ -238,15 +238,15 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 0.35,
     dividendYield: 5.40,
     payoutRatio: 50.0,
-    description: "Produsen emas batangan ritel nomor satu di Indonesia sekaligus pemilik konsesi tambang bijih nikel dan bauksit terintegrasi di bawah holding BUMN MIND ID.",
+    description: "Perusahaan BUMN pertambangan dengan komoditas terintegrasi meliputi emas batangan, bijih nikel, dan bauksit.",
     strengths: [
-      "Permintaan emas fisik melonjak sebagai instrumen lindung nilai (hedging)",
-      "Penerima manfaat langsung pasokan nikel untuk ekosistem baterai konsorsium LG/CATL",
-      "Kinerja neraca keuangan sehat dengan rasio utang minimal"
+      "Tingkat permintaan logam mulia fisik emas di pasar domestik",
+      "Pasokan komoditas bijih nikel untuk kebutuhan pengolahan smelter dalam negeri",
+      "Tingkat rasio utang terhadap modal (DER) tercatat rendah"
     ],
     risks: [
-      "Fluktuasi harga komoditas nikel global di LME",
-      "Penyelesaian sengketa hukum persediaan emas masa lalu"
+      "Fluktuasi harga komoditas logam dasar dan nikel di pasar LME",
+      "Proses hukum terkait persediaan logam mulia periode lalu"
     ]
   },
   {
@@ -269,20 +269,20 @@ export const STOCKS_DATA: StockFundamental[] = [
     der: 1.82,
     dividendYield: 5.10,
     payoutRatio: 30.0,
-    description: "Perusahaan eksplorasi dan produksi migas swasta terkemuka di Asia Tenggara dengan kepemilikan saham strategis di tambang tembaga-emas PT Amman Mineral Internasional (AMMN).",
+    description: "Perusahaan energi independen dengan kegiatan eksplorasi dan produksi migas, serta kepemilikan saham di entitas tambang tembaga-emas.",
     strengths: [
-      "Sensitivitas tinggi terhadap kenaikan harga minyak mentah dunia (Brent)",
-      "Kepemilikan saham di Amman Mineral (AMMN) menyumbang nilai valuasi tersembunyi",
-      "Arus kas operasional kuat untuk percepatan pelunasan utang obligasi"
+      "Arus kas operasional sensitif terhadap kenaikan harga komoditas minyak dan gas",
+      "Kepemilikan saham pada entitas tambang tembaga dan emas",
+      "Kelanjutan program pengelolaan dan pengurangan beban utang berbunga"
     ],
     risks: [
-      "Volatilitas ekstrem harga minyak bumi dunia",
-      "Rasio leverage utang (leverage DER) yang relatif tinggi"
+      "Volatilitas harga minyak mentah dan gas alam global",
+      "Tingkat rasio kewajiban utang berbunga (financial leverage) relatif tinggi"
     ]
   }
 ];
 
-// Historical Monthly Price & Dividend Series (2020 to Late 2026 - 80 monthly points)
+// Data Ilustrasi Penutupan Kuartalan / Triwulanan (29 titik data dari 2020-01 hingga 2026-11 untuk visualisasi & simulasi strategi)
 export const HISTORICAL_SERIES: Record<string, HistoricalDataPoint[]> = {
   BBCA: [
     { date: "2020-01", price: 6800 },
@@ -438,6 +438,130 @@ export const HISTORICAL_SERIES: Record<string, HistoricalDataPoint[]> = {
     { date: "2026-06", price: 3800 },
     { date: "2026-09", price: 3880 },
     { date: "2026-11", price: 3820 }
+  ],
+  TLKM: [
+    { date: "2020-01", price: 3900 },
+    { date: "2020-03", price: 3100, dividend: 154 },
+    { date: "2020-06", price: 3150 },
+    { date: "2020-09", price: 2700 },
+    { date: "2020-12", price: 3310 },
+    { date: "2021-03", price: 3400, dividend: 168 },
+    { date: "2021-06", price: 3150 },
+    { date: "2021-09", price: 3600 },
+    { date: "2021-12", price: 4040 },
+    { date: "2022-03", price: 4500, dividend: 149 },
+    { date: "2022-06", price: 4000 },
+    { date: "2022-09", price: 4450 },
+    { date: "2022-12", price: 3750 },
+    { date: "2023-03", price: 4100, dividend: 167 },
+    { date: "2023-06", price: 4000 },
+    { date: "2023-09", price: 3750 },
+    { date: "2023-12", price: 3950 },
+    { date: "2024-03", price: 3450, dividend: 178 },
+    { date: "2024-06", price: 2900 },
+    { date: "2024-09", price: 3100 },
+    { date: "2024-12", price: 2750 },
+    { date: "2025-03", price: 2800, dividend: 175 },
+    { date: "2025-06", price: 2850 },
+    { date: "2025-09", price: 2900 },
+    { date: "2025-12", price: 2820 },
+    { date: "2026-03", price: 2850, dividend: 176 },
+    { date: "2026-06", price: 2830 },
+    { date: "2026-09", price: 2860 },
+    { date: "2026-11", price: 2840 }
+  ],
+  ICBP: [
+    { date: "2020-01", price: 11150 },
+    { date: "2020-03", price: 9800, dividend: 215 },
+    { date: "2020-06", price: 10450 },
+    { date: "2020-09", price: 10150 },
+    { date: "2020-12", price: 9575 },
+    { date: "2021-03", price: 8900, dividend: 215 },
+    { date: "2021-06", price: 8200 },
+    { date: "2021-09", price: 8350 },
+    { date: "2021-12", price: 8700 },
+    { date: "2022-03", price: 7600, dividend: 215 },
+    { date: "2022-06", price: 9550 },
+    { date: "2022-09", price: 8800 },
+    { date: "2022-12", price: 10000 },
+    { date: "2023-03", price: 9900, dividend: 188 },
+    { date: "2023-06", price: 11300 },
+    { date: "2023-09", price: 11200 },
+    { date: "2023-12", price: 10575 },
+    { date: "2024-03", price: 11375, dividend: 200 },
+    { date: "2024-06", price: 10400 },
+    { date: "2024-09", price: 12400 },
+    { date: "2024-12", price: 11600 },
+    { date: "2025-03", price: 11500, dividend: 220 },
+    { date: "2025-06", price: 11650 },
+    { date: "2025-09", price: 11900 },
+    { date: "2025-12", price: 11750 },
+    { date: "2026-03", price: 11850, dividend: 230 },
+    { date: "2026-06", price: 11750 },
+    { date: "2026-09", price: 11900 },
+    { date: "2026-11", price: 11800 }
+  ],
+  ANTM: [
+    { date: "2020-01", price: 820 },
+    { date: "2020-03", price: 450, dividend: 3 },
+    { date: "2020-06", price: 600 },
+    { date: "2020-09", price: 750 },
+    { date: "2020-12", price: 1935 },
+    { date: "2021-03", price: 2270, dividend: 16 },
+    { date: "2021-06", price: 2320 },
+    { date: "2021-09", price: 2280 },
+    { date: "2021-12", price: 2250 },
+    { date: "2022-03", price: 2580, dividend: 38 },
+    { date: "2022-06", price: 1800 },
+    { date: "2022-09", price: 1950 },
+    { date: "2022-12", price: 1985 },
+    { date: "2023-03", price: 2060, dividend: 79 },
+    { date: "2023-06", price: 1950 },
+    { date: "2023-09", price: 1800 },
+    { date: "2023-12", price: 1705 },
+    { date: "2024-03", price: 1600, dividend: 128 },
+    { date: "2024-06", price: 1400 },
+    { date: "2024-09", price: 1550 },
+    { date: "2024-12", price: 1510 },
+    { date: "2025-03", price: 1540, dividend: 85 },
+    { date: "2025-06", price: 1580 },
+    { date: "2025-09", price: 1620 },
+    { date: "2025-12", price: 1590 },
+    { date: "2026-03", price: 1620, dividend: 87 },
+    { date: "2026-06", price: 1600 },
+    { date: "2026-09", price: 1630 },
+    { date: "2026-11", price: 1610 }
+  ],
+  MEDC: [
+    { date: "2020-01", price: 670 },
+    { date: "2020-03", price: 350 },
+    { date: "2020-06", price: 480 },
+    { date: "2020-09", price: 410 },
+    { date: "2020-12", price: 575 },
+    { date: "2021-03", price: 590 },
+    { date: "2021-06", price: 650 },
+    { date: "2021-09", price: 530 },
+    { date: "2021-12", price: 466 },
+    { date: "2022-03", price: 560 },
+    { date: "2022-06", price: 620 },
+    { date: "2022-09", price: 935 },
+    { date: "2022-12", price: 1015, dividend: 60 },
+    { date: "2023-03", price: 980 },
+    { date: "2023-06", price: 890 },
+    { date: "2023-09", price: 1560 },
+    { date: "2023-12", price: 1155, dividend: 52 },
+    { date: "2024-03", price: 1450 },
+    { date: "2024-06", price: 1300 },
+    { date: "2024-09", price: 1320 },
+    { date: "2024-12", price: 1250, dividend: 65 },
+    { date: "2025-03", price: 1280, dividend: 68 },
+    { date: "2025-06", price: 1310 },
+    { date: "2025-09", price: 1350 },
+    { date: "2025-12", price: 1300 },
+    { date: "2026-03", price: 1330, dividend: 67 },
+    { date: "2026-06", price: 1300 },
+    { date: "2026-09", price: 1340 },
+    { date: "2026-11", price: 1315 }
   ]
 };
 
