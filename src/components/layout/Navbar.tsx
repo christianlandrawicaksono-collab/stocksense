@@ -63,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onOpenAiModal}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-sans transition ${
+                className={`min-h-[44px] flex items-center space-x-1.5 px-3 py-2 rounded text-xs font-sans transition ${
                   isLight
                     ? "text-[#2D3339] bg-[#EFEFEA] hover:bg-[#E5E5DC] border border-[#D5D5CA]"
                     : "text-slate-300 bg-[#111622] hover:bg-[#1A2230] border border-[#1E2736]"
@@ -76,7 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Toggle Berita / Terminal permanen */}
+            {/* Toggle Berita / Terminal permanen (min 44px tap target) */}
             <div
               className={`flex items-center p-0.5 rounded border ${
                 isLight
@@ -87,7 +87,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => onModeChange("berita")}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-sans font-medium transition ${
+                className={`min-h-[40px] sm:min-h-[44px] flex items-center space-x-1.5 px-3 sm:px-3.5 py-2 rounded text-xs font-sans font-medium transition ${
                   currentMode === "berita"
                     ? "bg-[#1E7B85] text-white shadow-sm"
                     : isLight
@@ -102,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => onModeChange("terminal")}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-sans font-medium transition ${
+                className={`min-h-[40px] sm:min-h-[44px] flex items-center space-x-1.5 px-3 sm:px-3.5 py-2 rounded text-xs font-sans font-medium transition ${
                   currentMode === "terminal"
                     ? "bg-[#1E7B85] text-white shadow-sm"
                     : isLight

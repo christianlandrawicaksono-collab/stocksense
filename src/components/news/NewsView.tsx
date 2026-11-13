@@ -25,6 +25,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<MacroCategory>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [localArticleId, setLocalArticleId] = useState<string | null>(propArticleId);
+  const [isMarketSummaryExpanded, setIsMarketSummaryExpanded] = useState<boolean>(false);
 
   const activeArticleId = onOpenArticle ? propArticleId : localArticleId;
   const setActiveArticle = (id: string | null) => {
@@ -78,15 +79,16 @@ export const NewsView: React.FC<NewsViewProps> = ({
     }
   };
 
+  // Gelapkan warna teks sentimen positif & negatif untuk memenuhi WCAG AA kontras tinggi (> 4.5:1)
   const renderSentimentText = (sentiment: SentimentType) => {
     switch (sentiment) {
       case "BULLISH":
-        return <span className="text-[#2EB886] font-medium">Sentimen positif</span>;
+        return <span className="text-[#0D6343] font-medium">Sentimen positif</span>;
       case "BEARISH":
-        return <span className="text-[#DC525F] font-medium">Sentimen negatif</span>;
+        return <span className="text-[#B91C1C] font-medium">Sentimen negatif</span>;
       case "NEUTRAL":
       default:
-        return <span className="text-[#5A6068] font-medium">Sentimen netral</span>;
+        return <span className="text-[#4B5563] font-medium">Sentimen netral</span>;
     }
   };
 
@@ -94,12 +96,12 @@ export const NewsView: React.FC<NewsViewProps> = ({
     <div className="w-full text-[#1A1C1E] font-sans">
       {/* JIKA MEMBUKA HALAMAN ARTIKEL */}
       {activeArticle ? (
-        <article className="max-w-[680px] mx-auto py-8 px-4 sm:px-0 space-y-6">
-          {/* Navigasi kembali ke daftar */}
+        <article className="max-w-[680px] mx-auto py-6 px-4 sm:px-0 space-y-6">
+          {/* Navigasi kembali ke daftar dengan area ketuk minimal 44px */}
           <button
             type="button"
             onClick={() => setActiveArticle(null)}
-            className="text-xs text-[#1E7B85] hover:underline font-medium block"
+            className="min-h-[44px] inline-flex items-center text-xs text-[#1E7B85] hover:underline font-medium"
           >
             ← Kembali ke daftar berita
           </button>
@@ -118,7 +120,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
               {activeArticle.title}
             </h1>
 
-            {/* Baris meta teks biasa: kategori | sentimen | tanggal */}
+            {/* Baris meta teks biasa: kategori | sentimen | tanggal skenario */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#5A6068] pt-1">
               <span>{getCategoryLabel(activeArticle.category)}</span>
               <span className="text-[#D8D8CF]">|</span>
@@ -165,7 +167,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
               </span>
             </div>
 
-            {/* Desktop Hairline Table (hidden on small mobile) */}
+            {/* Desktop Hairline Table (hidden on mobile) */}
             <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs divide-y divide-[#E5E5DC]">
                 <thead>
@@ -197,7 +199,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                                   onClick={() =>
                                     onSelectStockFromNews(ticker, activeArticle.id, activeArticle.title)
                                   }
-                                  className="text-[#1E7B85] hover:underline font-semibold"
+                                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-2 py-1 text-[#1E7B85] hover:underline font-semibold"
                                   title={`Buka ${ticker} di Terminal`}
                                 >
                                   {ticker}
@@ -205,7 +207,10 @@ export const NewsView: React.FC<NewsViewProps> = ({
                               );
                             }
                             return (
-                              <span key={ticker} className="text-[#9CA3AF]">
+                              <span
+                                key={ticker}
+                                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-1 text-[#9CA3AF]"
+                              >
                                 {ticker}
                               </span>
                             );
@@ -221,16 +226,16 @@ export const NewsView: React.FC<NewsViewProps> = ({
               </table>
             </div>
 
-            {/* Mobile Stacked List (per sektor bertumpuk, nyaman di layar HP) */}
+            {/* Mobile Stacked List (per sektor bertumpuk, area ketuk min 44px) */}
             <div className="sm:hidden divide-y divide-[#E5E5DC]">
               {activeArticle.sectorImpacts.map((sec, idx) => (
-                <div key={idx} className="py-3 space-y-1.5 text-xs">
+                <div key={idx} className="py-3.5 space-y-2 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-[#1A1C1E]">{sec.sector}</span>
                     {renderSentimentText(sec.sentiment)}
                   </div>
-                  <div className="flex items-center space-x-1.5 font-mono tnum">
-                    <span className="text-[#5A6068] font-sans">Emiten:</span>
+                  <div className="flex flex-wrap items-center gap-2 font-mono tnum pt-0.5">
+                    <span className="text-[#5A6068] font-sans text-xs">Emiten:</span>
                     {sec.tickers.map((ticker) => {
                       const isSupported = SUPPORTED_TERMINAL_TICKERS.has(ticker);
                       if (isSupported) {
@@ -241,20 +246,24 @@ export const NewsView: React.FC<NewsViewProps> = ({
                             onClick={() =>
                               onSelectStockFromNews(ticker, activeArticle.id, activeArticle.title)
                             }
-                            className="text-[#1E7B85] hover:underline font-semibold"
+                            className="min-h-[44px] min-w-[48px] px-3 py-2 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D5D5CA] text-xs font-semibold inline-flex items-center justify-center transition"
+                            title={`Buka ${ticker} di Terminal`}
                           >
-                            {ticker}
+                            {ticker} ↗
                           </button>
                         );
                       }
                       return (
-                        <span key={ticker} className="text-[#9CA3AF]">
+                        <span
+                          key={ticker}
+                          className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-2 text-[#9CA3AF] text-xs"
+                        >
                           {ticker}
                         </span>
                       );
                     })}
                   </div>
-                  <p className="text-[#3E4349] leading-relaxed pt-0.5">
+                  <p className="text-[#3E4349] leading-relaxed pt-1">
                     {sec.impactDescription}
                   </p>
                 </div>
@@ -267,12 +276,12 @@ export const NewsView: React.FC<NewsViewProps> = ({
             </p>
           </section>
 
-          {/* Link kembali di bawah artikel */}
+          {/* Link kembali di bawah artikel dengan area ketuk minimal 44px */}
           <div className="pt-6 border-t border-[#E5E5DC]">
             <button
               type="button"
               onClick={() => setActiveArticle(null)}
-              className="text-xs text-[#1E7B85] hover:underline font-medium block"
+              className="min-h-[44px] inline-flex items-center text-xs text-[#1E7B85] hover:underline font-medium"
             >
               ← Kembali ke daftar berita
             </button>
@@ -291,21 +300,30 @@ export const NewsView: React.FC<NewsViewProps> = ({
             </p>
           </div>
 
-          {/* Ringkasan pasar: satu paragraf biasa berlabel data contoh (Risk index 62/100 telah dihapus) */}
-          <div className="text-xs sm:text-sm text-[#3E4349] leading-relaxed border-b border-[#E5E5DC] pb-4">
-            <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar (data contoh): </span>
-            {MACRO_MARKET_SUMMARY.summaryBrief}
+          {/* Ringkasan pasar: Di HP dipotong 2 baris dengan 'Selengkapnya', di Desktop tampil penuh */}
+          <div className="text-xs sm:text-sm text-[#3E4349] leading-relaxed border-b border-[#E5E5DC] pb-3">
+            <div className={!isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""}>
+              <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar (data contoh): </span>
+              {MACRO_MARKET_SUMMARY.summaryBrief}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMarketSummaryExpanded(!isMarketSummaryExpanded)}
+              className="sm:hidden text-xs text-[#1E7B85] hover:underline font-medium min-h-[44px] inline-flex items-center"
+            >
+              {isMarketSummaryExpanded ? "Tutup ringkasan" : "Selengkapnya"}
+            </button>
           </div>
 
           {/* Baris Kontrol: Toggle periode + Kategori tab garis bawah + Kolom pencarian */}
           <div className="space-y-3 border-b border-[#E5E5DC] pb-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              {/* Toggle 1 Minggu vs 1 Bulan sebagai tab teks bergaris bawah */}
+              {/* Toggle 1 Minggu vs 1 Bulan sebagai tab teks bergaris bawah (min-h 44px) */}
               <div className="flex items-center space-x-4 text-xs">
                 <button
                   type="button"
                   onClick={() => setSelectedPeriod("1W")}
-                  className={`pb-1 transition font-medium ${
+                  className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
                     selectedPeriod === "1W"
                       ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
                       : "text-[#5A6068] hover:text-[#1A1C1E]"
@@ -316,7 +334,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedPeriod("1M")}
-                  className={`pb-1 transition font-medium ${
+                  className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
                     selectedPeriod === "1M"
                       ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
                       : "text-[#5A6068] hover:text-[#1A1C1E]"
@@ -326,21 +344,21 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 </button>
               </div>
 
-              {/* Kolom pencarian berita / ticker */}
+              {/* Kolom pencarian berita / ticker dengan tinggi 44px */}
               <div className="relative w-full sm:w-64">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7A8088]" />
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#7A8088]" />
                 <input
                   type="text"
                   placeholder="Cari skenario berita atau ticker..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-transparent border border-[#D8D8CF] rounded text-xs text-[#1A1C1E] placeholder-[#7A8088] focus:outline-none focus:border-[#1E7B85]"
+                  className="w-full h-[44px] pl-9 pr-3 bg-transparent border border-[#D8D8CF] rounded text-xs text-[#1A1C1E] placeholder-[#7A8088] focus:outline-none focus:border-[#1E7B85]"
                 />
               </div>
             </div>
 
-            {/* Kategori tab teks dengan garis bawah untuk yang aktif (bukan pill) */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs pt-1">
+            {/* Kategori tab teks dengan garis bawah untuk yang aktif (bukan pill, min-h 44px) */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs pt-1">
               {[
                 { id: "ALL", label: "Semua" },
                 { id: "MONETARY_CURRENCY", label: "Moneter dan FX" },
@@ -352,7 +370,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                   key={cat.id}
                   type="button"
                   onClick={() => setSelectedCategory(cat.id as MacroCategory)}
-                  className={`pb-1 transition font-medium ${
+                  className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
                     selectedCategory === cat.id
                       ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
                       : "text-[#5A6068] hover:text-[#1A1C1E]"
@@ -397,16 +415,32 @@ export const NewsView: React.FC<NewsViewProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[#5A6068] border-t border-[#E5E5DC]">
                     <div className="flex items-center space-x-2 font-mono tnum">
                       <span className="font-sans">Emiten terkait:</span>
-                      {leadStory.sectorImpacts.flatMap((s) => s.tickers).slice(0, 5).map((t) => (
-                        <span key={t} className="text-[#1A1C1E] font-medium">
-                          {t}
-                        </span>
-                      ))}
+                      {(() => {
+                        const supported = leadStory.sectorImpacts
+                          .flatMap((s) => s.tickers)
+                          .filter((t) => SUPPORTED_TERMINAL_TICKERS.has(t));
+                        const other = leadStory.sectorImpacts
+                          .flatMap((s) => s.tickers)
+                          .filter((t) => !SUPPORTED_TERMINAL_TICKERS.has(t));
+                        const combined = Array.from(new Set([...supported, ...other])).slice(0, 5);
+                        return combined.map((t) => (
+                          <span
+                            key={t}
+                            className={
+                              SUPPORTED_TERMINAL_TICKERS.has(t)
+                                ? "text-[#1E7B85] font-semibold"
+                                : "text-[#7A8088]"
+                            }
+                          >
+                            {t}
+                          </span>
+                        ));
+                      })()}
                     </div>
                     <button
                       type="button"
                       onClick={() => setActiveArticle(leadStory.id)}
-                      className="text-[#1E7B85] hover:underline font-medium"
+                      className="min-h-[44px] inline-flex items-center text-[#1E7B85] hover:underline font-medium"
                     >
                       Baca analisis lengkap →
                     </button>
@@ -414,9 +448,9 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 </div>
               )}
 
-              {/* Daftar warta lainnya bertanggal dengan ticker terkait di bawahnya (tanpa kartu) */}
+              {/* Warta lainnya: Sentence case, tanpa uppercase */}
               <div className="lg:col-span-5 space-y-5 lg:border-l lg:border-[#E5E5DC] lg:pl-8">
-                <span className="text-xs font-semibold text-[#5A6068] block uppercase tracking-wide">
+                <span className="text-xs font-semibold text-[#5A6068] block">
                   Warta lainnya
                 </span>
 
@@ -443,7 +477,16 @@ export const NewsView: React.FC<NewsViewProps> = ({
                       <div className="flex items-center justify-between text-xs pt-1">
                         <div className="flex items-center space-x-2 font-mono tnum text-[#5A6068]">
                           {story.sectorImpacts.flatMap((s) => s.tickers).slice(0, 3).map((t) => (
-                            <span key={t}>{t}</span>
+                            <span
+                              key={t}
+                              className={
+                                SUPPORTED_TERMINAL_TICKERS.has(t)
+                                  ? "text-[#1E7B85] font-semibold"
+                                  : "text-[#9CA3AF]"
+                              }
+                            >
+                              {t}
+                            </span>
                           ))}
                         </div>
                         {renderSentimentText(story.marketSentiment)}
