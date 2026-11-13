@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { STOCKS_DATA } from "@/data/stocksData";
-import { formatNumber } from "@/lib/format";
+import { formatNumber, formatMultiple, formatPersen } from "@/lib/format";
 import { Search, ArrowUpDown } from "lucide-react";
 
 interface TerminalWatchlistProps {
@@ -92,7 +92,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
             { id: "DIVIDEND", label: "Dividen > 5%" },
             { id: "UNDERVALUED", label: "P/E < 12x" },
             { id: "PROFITABLE", label: "ROE > 18%" },
-            { id: "LOW_DEBT", label: "DER < 1.0x" },
+            { id: "LOW_DEBT", label: "DER < 1,0x" },
           ].map((preset) => (
             <button
               key={preset.id}
@@ -128,10 +128,10 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         <button
           onClick={() => handleSort("change1D")}
           className="col-span-2 text-right flex items-center justify-end space-x-0.5 hover:text-slate-200"
-          title="Perubahan sesi snapshot terakhir"
+          title="Perubahan harga hari ini (data ilustrasi)"
         >
-          <span>1H %</span>
-          <ArrowUpDown className="w-2.5 h-2.5" />
+          <span className="truncate">Hari ini*</span>
+          <ArrowUpDown className="w-2.5 h-2.5 shrink-0" />
         </button>
         <button
           onClick={() => handleSort("peRatio")}
@@ -186,7 +186,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                     {formatNumber(stock.currentPrice)}
                   </span>
                   <span className="text-[11px] text-slate-400 font-mono tnum">
-                    PBV {stock.pbvRatio}x
+                    PBV {formatMultiple(stock.pbvRatio, 2)}
                   </span>
                 </div>
 
@@ -201,17 +201,17 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                         : "text-slate-400 bg-slate-800/40"
                     }`}
                   >
-                    {isUp ? `+${stock.change1D}%` : `${stock.change1D}%`}
+                    {formatPersen(stock.change1D, 1, true)}
                   </span>
                 </div>
 
                 {/* Valuation & Dividend (Mono, tnum) */}
                 <div className="col-span-3 text-right flex flex-col justify-center">
                   <span className="font-mono text-xs text-slate-200 tnum">
-                    {stock.peRatio}x
+                    {formatMultiple(stock.peRatio, 1)}
                   </span>
                   <span className="text-[11px] text-slate-400 font-mono tnum">
-                    Div {stock.dividendYield}%
+                    Div {formatPersen(stock.dividendYield, 1)}
                   </span>
                 </div>
               </div>
@@ -221,9 +221,9 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       </div>
 
       {/* Pane Footer Note */}
-      <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex items-center justify-between">
+      <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
         <span>Basis data: 9 emiten IDX</span>
-        <span>Harga: Snapshot data ilustrasi</span>
+        <span>*Data ilustrasi, bukan harga pasar</span>
       </div>
     </div>
   );

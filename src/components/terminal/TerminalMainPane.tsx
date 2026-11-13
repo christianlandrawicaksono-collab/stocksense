@@ -2,11 +2,22 @@
 
 import React, { useState, useMemo } from "react";
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
-import { formatNumber, formatRupiah, parseFormattedNumber } from "@/lib/format";
-import { Layers, Calculator, Info } from "lucide-react";
+import {
+  formatNumber,
+  formatDesimal,
+  formatMultiple,
+  formatPersen,
+  formatRupiah,
+  formatTanggalBulanTahun,
+  parseFormattedNumber,
+  calculateAnnualizedIRR,
+} from "@/lib/format";
+import { Layers, Calculator, Info, ArrowLeft } from "lucide-react";
 
 interface TerminalMainPaneProps {
   selectedTicker: string;
+  originNewsTitle?: string | null;
+  onBackToNews?: () => void;
 }
 
 type TerminalTab = "valuation" | "simulator" | "fundamental";
@@ -14,6 +25,8 @@ type ChartTimeframe = "1Th" | "3Th" | "5Th" | "Semua";
 
 export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   selectedTicker,
+  originNewsTitle,
+  onBackToNews,
 }) => {
   const [activeTab, setActiveTab] = useState<TerminalTab>("valuation");
   const [chartTf, setChartTf] = useState<ChartTimeframe>("Semua");
@@ -61,6 +74,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   const meanUpside = ((targetMeanPrice - stock.currentPrice) / stock.currentPrice) * 100;
 
   // Valuation Diagnosis: Computed dynamically from current P/E position vs bands
+  // Contrast increased with vivid text & deep solid borders
   const valuationDiagnosis = useMemo(() => {
     const pe = stock.peRatio;
     const mean = stock.historicalPeMean;
@@ -69,37 +83,37 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     const sd1Plus = stock.peSd1Plus;
 
     const diffPercent = ((pe - mean) / mean) * 100;
-    const absDiff = Math.abs(diffPercent).toFixed(1);
+    const absDiff = Math.abs(diffPercent);
 
     if (pe <= sd2Minus) {
       return {
         label: "Diskon ekstrim (di bawah -2 SD)",
-        color: "text-[#2EB886] bg-[#2EB886]/10 border-[#2EB886]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada di bawah batas -2 SD (${sd2Minus}x), ${absDiff}% di bawah rerata acuan (${mean}x). Area deviasi terendah secara komparatif.`
+        color: "text-[#34D399] bg-[#064E3B] border-[#059669] font-medium",
+        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada di bawah batas -2 SD (${formatMultiple(sd2Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata acuan (${formatMultiple(mean, 1)}). Area deviasi terendah secara komparatif.`
       };
     } else if (pe <= sd1Minus) {
       return {
         label: "Undervalued (antara -2 SD dan -1 SD)",
-        color: "text-[#2EB886] bg-[#2EB886]/10 border-[#2EB886]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada pada rentang deviasi rendah (${sd2Minus}x – ${sd1Minus}x), ${absDiff}% di bawah rerata acuan (${mean}x).`
+        color: "text-[#34D399] bg-[#064E3B] border-[#059669] font-medium",
+        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada pada rentang deviasi rendah (${formatMultiple(sd2Minus, 1)} – ${formatMultiple(sd1Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata acuan (${formatMultiple(mean, 1)}).`
       };
     } else if (pe <= mean) {
       return {
         label: "Valuasi wajar (antara -1 SD dan rerata)",
-        color: "text-[#1E7B85] bg-[#1E7B85]/10 border-[#1E7B85]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada mendekati rerata acuan (${mean}x), ${absDiff}% di bawah titik tengah.`
+        color: "text-[#38BDF8] bg-[#0C4A6E] border-[#0284C7] font-medium",
+        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada mendekati rerata acuan (${formatMultiple(mean, 1)}), ${formatPersen(absDiff, 1)} di bawah titik tengah.`
       };
     } else if (pe <= sd1Plus) {
       return {
         label: "Cukup premium (antara rerata dan +1 SD)",
-        color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
-        verdict: `Rasio P/E saat ini (${pe}x) berada ${absDiff}% di atas rerata acuan (${mean}x), berada di bawah batas atas +1 SD (${sd1Plus}x).`
+        color: "text-[#FDE047] bg-[#78350F] border-[#D97706] font-medium",
+        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada ${formatPersen(absDiff, 1)} di atas rerata acuan (${formatMultiple(mean, 1)}), berada di bawah batas atas +1 SD (${formatMultiple(sd1Plus, 1)}).`
       };
     } else {
       return {
         label: "Overvalued (di atas +1 SD)",
-        color: "text-[#DC525F] bg-[#DC525F]/10 border-[#DC525F]/30",
-        verdict: `Rasio P/E saat ini (${pe}x) melampaui batas deviasi atas +1 SD (${sd1Plus}x), ${absDiff}% di atas rerata acuan (${mean}x).`
+        color: "text-[#F87171] bg-[#7F1D1D] border-[#DC2626] font-medium",
+        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) melampaui batas deviasi atas +1 SD (${formatMultiple(sd1Plus, 1)}), ${formatPersen(absDiff, 1)} di atas rerata acuan (${formatMultiple(mean, 1)}).`
       };
     }
   }, [stock]);
@@ -203,11 +217,27 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       ? ((finalPoint.portfolioValue - finalPoint.totalInvested) / finalPoint.totalInvested) * 100
       : 0;
 
-    // Years duration = quarters / 4
+    // Duration in years
     const years = totalQuarters / 4;
-    const cagr = years >= 1 && finalPoint.totalInvested > 0
-      ? (Math.pow(finalPoint.portfolioValue / finalPoint.totalInvested, 1 / years) - 1) * 100
-      : null;
+
+    // Money-Weighted Internal Rate of Return (IRR)
+    const cashFlows: number[] = [];
+    for (let i = 0; i < series.length; i++) {
+      let cf = 0;
+      if (i === 0) {
+        if (initialCapital > 0) cf -= initialCapital;
+      } else {
+        if (quarterlyDCA > 0) cf -= quarterlyDCA;
+      }
+      if (i === series.length - 1) {
+        cf += finalPoint.portfolioValue;
+      }
+      cashFlows.push(cf);
+    }
+    const firstNonZero = cashFlows.findIndex((c) => c !== 0);
+    const validCashFlows = firstNonZero >= 0 ? cashFlows.slice(firstNonZero) : [];
+    const irr = calculateAnnualizedIRR(validCashFlows);
+    const simpleAnnualReturn = years > 0 ? totalReturnPercent / years : null;
 
     const ihsgFinalReturn = finalPoint.totalInvested > 0
       ? ((finalPoint.ihsgValue - finalPoint.totalInvested) / finalPoint.totalInvested) * 100
@@ -221,20 +251,55 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       finalValue: finalPoint.portfolioValue,
       netProfit,
       totalReturnPercent,
-      cagr,
+      irr,
+      simpleAnnualReturn,
       maxDrawdown,
       totalDividendsReceived: currentDividends,
       alphaVsIhsg
     };
   }, [selectedTicker, quarterlyDCA, initialCapital, simStartYear, reinvestDividends]);
 
+  // Compute neat X-axis tick indices (Maximum 4-5 ticks so they never overlap)
+  const xTickIndices = useMemo(() => {
+    const len = filteredChartSeries.length;
+    if (len <= 4) return filteredChartSeries.map((_, i) => i);
+    const step = (len - 1) / 4;
+    const raw = [
+      0,
+      Math.round(step),
+      Math.round(step * 2),
+      Math.round(step * 3),
+      len - 1
+    ];
+    return Array.from(new Set(raw));
+  }, [filteredChartSeries]);
+
   return (
-    <div className="h-full flex flex-col space-y-4 font-sans">
-      {/* 1. TOP SECTION: SELECTED STOCK BANNER & CLEAN LINE PRICE CHART */}
+    <div className="flex flex-col space-y-4 font-sans">
+      {/* Origin News Banner (if navigated from news article) */}
+      {originNewsTitle && (
+        <div className="bg-[#141C2B] border border-[#1E7B85]/50 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-slate-200 shadow-md">
+          <div className="flex items-center space-x-2 truncate">
+            <span className="text-[#38BDF8] font-semibold whitespace-nowrap">Berita asal:</span>
+            <span className="truncate italic text-slate-300">&ldquo;{originNewsTitle}&rdquo;</span>
+          </div>
+          {onBackToNews && (
+            <button
+              onClick={onBackToNews}
+              className="ml-3 shrink-0 px-3 py-1 bg-[#1E7B85] text-white rounded-lg text-xs font-medium hover:bg-[#1E7B85]/80 transition flex items-center space-x-1"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Kembali ke Berita</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 1. TOP SECTION: PERMANENT CLEAN PRICE CHART */}
       <div className="bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg">
-        {/* Stock Information Header */}
-        <div className="p-3.5 md:p-4 border-b border-[#1E2736] bg-[#0E131C] flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center space-x-3">
+        {/* Header Bar: Ticker info, Current Price, and Timeframe controls */}
+        <div className="p-4 border-b border-[#1E2736] flex flex-wrap items-center justify-between gap-3 bg-[#0E131C]">
+          <div className="flex items-center space-x-4">
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-mono text-xl font-bold text-white tnum">
@@ -262,7 +327,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     : "text-[#DC525F] bg-[#DC525F]/10"
                 }`}
               >
-                {stock.change1D >= 0 ? `+${stock.change1D}%` : `${stock.change1D}%`}
+                {formatPersen(stock.change1D, 1, true)}
               </span>
             </div>
           </div>
@@ -288,15 +353,16 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         {/* SVG Pure Line Chart Section with Axis, Labels, and Tooltip */}
         <div className="p-4 bg-[#111622]">
           {/* Responsive Header: Stacked vertically on mobile, row on tablet/desktop */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-slate-400 mb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-slate-400 mb-2 font-sans">
             <span>Grafik harga penutupan kuartalan (data ilustrasi, 2020–2026)</span>
-            <span className="font-mono tnum text-slate-300">
+            <span className="text-slate-200 font-sans">
               {hoverIndex !== null && filteredChartSeries[hoverIndex]
-                ? `${filteredChartSeries[hoverIndex].date}: ${formatRupiah(filteredChartSeries[hoverIndex].price)}`
+                ? `${formatTanggalBulanTahun(filteredChartSeries[hoverIndex].date)}: ${formatRupiah(filteredChartSeries[hoverIndex].price)}`
                 : "Sentuh atau arahkan kursor ke grafik"}
             </span>
           </div>
 
+          {/* Chart Canvas */}
           <div className="relative w-full h-56 pt-2">
             {(() => {
               const data = filteredChartSeries;
@@ -383,27 +449,27 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                       );
                     })}
 
-                    {/* X-axis Date/Year Labels */}
-                    {data.map((d, i) => {
+                    {/* X-axis Date Labels: Reduced to 4-5 ticks in "Mar 2021" format, font-sans */}
+                    {xTickIndices.map((i) => {
+                      const d = data[i];
+                      if (!d) return null;
                       const isFirst = i === 0;
                       const isLast = i === data.length - 1;
-                      const isYearStart = d.date.endsWith("-03") || d.date.endsWith("-01");
-                      if (isFirst || isLast || isYearStart) {
-                        return (
-                          <text
-                            key={`lbl-${i}`}
-                            x={getX(i)}
-                            y={chartHeight - 6}
-                            textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
-                            fill="#64748B"
-                            fontSize="9.5"
-                            fontFamily="monospace"
-                          >
-                            {d.date}
-                          </text>
-                        );
-                      }
-                      return null;
+                      const formattedDate = formatTanggalBulanTahun(d.date);
+
+                      return (
+                        <text
+                          key={`lbl-${i}`}
+                          x={getX(i)}
+                          y={chartHeight - 6}
+                          textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
+                          fill="#94A3B8"
+                          fontSize="9.5"
+                          fontFamily="var(--font-sans), sans-serif"
+                        >
+                          {formattedDate}
+                        </text>
+                      );
                     })}
 
                     {/* Hover cursor point and vertical line */}
@@ -446,24 +512,30 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     ))}
                   </div>
 
-                  {/* Tooltip on hover */}
+                  {/* Tooltip on hover using IBM Plex Sans font */}
                   {hoverIndex !== null && data[hoverIndex] && (
                     <div
-                      className="absolute z-20 pointer-events-none p-2 rounded-lg bg-[#0C1017] border border-[#20293A] shadow-xl text-xs font-mono tnum"
+                      className="absolute z-20 pointer-events-none p-2.5 rounded-lg bg-[#0C1017] border border-[#20293A] shadow-xl text-xs font-sans"
                       style={{
                         left: `${Math.min(75, Math.max(15, (hoverIndex / (data.length - 1)) * 100))}%`,
                         top: "10px"
                       }}
                     >
                       <div className="text-slate-300 font-semibold border-b border-slate-800 pb-1 mb-1">
-                        Periode: {data[hoverIndex].date}
+                        {formatTanggalBulanTahun(data[hoverIndex].date)}
                       </div>
-                      <div className="text-slate-200">
-                        Harga: {formatRupiah(data[hoverIndex].price)}
+                      <div className="text-slate-200 flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Harga:</span>
+                        <span className="font-mono tnum text-white font-semibold">
+                          {formatRupiah(data[hoverIndex].price)}
+                        </span>
                       </div>
                       {data[hoverIndex].dividend && data[hoverIndex].dividend! > 0 && (
-                        <div className="text-amber-400 text-[11px] mt-0.5">
-                          Dividen: {formatRupiah(data[hoverIndex].dividend!)} / lbr
+                        <div className="text-amber-400 text-[11px] mt-0.5 flex items-center justify-between gap-3">
+                          <span>Dividen:</span>
+                          <span className="font-mono tnum font-semibold">
+                            {formatRupiah(data[hoverIndex].dividend!)} / lbr
+                          </span>
                         </div>
                       )}
                     </div>
@@ -473,9 +545,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             })()}
           </div>
 
-          {/* Chart Subtitle & Legend */}
-          <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-[#1C2433]">
-            <span>Sumbu X: Periode kuartal • Sumbu Y: Harga saham (Rp)</span>
+          {/* Chart Legend */}
+          <div className="flex items-center justify-end text-xs text-slate-400 pt-2 border-t border-[#1C2433]">
             <span className="flex items-center space-x-1.5">
               <span className="inline-block w-2 h-2 rounded-full bg-[#F59E0B]"></span>
               <span>Titik dividen tunai</span>
@@ -533,14 +604,14 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           <div className="p-4 md:p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1E2736]">
               <div>
-                <span className="text-xs text-slate-400 block">
+                <span className="text-xs text-slate-400 block font-sans">
                   Diagnosis valuasi P/E (dihitung otomatis dari data acuan)
                 </span>
-                <span className="text-sm font-semibold text-slate-100 mt-0.5 block">
+                <span className="text-sm font-semibold text-slate-100 mt-0.5 block font-sans">
                   {valuationDiagnosis.verdict}
                 </span>
               </div>
-              <div className={`px-3 py-1.5 rounded-lg border text-xs font-sans font-medium self-start sm:self-center ${valuationDiagnosis.color}`}>
+              <div className={`px-3 py-1.5 rounded-lg border text-xs font-sans shadow-sm self-start sm:self-center ${valuationDiagnosis.color}`}>
                 {valuationDiagnosis.label}
               </div>
             </div>
@@ -553,23 +624,23 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   Pita deviasi P/E (berdasarkan EPS saat ini: {formatRupiah(impliedEPS)})
                 </span>
                 <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                  <span>+2 SD (Mahal ekstrim - {stock.peSd2Plus}x)</span>
+                  <span>+2 SD (Mahal ekstrim - {formatMultiple(stock.peSd2Plus, 1)})</span>
                   <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2PlusPrice)}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                  <span>+1 SD (Di atas rerata - {stock.peSd1Plus}x)</span>
+                  <span>+1 SD (Di atas rerata - {formatMultiple(stock.peSd1Plus, 1)})</span>
                   <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1PlusPrice)}</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-[#1E7B85]/30 bg-[#1E7B85]/10 px-1 rounded text-slate-100 font-medium">
-                  <span>Mean (Harga wajar acuan - {stock.historicalPeMean}x)</span>
+                  <span>Mean (Harga wajar acuan - {formatMultiple(stock.historicalPeMean, 1)})</span>
                   <span className="font-mono tnum">{formatRupiah(targetMeanPrice)}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                  <span>-1 SD (Area undervalued - {stock.peSd1Minus}x)</span>
+                  <span>-1 SD (Area undervalued - {formatMultiple(stock.peSd1Minus, 1)})</span>
                   <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1MinusPrice)}</span>
                 </div>
                 <div className="flex justify-between py-1 text-slate-400">
-                  <span>-2 SD (Diskon ekstrim - {stock.peSd2Minus}x)</span>
+                  <span>-2 SD (Diskon ekstrim - {formatMultiple(stock.peSd2Minus, 1)})</span>
                   <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2MinusPrice)}</span>
                 </div>
               </div>
@@ -583,8 +654,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   <span className="text-lg font-bold font-mono text-slate-100 tnum">
                     {formatRupiah(targetMeanPrice)}
                   </span>
-                  <span className={`text-xs block mt-0.5 ${meanUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
-                    Potensi: {meanUpside >= 0 ? `+${meanUpside.toFixed(1)}%` : `${meanUpside.toFixed(1)}%`}
+                  <span className={`text-xs block mt-0.5 font-mono tnum ${meanUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
+                    Potensi: {formatPersen(meanUpside, 1, true)}
                   </span>
                 </div>
 
@@ -595,8 +666,11 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   <span className="text-lg font-bold font-mono text-slate-100 tnum">
                     {formatRupiah(grahamNumber)}
                   </span>
-                  <span className={`text-xs block mt-0.5 ${grahamUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
-                    Potensi: {grahamUpside >= 0 ? `+${grahamUpside.toFixed(1)}%` : `${grahamUpside.toFixed(1)}%`}
+                  <span className={`text-xs block mt-0.5 font-mono tnum ${grahamUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
+                    Potensi: {formatPersen(grahamUpside, 1, true)}
+                  </span>
+                  <span className="text-[11px] text-slate-500 block mt-1.5 font-sans leading-tight">
+                    Catatan: Kurang relevan untuk perbankan dan saham pertumbuhan.
                   </span>
                 </div>
               </div>
@@ -657,16 +731,27 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 </select>
               </div>
 
+              {/* Explicit DRIP Toggle Button */}
               <div className="flex flex-col justify-end">
                 <button
+                  type="button"
                   onClick={() => setReinvestDividends(!reinvestDividends)}
-                  className={`w-full py-1.5 px-2 rounded text-xs transition text-center ${
+                  className={`w-full py-1.5 px-3 rounded-lg text-xs font-sans transition flex items-center justify-between border ${
                     reinvestDividends
-                      ? "bg-[#1E7B85]/20 text-slate-100 border border-[#1E7B85]/40"
-                      : "bg-[#171F2C] text-slate-400 border border-[#232F42]"
+                      ? "bg-[#1E7B85]/20 text-white border-[#1E7B85]"
+                      : "bg-[#111622] text-slate-400 border-[#20293A]"
                   }`}
                 >
-                  {reinvestDividends ? "Reinvestasi dividen (DRIP)" : "Dividen cair kas"}
+                  <span className="truncate">Reinvestasi dividen:</span>
+                  <span
+                    className={`ml-1.5 px-2 py-0.5 rounded text-[11px] font-semibold shrink-0 ${
+                      reinvestDividends
+                        ? "bg-[#1E7B85] text-white"
+                        : "bg-slate-800 text-slate-400"
+                    }`}
+                  >
+                    {reinvestDividends ? "Ya" : "Tidak"}
+                  </span>
                 </button>
               </div>
             </div>
@@ -678,8 +763,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   <span className="font-semibold text-slate-200">
                     Hasil kalkulasi simulasi DCA (data ilustrasi: {simStartYear} – 2026, {simulationResults.totalQuarters} kuartal)
                   </span>
-                  <span className="text-slate-400">
-                    Durasi: {simulationResults.years.toFixed(1)} tahun
+                  <span className="text-slate-400 font-mono tnum">
+                    Durasi: {formatDesimal(simulationResults.years, 1)} tahun
                   </span>
                 </div>
 
@@ -717,18 +802,24 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                           simulationResults.totalReturnPercent >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"
                         }`}
                       >
-                        ({simulationResults.totalReturnPercent >= 0 ? "+" : ""}
-                        {simulationResults.totalReturnPercent.toFixed(1)}%)
+                        ({formatPersen(simulationResults.totalReturnPercent, 1, true)})
                       </span>
                     </div>
                   </div>
 
-                  {/* CAGR */}
-                  <div className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-slate-400">Laju pertumbuhan tahunan majemuk (CAGR simulasi):</span>
-                    <span className="text-slate-200 font-mono tnum">
-                      {simulationResults.cagr !== null
-                        ? `+${simulationResults.cagr.toFixed(2)}% / tahun`
+                  {/* Money-Weighted Rate of Return (IRR) */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 gap-1">
+                    <div>
+                      <span className="text-slate-400 block">Laju imbal hasil tahunan (IRR - Money-Weighted):</span>
+                      <span className="text-[10px] text-slate-500 block">
+                        Memperhitungkan waktu tiap setoran berkala (DCA), bukan modal awal sekaligus.
+                      </span>
+                    </div>
+                    <span className="text-slate-200 font-mono tnum font-semibold self-end sm:self-center">
+                      {simulationResults.irr !== null
+                        ? `${formatPersen(simulationResults.irr, 1, true)} / tahun`
+                        : simulationResults.simpleAnnualReturn !== null
+                        ? `${formatPersen(simulationResults.simpleAnnualReturn, 1, true)} / tahun (sederhana)`
                         : "Periode < 1 tahun"}
                     </span>
                   </div>
@@ -745,7 +836,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   <div className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-slate-400">Penurunan terbesar dari puncak (drawdown):</span>
                     <span className="text-slate-200 font-mono tnum">
-                      -{simulationResults.maxDrawdown.toFixed(1)}%
+                      -{formatPersen(simulationResults.maxDrawdown, 1)}
                     </span>
                   </div>
 
@@ -757,8 +848,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                         simulationResults.alphaVsIhsg >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"
                       }`}
                     >
-                      {simulationResults.alphaVsIhsg >= 0 ? "+" : ""}
-                      {simulationResults.alphaVsIhsg.toFixed(1)}%{" "}
+                      {formatPersen(simulationResults.alphaVsIhsg, 1, true)}{" "}
                       <span className="font-sans font-normal text-xs text-slate-400">
                         ({simulationResults.alphaVsIhsg >= 0 ? "mengungguli simulasi IHSG" : "di bawah simulasi IHSG"})
                       </span>
@@ -767,7 +857,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 </div>
 
                 <div className="p-2.5 bg-[#0A0D14] border-t border-[#1E2736] text-[11px] text-slate-400">
-                  Perhitungan berbasis 29 titik kuartalan data ilustrasi. Setiap siklus mewakili penutupan 1 kuartal (3 bulan). Angka CAGR dan Alpha merupakan hasil kalkulasi simulasi atas data ilustrasi ini.
+                  Perhitungan berbasis 29 titik kuartalan data ilustrasi. Setiap siklus mewakili penutupan 1 kuartal (3 bulan). Angka IRR dan Alpha merupakan hasil kalkulasi simulasi atas data ilustrasi ini.
                 </div>
               </div>
             ) : (
@@ -782,7 +872,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         {activeTab === "fundamental" && (
           <div className="p-4 md:p-5 space-y-4">
             <div className="text-[11px] text-slate-400 bg-[#0C1017] px-3 py-1.5 rounded-lg border border-[#1E2736]">
-              Ringkasan contoh data profil emiten (analisis internal laporan publik)
+              Ringkasan contoh, belum diverifikasi
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
@@ -793,23 +883,23 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
                 <span className="text-slate-400 block text-[11px]">ROE</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{stock.roe}%</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">{formatPersen(stock.roe, 1)}</span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
                 <span className="text-slate-400 block text-[11px]">PBV Ratio</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{stock.pbvRatio}x</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">{formatMultiple(stock.pbvRatio, 2)}</span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
                 <span className="text-slate-400 block text-[11px]">DER (Utang)</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{stock.der}x</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">{formatMultiple(stock.der, 2)}</span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
                 <span className="text-slate-400 block text-[11px]">Dividend Yield</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{stock.dividendYield}%</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">{formatPersen(stock.dividendYield, 1)}</span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
                 <span className="text-slate-400 block text-[11px]">Payout Ratio</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{stock.payoutRatio}%</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">{formatPersen(stock.payoutRatio, 1)}</span>
               </div>
             </div>
 
@@ -819,26 +909,20 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 <span className="text-xs font-semibold text-slate-200 block mb-2">
                   Kekuatan dan keunggulan
                 </span>
-                <ul className="space-y-1.5 text-slate-300">
+                <ul className="space-y-1.5 text-slate-400 list-disc list-inside">
                   {stock.strengths.map((s, idx) => (
-                    <li key={idx} className="flex items-start space-x-1.5">
-                      <span className="text-[#1E7B85]">•</span>
-                      <span>{s}</span>
-                    </li>
+                    <li key={idx} className="leading-snug">{s}</li>
                   ))}
                 </ul>
               </div>
 
               <div className="p-3 bg-[#0C1017] rounded-xl border border-[#1E2736]">
                 <span className="text-xs font-semibold text-slate-200 block mb-2">
-                  Risiko yang perlu diwaspadai
+                  Faktor risiko & tantangan
                 </span>
-                <ul className="space-y-1.5 text-slate-300">
+                <ul className="space-y-1.5 text-slate-400 list-disc list-inside">
                   {stock.risks.map((r, idx) => (
-                    <li key={idx} className="flex items-start space-x-1.5">
-                      <span className="text-[#DC525F]">•</span>
-                      <span>{r}</span>
-                    </li>
+                    <li key={idx} className="leading-snug">{r}</li>
                   ))}
                 </ul>
               </div>

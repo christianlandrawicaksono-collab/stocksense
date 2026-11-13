@@ -2,6 +2,7 @@
 
 import React from "react";
 import { LIVE_MARKET_TICKERS } from "@/data/macroData";
+import { formatPersen } from "@/lib/format";
 
 export const MarketTicker: React.FC = () => {
   return (
@@ -32,7 +33,7 @@ export const MarketTicker: React.FC = () => {
                         : "text-[#DC525F] bg-[#DC525F]/10"
                     }`}
                   >
-                    {isUp ? `+${ticker.change}%` : `${ticker.change}%`}
+                    {isZero ? "0,00%" : formatPersen(ticker.change, 2, true)}
                   </span>
                 </div>
               );
