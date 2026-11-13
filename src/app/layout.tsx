@@ -25,8 +25,8 @@ const literata = Literata({
 });
 
 export const metadata: Metadata = {
-  title: "StocksSense — Analisis Pasar & Saham Indonesia",
-  description: "Terminal intelijen pasar saham Indonesia (IHSG), analisis valuasi P/E band, simulator DCA, dan transmisi makroekonomi.",
+  title: "StocksSense — Riset Transmisi Makro & Analisis Saham IDX",
+  description: "Terminal intelijen pasar saham Indonesia (IHSG), analisis valuasi P/E band, simulator DCA kuartalan, dan transmisi skenario makroekonomi.",
 };
 
 export default function RootLayout({
@@ -37,11 +37,9 @@ export default function RootLayout({
   return (
     <html
       lang="id"
-      className={`${plexSans.variable} ${plexMono.variable} ${literata.variable} h-full antialiased dark`}
+      className={`${plexSans.variable} ${plexMono.variable} ${literata.variable} h-full antialiased`}
     >
-      <body
-        className="min-h-full flex flex-col bg-[#0C1017] text-slate-100 font-sans selection:bg-[#1E7B85]/30"
-      >
+      <body className="min-h-full flex flex-col font-sans selection:bg-[#1E7B85]/20">
         {children}
       </body>
     </html>

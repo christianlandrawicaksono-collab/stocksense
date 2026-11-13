@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
+import { MACRO_NEWS_DATA } from "@/data/macroData";
 import {
   formatNumber,
   formatDesimal,
@@ -12,12 +13,14 @@ import {
   parseFormattedNumber,
   calculateAnnualizedIRR,
 } from "@/lib/format";
-import { Layers, Calculator, Info, ArrowLeft } from "lucide-react";
+import { Layers, Calculator, Info, ArrowLeft, X } from "lucide-react";
 
 interface TerminalMainPaneProps {
   selectedTicker: string;
-  originNewsTitle?: string | null;
-  onBackToNews?: () => void;
+  originNewsId?: string | null;
+  onSelectTicker?: (ticker: string) => void;
+  onBackToArticle?: (newsId: string) => void;
+  onCloseOriginPanel?: () => void;
 }
 
 type TerminalTab = "valuation" | "simulator" | "fundamental";
@@ -25,12 +28,29 @@ type ChartTimeframe = "1Th" | "3Th" | "5Th" | "Semua";
 
 export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   selectedTicker,
-  originNewsTitle,
-  onBackToNews,
+  originNewsId = null,
+  onSelectTicker,
+  onBackToArticle,
+  onCloseOriginPanel,
 }) => {
   const [activeTab, setActiveTab] = useState<TerminalTab>("valuation");
   const [chartTf, setChartTf] = useState<ChartTimeframe>("Semua");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  // Article origin lookup for banner and cross-stock switching
+  const originArticle = useMemo(() => {
+    if (!originNewsId) return null;
+    return MACRO_NEWS_DATA.find((n) => n.id === originNewsId) || null;
+  }, [originNewsId]);
+
+  const otherSupportedTickers = useMemo(() => {
+    if (!originArticle) return [];
+    const supported = ["ADRO", "ANTM", "ASII", "BBCA", "BBRI", "BMRI", "ICBP", "MEDC", "TLKM"];
+    const tickers = originArticle.sectorImpacts
+      .flatMap((s) => s.tickers)
+      .filter((t) => supported.includes(t) && t !== selectedTicker);
+    return Array.from(new Set(tickers));
+  }, [originArticle, selectedTicker]);
 
   // DCA Simulator inputs (Quarterly frequency matching 29 data points)
   const [quarterlyDCA, setQuarterlyDCA] = useState<number>(3000000); // Rp 3.000.000/kuartal (~1jt/bln)
@@ -100,7 +120,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     } else if (pe <= mean) {
       return {
         label: "Valuasi wajar (antara -1 SD dan rerata)",
-        color: "text-[#38BDF8] bg-[#0C4A6E] border-[#0284C7] font-medium",
+        color: "text-[#2DD4BF] bg-[#115E59]/50 border-[#14B8A6] font-medium",
         verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada mendekati rerata acuan (${formatMultiple(mean, 1)}), ${formatPersen(absDiff, 1)} di bawah titik tengah.`
       };
     } else if (pe <= sd1Plus) {
@@ -277,20 +297,54 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   return (
     <div className="flex flex-col space-y-4 font-sans">
       {/* Origin News Banner (if navigated from news article) */}
-      {originNewsTitle && (
-        <div className="bg-[#141C2B] border border-[#1E7B85]/50 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-slate-200 shadow-md">
-          <div className="flex items-center space-x-2 truncate">
-            <span className="text-[#38BDF8] font-semibold whitespace-nowrap">Berita asal:</span>
-            <span className="truncate italic text-slate-300">&ldquo;{originNewsTitle}&rdquo;</span>
+      {originArticle && (
+        <div className="bg-[#0E1622] border border-[#1E7B85]/60 rounded-xl p-3.5 space-y-2 text-xs text-slate-200 shadow-md">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center space-x-2 truncate">
+              <span className="text-[#2DD4BF] font-semibold whitespace-nowrap">Berita asal:</span>
+              <span className="truncate italic text-slate-300">&ldquo;{originArticle.title}&rdquo;</span>
+            </div>
+            <div className="flex items-center space-x-2 shrink-0">
+              {onBackToArticle && (
+                <button
+                  type="button"
+                  onClick={() => onBackToArticle(originArticle.id)}
+                  className="px-2.5 py-1 bg-[#1E7B85] hover:bg-[#1E7B85]/80 text-white rounded text-xs font-medium transition flex items-center space-x-1"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Kembali ke Berita</span>
+                </button>
+              )}
+              {onCloseOriginPanel && (
+                <button
+                  type="button"
+                  onClick={onCloseOriginPanel}
+                  className="p-1 text-slate-400 hover:text-white rounded transition"
+                  title="Tutup panel berita asal"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
-          {onBackToNews && (
-            <button
-              onClick={onBackToNews}
-              className="ml-3 shrink-0 px-3 py-1 bg-[#1E7B85] text-white rounded-lg text-xs font-medium hover:bg-[#1E7B85]/80 transition flex items-center space-x-1"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Kembali ke Berita</span>
-            </button>
+
+          {/* Emiten lain di berita ini */}
+          {otherSupportedTickers.length > 0 && onSelectTicker && (
+            <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-[#1C2738] text-[11px]">
+              <span className="text-slate-400">Emiten lain di berita ini:</span>
+              <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
+                {otherSupportedTickers.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => onSelectTicker(t)}
+                    className="px-2 py-0.5 rounded bg-[#172332] hover:bg-[#1E7B85] text-slate-200 hover:text-white border border-[#25354A] hover:border-[#1E7B85] transition"
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}

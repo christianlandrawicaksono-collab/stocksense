@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Navbar, AppMode } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
@@ -8,96 +9,163 @@ import { TerminalMainPane } from "@/components/terminal/TerminalMainPane";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 
-export default function Home() {
-  const [currentMode, setCurrentMode] = useState<AppMode>("terminal");
-  const [selectedTicker, setSelectedTicker] = useState<string>("BBCA");
-  const [originNewsTitle, setOriginNewsTitle] = useState<string | null>(null);
+function HomeContent() {
+  const searchParams = useSearchParams();
+
+  // Read initial states from URL query parameters (supports bookmarking & refresh)
+  const initialMode = (searchParams.get("mode") as AppMode) || "berita";
+  const initialSaham = searchParams.get("saham") || "BBCA";
+  const initialBerita = searchParams.get("berita") || null;
+  const initialArtikel = searchParams.get("artikel") || null;
+
+  const [currentMode, setCurrentMode] = useState<AppMode>(initialMode);
+  const [selectedTicker, setSelectedTicker] = useState<string>(initialSaham);
+  const [originNewsId, setOriginNewsId] = useState<string | null>(initialBerita);
+  const [activeArticleId, setActiveArticleId] = useState<string | null>(initialArtikel);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
 
-  const handleSelectStockFromNews = (ticker: string, newsTitle: string) => {
+  // Sync state to URL without reloading the page
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set("mode", currentMode);
+
+    if (currentMode === "terminal") {
+      params.set("saham", selectedTicker);
+      if (originNewsId) {
+        params.set("berita", originNewsId);
+      }
+    } else {
+      if (activeArticleId) {
+        params.set("artikel", activeArticleId);
+      }
+    }
+
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, "", newUrl);
+  }, [currentMode, selectedTicker, originNewsId, activeArticleId]);
+
+  // Navigate from News ticker link to Terminal
+  const handleSelectStockFromNews = (ticker: string, newsId: string) => {
     setSelectedTicker(ticker);
-    setOriginNewsTitle(newsTitle);
+    setOriginNewsId(newsId);
     setCurrentMode("terminal");
   };
 
-  const handleBackToNews = () => {
+  // Back from Terminal to the exact same News article
+  const handleBackToArticle = (newsId: string) => {
+    setActiveArticleId(newsId);
     setCurrentMode("berita");
   };
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#0C1017] text-slate-100 font-sans selection:bg-[#1E7B85]/30">
-      {/* 1. Benchmark Snapshot Ticker Bar */}
-      <MarketTicker />
+  const isLight = currentMode === "berita";
 
-      {/* 2. Top Header & Mode Switcher */}
+  return (
+    <div
+      className={`min-h-screen flex flex-col font-sans transition-colors ${
+        isLight
+          ? "bg-[#FBFBFA] text-[#1A1C1E]"
+          : "bg-[#0C1017] text-slate-100"
+      }`}
+    >
+      {/* 1. Satu strip tipis disclaimer di bagian paling atas */}
+      <div
+        className={`px-4 py-1 text-center text-xs font-sans border-b select-none ${
+          isLight
+            ? "bg-[#F3F3ED] border-[#E5E5DC] text-[#6A7078]"
+            : "bg-[#0A0D14] border-[#1E2736] text-slate-400"
+        }`}
+      >
+        <span>Data ilustrasi, bukan harga pasar</span>
+      </div>
+
+      {/* 2. Ticker bar: HANYA TAMPIL DI TERMINAL (tidak di mode Berita) */}
+      {currentMode === "terminal" && <MarketTicker />}
+
+      {/* 3. Header navigasi permanen dengan toggle Berita/Terminal */}
       <Navbar
         currentMode={currentMode}
         onModeChange={(mode) => setCurrentMode(mode)}
         onOpenAiModal={() => setIsAiModalOpen(true)}
       />
 
-      {/* 3. Permanent Small Banner: Data ilustrasi, bukan harga pasar */}
-      <div className="bg-[#0A0D14] border-b border-[#1E2736] px-4 py-1 text-center text-xs text-slate-400 font-sans flex items-center justify-center space-x-2 select-none">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#1E7B85]"></span>
-        <span>Data ilustrasi, bukan harga pasar</span>
-      </div>
-
-      {/* 4. Main Workspace Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 lg:px-6 py-4">
+      {/* 4. Area Konten Utama */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {currentMode === "terminal" ? (
-          /* DENSE 2-COLUMN TERMINAL WORKSPACE */
+          /* TAMPILAN TERMINAL GELAP */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-            {/* Left Column: Combined Watchlist & Screener (4 of 12 cols on xl, 5 on lg) */}
+            {/* Kolom Kiri: Watchlist & Penyaring */}
             <div className="lg:col-span-5 xl:col-span-4 h-[750px]">
               <TerminalWatchlist
                 selectedTicker={selectedTicker}
-                onSelectTicker={(ticker) => {
-                  setSelectedTicker(ticker);
-                  // Clear origin news title if user manually changes ticker in watchlist
-                  setOriginNewsTitle(null);
-                }}
+                onSelectTicker={(ticker) => setSelectedTicker(ticker)}
               />
             </div>
 
-            {/* Right Column: Top Line Chart + Tabbed Analysis below (8 of 12 cols) */}
+            {/* Kolom Kanan: Grafik + Panel Tab Analisis */}
             <div className="lg:col-span-7 xl:col-span-8 min-h-[750px]">
               <TerminalMainPane
                 selectedTicker={selectedTicker}
-                originNewsTitle={originNewsTitle}
-                onBackToNews={handleBackToNews}
+                originNewsId={originNewsId}
+                onSelectTicker={(ticker) => setSelectedTicker(ticker)}
+                onBackToArticle={handleBackToArticle}
+                onCloseOriginPanel={() => setOriginNewsId(null)}
               />
             </div>
           </div>
         ) : (
-          /* MODE BERITA: EDITORIAL BROADSHEET TRANSMISI KEBIJAKAN */
+          /* TAMPILAN BERITA TERANG PENUH (tanpa bingkai/tepi gelap) */
           <div className="w-full">
             <NewsView
               onSelectStockFromNews={handleSelectStockFromNews}
+              activeArticleId={activeArticleId}
+              onOpenArticle={(id) => setActiveArticleId(id)}
             />
           </div>
         )}
       </main>
 
-      {/* 5. Terminal & News Footer */}
-      <footer className="border-t border-[#1A2230] bg-[#0A0D14] py-3 text-[11px] font-sans text-slate-400">
+      {/* 5. Footer Bersih yang Menyesuaikan Tema */}
+      <footer
+        className={`border-t py-4 text-xs font-sans transition-colors ${
+          isLight
+            ? "border-[#E5E5DC] bg-[#F3F3ED] text-[#6A7078]"
+            : "border-[#1A2230] bg-[#0A0D14] text-slate-400"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
-            <span className="font-bold text-slate-300 font-mono">StocksSense</span>
-            <span>•</span>
-            <span>Platform Riset Transmisi Makro & Analisis Saham IDX</span>
+            <span className={`font-mono font-semibold ${isLight ? "text-[#1A1C1E]" : "text-slate-200"}`}>
+              StocksSense
+            </span>
+            <span>|</span>
+            <span>Riset transmisi makro dan simulasi emiten saham</span>
           </div>
 
-          <div className="text-slate-400 text-center sm:text-right">
-            <span>Data ilustrasi untuk riset antarmuka & simulasi strategi kuartalan.</span>
+          <div className="text-center sm:text-right">
+            <span>Data ilustrasi untuk riset antarmuka dan simulasi strategi kuartalan.</span>
           </div>
         </div>
       </footer>
 
-      {/* 6. Gemini AI Modal (unpretentious, accessible via Navbar button) */}
+      {/* 6. Modal Konsultasi AI Gemini */}
       <GeminiAiModal
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
       />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#0C1017] text-slate-400 text-xs">
+          Memuat StocksSense...
+        </div>
+      }
+    >
+      <HomeContent />
+    </Suspense>
   );
 }

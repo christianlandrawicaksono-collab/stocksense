@@ -16,49 +16,82 @@ export const Navbar: React.FC<NavbarProps> = ({
   onModeChange,
   onOpenAiModal,
 }) => {
+  const isLight = currentMode === "berita";
+
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-[#1A2230] bg-[#0A0D14]/95 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+    <header
+      className={`sticky top-0 z-40 w-full transition-colors border-b ${
+        isLight
+          ? "bg-[#FBFBFA]/95 border-[#E5E5DC] text-[#1A1C1E]"
+          : "bg-[#0A0D14]/95 border-[#1A2230] text-slate-100"
+      } backdrop-blur-md`}
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14">
-          {/* Logo & Brand */}
+          {/* Logo 'StocksSense' satu kali saja */}
           <div className="flex items-center space-x-2.5">
-            <div className="flex items-center justify-center w-7 h-7 rounded bg-[#1E7B85]/20 border border-[#1E7B85]/40 text-[#1E7B85]">
+            <div
+              className={`flex items-center justify-center w-7 h-7 rounded ${
+                isLight
+                  ? "bg-[#1E7B85]/10 border border-[#1E7B85]/30 text-[#1E7B85]"
+                  : "bg-[#1E7B85]/20 border border-[#1E7B85]/40 text-[#1E7B85]"
+              }`}
+            >
               <TerminalIcon className="w-3.5 h-3.5" />
             </div>
-            <div className="flex items-baseline space-x-1.5">
-              <span className="font-mono font-bold text-base tracking-tight text-white">
+            <div className="flex items-baseline space-x-2">
+              <span
+                className={`font-mono font-bold text-base tracking-tight ${
+                  isLight ? "text-[#1A1C1E]" : "text-white"
+                }`}
+              >
                 StocksSense
               </span>
-              <span className="hidden sm:inline-block text-xs text-slate-400 font-sans">
-                Riset & transmisi kebijakan
+              <span
+                className={`hidden sm:inline-block text-xs font-sans ${
+                  isLight ? "text-[#5A6068]" : "text-slate-400"
+                }`}
+              >
+                Riset pasar modal Indonesia
               </span>
             </div>
           </div>
 
-          {/* Right section: AI Assistant text button + Mode Switcher */}
+          {/* Right section: Tombol teks 'Konsultasi AI' + Toggle Berita/Terminal */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Simple text button for Gemini AI Modal */}
             {onOpenAiModal && (
               <button
                 type="button"
                 onClick={onOpenAiModal}
-                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-sans text-slate-300 hover:text-white bg-[#111622] hover:bg-[#1A2230] border border-[#1E2736] transition"
-                title="Buka asisten analisis AI"
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded text-xs font-sans transition ${
+                  isLight
+                    ? "text-[#2D3339] bg-[#EFEFEA] hover:bg-[#E5E5DC] border border-[#D5D5CA]"
+                    : "text-slate-300 bg-[#111622] hover:bg-[#1A2230] border border-[#1E2736]"
+                }`}
+                title="Buka asisten konsultasi AI"
               >
-                <Bot className="w-3.5 h-3.5 text-[#38BDF8]" />
+                <Bot className="w-3.5 h-3.5 text-[#1E7B85]" />
                 <span className="hidden sm:inline">Konsultasi AI</span>
                 <span className="sm:hidden">AI</span>
               </button>
             )}
 
-            {/* Mode Switcher: Berita vs Terminal (Sentence case) */}
-            <div className="flex items-center bg-[#111622] p-1 rounded-lg border border-[#1E2736]">
+            {/* Toggle Berita / Terminal permanen */}
+            <div
+              className={`flex items-center p-0.5 rounded border ${
+                isLight
+                  ? "bg-[#EFEFEA] border-[#D8D8CF]"
+                  : "bg-[#111622] border-[#1E2736]"
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => onModeChange("berita")}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-sans font-medium transition ${
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-sans font-medium transition ${
                   currentMode === "berita"
                     ? "bg-[#1E7B85] text-white shadow-sm"
+                    : isLight
+                    ? "text-[#5A6068] hover:text-[#1A1C1E]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
@@ -69,9 +102,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => onModeChange("terminal")}
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-sans font-medium transition ${
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-sans font-medium transition ${
                   currentMode === "terminal"
                     ? "bg-[#1E7B85] text-white shadow-sm"
+                    : isLight
+                    ? "text-[#5A6068] hover:text-[#1A1C1E]"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
               >
