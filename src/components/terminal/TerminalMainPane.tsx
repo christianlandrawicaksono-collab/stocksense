@@ -279,16 +279,14 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     };
   }, [selectedTicker, quarterlyDCA, initialCapital, simStartYear, reinvestDividends]);
 
-  // Compute neat X-axis tick indices (Maximum 4-5 ticks so they never overlap)
+  // Compute neat X-axis tick indices (3-4 ticks so they never crowd or overlap)
   const xTickIndices = useMemo(() => {
     const len = filteredChartSeries.length;
-    if (len <= 4) return filteredChartSeries.map((_, i) => i);
-    const step = (len - 1) / 4;
+    if (len <= 3) return filteredChartSeries.map((_, i) => i);
     const raw = [
       0,
-      Math.round(step),
-      Math.round(step * 2),
-      Math.round(step * 3),
+      Math.round((len - 1) / 3),
+      Math.round((2 * (len - 1)) / 3),
       len - 1
     ];
     return Array.from(new Set(raw));
@@ -298,18 +296,18 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     <div className="flex flex-col space-y-4 font-sans">
       {/* Origin News Banner (if navigated from news article) */}
       {originArticle && (
-        <div className="bg-[#0E1622] border border-[#1E7B85]/60 rounded-xl p-3.5 space-y-2 text-xs text-slate-200 shadow-md">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center space-x-2 truncate">
-              <span className="text-[#2DD4BF] font-semibold whitespace-nowrap">Berita asal:</span>
-              <span className="truncate italic text-slate-300">&ldquo;{originArticle.title}&rdquo;</span>
+        <div className="bg-[#0E1622] border border-[#1E7B85]/60 rounded-xl p-3 sm:p-3.5 space-y-2.5 text-xs text-slate-200 shadow-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center space-x-2 min-w-0 overflow-hidden">
+              <span className="text-[#2DD4BF] font-semibold whitespace-nowrap shrink-0">Berita asal:</span>
+              <span className="truncate italic text-slate-300 block">&ldquo;{originArticle.title}&rdquo;</span>
             </div>
-            <div className="flex items-center space-x-2 shrink-0">
+            <div className="flex items-center space-x-2 shrink-0 self-stretch sm:self-auto justify-end">
               {onBackToArticle && (
                 <button
                   type="button"
                   onClick={() => onBackToArticle(originArticle.id)}
-                  className="px-2.5 py-1 bg-[#1E7B85] hover:bg-[#1E7B85]/80 text-white rounded text-xs font-medium transition flex items-center space-x-1"
+                  className="min-h-[44px] flex-1 sm:flex-initial px-3.5 py-2 bg-[#1E7B85] hover:bg-[#1E7B85]/80 text-white rounded-lg text-xs font-semibold transition inline-flex items-center justify-center space-x-1.5 shadow-sm"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Kembali ke Berita</span>
@@ -319,10 +317,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 <button
                   type="button"
                   onClick={onCloseOriginPanel}
-                  className="p-1 text-slate-400 hover:text-white rounded transition"
+                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 text-slate-400 hover:text-white rounded-lg transition border border-[#1E2736] sm:border-transparent"
                   title="Tutup panel berita asal"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -330,7 +328,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
           {/* Emiten lain di berita ini */}
           {otherSupportedTickers.length > 0 && onSelectTicker && (
-            <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-[#1C2738] text-[11px]">
+            <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-[#1C2738] text-[11px]">
               <span className="text-slate-400">Emiten lain di berita ini:</span>
               <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
                 {otherSupportedTickers.map((t) => (
@@ -338,7 +336,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     key={t}
                     type="button"
                     onClick={() => onSelectTicker(t)}
-                    className="px-2 py-0.5 rounded bg-[#172332] hover:bg-[#1E7B85] text-slate-200 hover:text-white border border-[#25354A] hover:border-[#1E7B85] transition"
+                    className="min-h-[36px] px-2.5 py-1 rounded bg-[#172332] hover:bg-[#1E7B85] text-slate-200 hover:text-white border border-[#25354A] hover:border-[#1E7B85] transition inline-flex items-center"
                   >
                     {t}
                   </button>
@@ -406,14 +404,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
         {/* SVG Pure Line Chart Section with Axis, Labels, and Tooltip */}
         <div className="p-4 bg-[#111622]">
-          {/* Responsive Header: Stacked vertically on mobile, row on tablet/desktop */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-slate-400 mb-2 font-sans">
+          {/* Header Bar: Clean title without duplicate hover text */}
+          <div className="flex items-center justify-between text-xs text-slate-400 mb-2 font-sans">
             <span>Grafik harga penutupan kuartalan (data ilustrasi, 2020–2026)</span>
-            <span className="text-slate-200 font-sans">
-              {hoverIndex !== null && filteredChartSeries[hoverIndex]
-                ? `${formatTanggalBulanTahun(filteredChartSeries[hoverIndex].date)}: ${formatRupiah(filteredChartSeries[hoverIndex].price)}`
-                : "Sentuh atau arahkan kursor ke grafik"}
-            </span>
+            <span className="text-slate-400 hidden sm:inline">Sentuh atau arahkan kursor ke grafik</span>
           </div>
 
           {/* Chart Canvas */}
@@ -428,9 +422,9 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
               // Dimensions with margin for Y-axis (Rp) and X-axis (Years)
               const chartWidth = 900;
-              const chartHeight = 180;
-              const paddingLeft = 60;
-              const paddingBottom = 25;
+              const chartHeight = 200;
+              const paddingLeft = 72;
+              const paddingBottom = 30;
               const plotWidth = chartWidth - paddingLeft;
               const plotHeight = chartHeight - paddingBottom;
 
@@ -454,7 +448,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     className="w-full h-full overflow-visible"
                     preserveAspectRatio="none"
                   >
-                    {/* Y-axis Grid Lines & Price Labels */}
+                    {/* Y-axis Grid Lines & Price Labels (font-size 11.5px) */}
                     {yTicks.map((priceVal, idx) => {
                       const yPos = getY(priceVal);
                       return (
@@ -469,10 +463,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                           />
                           <text
                             x={paddingLeft - 8}
-                            y={yPos + 3.5}
+                            y={yPos + 4}
                             textAnchor="end"
-                            fill="#64748B"
-                            fontSize="9.5"
+                            fill="#94A3B8"
+                            fontSize="11.5"
                             fontFamily="monospace"
                           >
                             {formatNumber(priceVal)}
@@ -503,7 +497,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                       );
                     })}
 
-                    {/* X-axis Date Labels: Reduced to 4-5 ticks in "Mar 2021" format, font-sans */}
+                    {/* X-axis Date Labels: 3-4 ticks in "Mar 2021" format, font-size 11.5px */}
                     {xTickIndices.map((i) => {
                       const d = data[i];
                       if (!d) return null;
@@ -518,7 +512,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                           y={chartHeight - 6}
                           textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
                           fill="#94A3B8"
-                          fontSize="9.5"
+                          fontSize="11.5"
                           fontFamily="var(--font-sans), sans-serif"
                         >
                           {formattedDate}
@@ -588,7 +582,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                         <div className="text-amber-400 text-[11px] mt-0.5 flex items-center justify-between gap-3">
                           <span>Dividen:</span>
                           <span className="font-mono tnum font-semibold">
-                            {formatRupiah(data[hoverIndex].dividend!)} / lbr
+                            {formatRupiah(data[hoverIndex].dividend!)} per lembar
                           </span>
                         </div>
                       )}
@@ -723,7 +717,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   <span className={`text-xs block mt-0.5 font-mono tnum ${grahamUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
                     Potensi: {formatPersen(grahamUpside, 1, true)}
                   </span>
-                  <span className="text-[11px] text-slate-500 block mt-1.5 font-sans leading-tight">
+                  <span className="text-xs text-slate-400 block mt-2 font-sans leading-normal">
                     Catatan: Kurang relevan untuk perbankan dan saham pertumbuhan.
                   </span>
                 </div>

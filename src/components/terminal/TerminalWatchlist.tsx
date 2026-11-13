@@ -158,7 +158,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
               <div
                 key={stock.ticker}
                 onClick={() => onSelectTicker(stock.ticker)}
-                className={`grid grid-cols-12 gap-1 px-3 py-2.5 cursor-pointer transition select-none text-xs ${
+                className={`grid grid-cols-12 gap-1 px-3 py-2.5 min-h-[48px] items-center cursor-pointer transition select-none text-xs ${
                   isSelected
                     ? "bg-[#1E7B85]/15 border-l-2 border-[#1E7B85]"
                     : "hover:bg-[#151C2A] border-l-2 border-transparent"

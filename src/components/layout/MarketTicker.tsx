@@ -6,12 +6,13 @@ import { formatPersen } from "@/lib/format";
 
 export const MarketTicker: React.FC = () => {
   return (
-    <div className="w-full bg-[#0A0D14] border-b border-[#1A2230] text-xs py-2 px-4 select-none">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2">
-        {/* Left: Ticker list */}
-        <div className="flex items-center space-x-4 overflow-x-auto terminal-scroll pb-1 md:pb-0">
+    // Sembunyikan di HP (hidden sm:block) agar tidak memakan ruang vertikal layar sentuh
+    <div className="hidden sm:block w-full bg-[#0A0D14] border-b border-[#1A2230] text-xs py-2 px-4 select-none">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        {/* Ticker list horizontal scrollable satu baris */}
+        <div className="flex items-center space-x-4 overflow-x-auto terminal-scroll py-0.5">
           <div className="flex items-center space-x-1.5 text-slate-400 font-sans text-xs whitespace-nowrap">
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#1E7B85]"></span>
             <span>Indikator acuan:</span>
           </div>
 
@@ -39,11 +40,6 @@ export const MarketTicker: React.FC = () => {
               );
             })}
           </div>
-        </div>
-
-        {/* Right: Full, clear, unwrapped status badge */}
-        <div className="text-[11px] text-slate-400 font-sans whitespace-nowrap pl-1 md:pl-4 md:border-l md:border-slate-800 self-start md:self-auto">
-          Status: Data statis contoh
         </div>
       </div>
     </div>

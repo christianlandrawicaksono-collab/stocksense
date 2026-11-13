@@ -49,6 +49,27 @@ function HomeContent() {
     setSelectedTicker(ticker);
     setOriginNewsId(newsId);
     setCurrentMode("terminal");
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setTimeout(() => {
+        const el = document.getElementById("terminal-chart-section");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 80);
+    }
+  };
+
+  // Select stock with auto-scroll to chart on mobile devices
+  const handleSelectTicker = (ticker: string) => {
+    setSelectedTicker(ticker);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setTimeout(() => {
+        const el = document.getElementById("terminal-chart-section");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 50);
+    }
   };
 
   // Back from Terminal to the exact same News article
@@ -94,19 +115,38 @@ function HomeContent() {
           /* TAMPILAN TERMINAL GELAP */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
             {/* Kolom Kiri: Watchlist & Penyaring */}
-            <div className="lg:col-span-5 xl:col-span-4 h-[750px]">
+            <div id="terminal-watchlist-section" className="lg:col-span-5 xl:col-span-4 h-[550px] lg:h-[750px]">
               <TerminalWatchlist
                 selectedTicker={selectedTicker}
-                onSelectTicker={(ticker) => setSelectedTicker(ticker)}
+                onSelectTicker={handleSelectTicker}
               />
             </div>
 
             {/* Kolom Kanan: Grafik + Panel Tab Analisis */}
-            <div className="lg:col-span-7 xl:col-span-8 min-h-[750px]">
+            <div id="terminal-chart-section" className="lg:col-span-7 xl:col-span-8 min-h-[750px]">
+              {/* Tombol navigasi kembali ke watchlist di HP */}
+              <div className="lg:hidden mb-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.getElementById("terminal-watchlist-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="w-full min-h-[44px] px-3.5 py-2.5 bg-[#111622] hover:bg-[#161D2B] active:bg-[#1E2736] border border-[#1E2736] rounded-xl text-xs font-sans text-slate-300 hover:text-white flex items-center justify-between transition shadow-sm"
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className="text-slate-400">Saham aktif:</span>
+                    <span className="font-mono text-white font-bold text-sm">{selectedTicker}</span>
+                  </div>
+                  <span className="text-[#2DD4BF] font-medium flex items-center space-x-1.5">
+                    <span>↑ Ganti saham (ke daftar)</span>
+                  </span>
+                </button>
+              </div>
+
               <TerminalMainPane
                 selectedTicker={selectedTicker}
                 originNewsId={originNewsId}
-                onSelectTicker={(ticker) => setSelectedTicker(ticker)}
+                onSelectTicker={handleSelectTicker}
                 onBackToArticle={handleBackToArticle}
                 onCloseOriginPanel={() => setOriginNewsId(null)}
               />
