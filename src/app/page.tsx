@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useState, Suspense } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Navbar, AppMode } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
@@ -11,71 +11,105 @@ import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 
 function HomeContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
-  // Read initial states from URL query parameters (supports bookmarking & refresh)
-  const initialMode = (searchParams.get("mode") as AppMode) || "berita";
-  const initialSaham = searchParams.get("saham") || "BBCA";
-  const initialBerita = searchParams.get("berita") || null;
-  const initialArtikel = searchParams.get("artikel") || null;
+  // Read state directly from URL query parameters (single source of truth for SSR and Client)
+  const rawMode = searchParams.get("mode");
+  const rawSaham = searchParams.get("saham");
+  const currentMode: AppMode =
+    rawMode === "terminal" || (!rawMode && !!rawSaham) ? "terminal" : "berita";
+  const selectedTicker = rawSaham || "BBCA";
+  const originNewsId = searchParams.get("berita") || null;
+  const activeArticleId = searchParams.get("artikel") || null;
 
-  const [currentMode, setCurrentMode] = useState<AppMode>(initialMode);
-  const [selectedTicker, setSelectedTicker] = useState<string>(initialSaham);
-  const [originNewsId, setOriginNewsId] = useState<string | null>(initialBerita);
-  const [activeArticleId, setActiveArticleId] = useState<string | null>(initialArtikel);
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
 
-  // Sync state to URL without reloading the page
-  useEffect(() => {
-    const params = new URLSearchParams();
-    params.set("mode", currentMode);
+  // Helper to update URL params via Next.js router without full reload
+  const updateUrlParams = (updates: {
+    mode?: AppMode;
+    saham?: string | null;
+    berita?: string | null;
+    artikel?: string | null;
+  }) => {
+    const params = new URLSearchParams(searchParams.toString());
 
-    if (currentMode === "terminal") {
-      params.set("saham", selectedTicker);
-      if (originNewsId) {
-        params.set("berita", originNewsId);
+    if (updates.mode !== undefined) {
+      params.set("mode", updates.mode);
+    }
+    if (updates.saham !== undefined) {
+      if (updates.saham) {
+        params.set("saham", updates.saham);
+      } else {
+        params.delete("saham");
       }
-    } else {
-      if (activeArticleId) {
-        params.set("artikel", activeArticleId);
+    }
+    if (updates.berita !== undefined) {
+      if (updates.berita) {
+        params.set("berita", updates.berita);
+      } else {
+        params.delete("berita");
+      }
+    }
+    if (updates.artikel !== undefined) {
+      if (updates.artikel) {
+        params.set("artikel", updates.artikel);
+      } else {
+        params.delete("artikel");
       }
     }
 
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState(null, "", newUrl);
-  }, [currentMode, selectedTicker, originNewsId, activeArticleId]);
+    const query = params.toString();
+    const targetUrl = query ? `${pathname}?${query}` : pathname;
+    router.replace(targetUrl, { scroll: false });
+  };
 
-  // Navigate from News ticker link to Terminal
-  const handleSelectStockFromNews = (ticker: string, newsId: string) => {
-    setSelectedTicker(ticker);
-    setOriginNewsId(newsId);
-    setCurrentMode("terminal");
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setTimeout(() => {
-        const el = document.getElementById("terminal-chart-section");
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 80);
+  const handleModeChange = (mode: AppMode) => {
+    if (mode === "terminal") {
+      updateUrlParams({
+        mode: "terminal",
+        saham: selectedTicker,
+        artikel: null,
+      });
+    } else {
+      updateUrlParams({
+        mode: "berita",
+        berita: null,
+      });
     }
   };
 
-  // Select stock with auto-scroll to chart on mobile devices
+  // Navigate from News ticker link to Terminal
+  const handleSelectStockFromNews = (ticker: string, newsId: string) => {
+    updateUrlParams({
+      mode: "terminal",
+      saham: ticker,
+      berita: newsId,
+      artikel: null,
+    });
+    setTimeout(() => {
+      document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  };
+
+  // Select stock with auto-scroll to chart on mobile layout
   const handleSelectTicker = (ticker: string) => {
-    setSelectedTicker(ticker);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setTimeout(() => {
-        const el = document.getElementById("terminal-chart-section");
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 50);
-    }
+    updateUrlParams({
+      mode: "terminal",
+      saham: ticker,
+    });
+    setTimeout(() => {
+      document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 40);
   };
 
   // Back from Terminal to the exact same News article
   const handleBackToArticle = (newsId: string) => {
-    setActiveArticleId(newsId);
-    setCurrentMode("berita");
+    updateUrlParams({
+      mode: "berita",
+      artikel: newsId,
+      berita: null,
+    });
   };
 
   const isLight = currentMode === "berita";
@@ -105,7 +139,7 @@ function HomeContent() {
       {/* 3. Header navigasi permanen dengan toggle Berita/Terminal */}
       <Navbar
         currentMode={currentMode}
-        onModeChange={(mode) => setCurrentMode(mode)}
+        onModeChange={handleModeChange}
         onOpenAiModal={() => setIsAiModalOpen(true)}
       />
 
@@ -148,7 +182,7 @@ function HomeContent() {
                 originNewsId={originNewsId}
                 onSelectTicker={handleSelectTicker}
                 onBackToArticle={handleBackToArticle}
-                onCloseOriginPanel={() => setOriginNewsId(null)}
+                onCloseOriginPanel={() => updateUrlParams({ berita: null })}
               />
             </div>
           </div>
@@ -158,7 +192,7 @@ function HomeContent() {
             <NewsView
               onSelectStockFromNews={handleSelectStockFromNews}
               activeArticleId={activeArticleId}
-              onOpenArticle={(id) => setActiveArticleId(id)}
+              onOpenArticle={(id) => updateUrlParams({ mode: "berita", artikel: id })}
             />
           </div>
         )}
