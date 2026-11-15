@@ -27,6 +27,10 @@ const literata = Literata({
 export const metadata: Metadata = {
   title: "StocksSense — Riset Transmisi Makro & Analisis Saham IDX",
   description: "Terminal intelijen pasar saham Indonesia (IHSG), analisis valuasi P/E band, simulator DCA kuartalan, dan transmisi skenario makroekonomi.",
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export default function RootLayout({
