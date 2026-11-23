@@ -8,6 +8,7 @@ import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
 import { TerminalMainPane } from "@/components/terminal/TerminalMainPane";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
+import { useMarketData } from "@/hooks/useMarketData";
 
 function HomeContent() {
   const searchParams = useSearchParams();
@@ -24,6 +25,7 @@ function HomeContent() {
   const activeArticleId = searchParams.get("artikel") || null;
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const { quotes, provider, marketStatus } = useMarketData();
 
   // Helper to update URL params via Next.js router without full reload
   const updateUrlParams = (updates: {
@@ -130,7 +132,16 @@ function HomeContent() {
             : "bg-[#0A0D14] border-[#1E2736] text-slate-400"
         }`}
       >
-        <span>Data ilustrasi, bukan harga pasar</span>
+        {provider === "yahoo" ? (
+          <div className="flex items-center justify-center space-x-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#2EB886]"></span>
+            <span>
+              Sumber: Yahoo Finance (tidak resmi). Tertunda sekitar 10 menit.
+            </span>
+          </div>
+        ) : (
+          <span>Data ilustrasi, bukan harga pasar</span>
+        )}
       </div>
 
       {/* 2. Ticker bar: HANYA TAMPIL DI TERMINAL (tidak di mode Berita) */}
@@ -153,6 +164,8 @@ function HomeContent() {
               <TerminalWatchlist
                 selectedTicker={selectedTicker}
                 onSelectTicker={handleSelectTicker}
+                quotes={quotes}
+                provider={provider}
               />
             </div>
 
@@ -183,6 +196,9 @@ function HomeContent() {
                 onSelectTicker={handleSelectTicker}
                 onBackToArticle={handleBackToArticle}
                 onCloseOriginPanel={() => updateUrlParams({ berita: null })}
+                quote={quotes[selectedTicker]}
+                provider={provider}
+                marketStatus={marketStatus}
               />
             </div>
           </div>
