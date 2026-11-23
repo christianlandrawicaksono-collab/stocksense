@@ -145,7 +145,7 @@ function HomeContent() {
       </div>
 
       {/* 2. Ticker bar: HANYA TAMPIL DI TERMINAL (tidak di mode Berita) */}
-      {currentMode === "terminal" && <MarketTicker />}
+      {currentMode === "terminal" && <MarketTicker provider={provider} />}
 
       {/* 3. Header navigasi permanen dengan toggle Berita/Terminal */}
       <Navbar

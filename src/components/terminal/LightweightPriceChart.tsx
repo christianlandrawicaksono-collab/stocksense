@@ -39,6 +39,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   provider,
   isFallback = false,
   isLoading = false,
+  currentPrice,
   lastUpdated,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,11 +70,18 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     for (const p of list) {
       if (!seen.has(p.time)) {
         seen.add(p.time);
-        unique.push(p);
+        unique.push({ ...p });
       }
     }
+    // Sinkronkan harga titik terakhir dengan currentPrice terkini agar konsisten dengan header
+    if (currentPrice && currentPrice > 0 && unique.length > 0) {
+      const last = unique[unique.length - 1];
+      last.close = currentPrice;
+      if (last.high !== undefined && last.high < currentPrice) last.high = currentPrice;
+      if (last.low !== undefined && last.low > currentPrice) last.low = currentPrice;
+    }
     return unique;
-  }, [points]);
+  }, [points, currentPrice]);
 
   useEffect(() => {
     if (!containerRef.current || sortedPoints.length === 0) return;
@@ -93,6 +101,9 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         textColor: "#94A3B8",
         fontFamily: "var(--font-sans), system-ui, -apple-system, sans-serif",
         fontSize: 11,
+      },
+      localization: {
+        priceFormatter: (price: number) => formatNumber(price),
       },
       grid: {
         vertLines: { color: "#1E2736", style: 2 },
@@ -138,6 +149,10 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         borderVisible: false,
         wickUpColor: "#2EB886",
         wickDownColor: "#DC525F",
+        priceFormat: {
+          type: "custom",
+          formatter: (price: number) => formatNumber(price),
+        },
       });
 
       const candleData = sortedPoints.map((p) => ({
@@ -157,6 +172,10 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         crosshairMarkerRadius: 4,
         crosshairMarkerBorderColor: "#1E7B85",
         crosshairMarkerBackgroundColor: "#FFFFFF",
+        priceFormat: {
+          type: "custom",
+          formatter: (price: number) => formatNumber(price),
+        },
       });
 
       const lineData = sortedPoints.map((p) => ({
@@ -167,7 +186,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       series = lineSeries;
     }
 
-    // Pasang penanda dividen (markers) jika ada
+    // Pasang penanda dividen (markers) titik oranye tanpa teks di atas grafik
     const dividendMarkers: SeriesMarker<Time>[] = [];
     for (const p of sortedPoints) {
       if (p.dividend && p.dividend > 0) {
@@ -176,7 +195,6 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
           position: "aboveBar",
           color: "#F59E0B",
           shape: "circle",
-          text: `Div ${formatNumber(p.dividend)}`,
           size: 1,
         });
       }
@@ -341,7 +359,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
             )}
             {hoverData.dividend !== undefined && hoverData.dividend > 0 && (
               <span className="px-1.5 py-0.5 rounded bg-[#F59E0B]/20 text-[#F59E0B] font-semibold text-[11px]">
-                Div: {formatRupiah(hoverData.dividend)}
+                Dividen: {formatRupiah(hoverData.dividend)} per lembar
               </span>
             )}
           </div>

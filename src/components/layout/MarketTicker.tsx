@@ -4,7 +4,11 @@ import React from "react";
 import { LIVE_MARKET_TICKERS } from "@/data/macroData";
 import { formatPersen } from "@/lib/format";
 
-export const MarketTicker: React.FC = () => {
+interface MarketTickerProps {
+  provider?: "illustrative" | "yahoo";
+}
+
+export const MarketTicker: React.FC<MarketTickerProps> = ({ provider = "illustrative" }) => {
   return (
     // Sembunyikan di HP (hidden sm:block) agar tidak memakan ruang vertikal layar sentuh
     <div className="hidden sm:block w-full bg-[#0A0D14] border-b border-[#1A2230] text-xs py-2 px-4 select-none">
@@ -13,7 +17,9 @@ export const MarketTicker: React.FC = () => {
         <div className="flex items-center space-x-4 overflow-x-auto terminal-scroll py-0.5">
           <div className="flex items-center space-x-1.5 text-slate-400 font-sans text-xs whitespace-nowrap">
             <span className="w-1.5 h-1.5 rounded-full bg-[#1E7B85]"></span>
-            <span>Indikator acuan:</span>
+            <span>
+              {provider === "yahoo" ? "Indikator acuan (ilustrasi):" : "Indikator acuan:"}
+            </span>
           </div>
 
           <div className="flex items-center space-x-5 min-w-max">

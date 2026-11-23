@@ -250,8 +250,8 @@ export async function getHistoryServer(
   } else if (range === "5Th") {
     startDate.setFullYear(today.getFullYear() - 5);
   } else {
-    // Semua: dari 2020
-    startDate = new Date("2020-01-01");
+    // Semua: ambil riwayat maksimum yang tersedia di Yahoo Finance
+    startDate = new Date("2000-01-01");
   }
 
   const period1 = startDate.toISOString().split("T")[0];
@@ -277,7 +277,7 @@ export async function getHistoryServer(
       }
     }
 
-    // Ekstrak data harian yang valid (buang jika close null/undefined)
+    // Ekstrak data harian yang valid (gunakan Close Asli / unadjusted close untuk grafik harga nominal bursa)
     const points: ServerHistoryPoint[] = [];
     for (const q of chartResult.quotes) {
       if (typeof q.close !== "number" || isNaN(q.close)) continue;
@@ -297,6 +297,20 @@ export async function getHistoryServer(
 
     if (points.length === 0) {
       throw new Error("Parsed points length is 0");
+    }
+
+    // Sinkronkan harga titik terakhir dengan regularMarketPrice dari meta Yahoo
+    // agar harga pada sumbu kanan grafik PASTI konsisten dengan harga di header
+    const latestPrice =
+      typeof chartResult.meta?.regularMarketPrice === "number" && chartResult.meta.regularMarketPrice > 0
+        ? chartResult.meta.regularMarketPrice
+        : null;
+
+    if (latestPrice && points.length > 0) {
+      const lastPoint = points[points.length - 1];
+      lastPoint.close = latestPrice;
+      if (lastPoint.high < latestPrice) lastPoint.high = latestPrice;
+      if (lastPoint.low > latestPrice) lastPoint.low = latestPrice;
     }
 
     // Simpan ke cache

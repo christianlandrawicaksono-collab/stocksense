@@ -142,31 +142,31 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       return {
         label: "Diskon ekstrim (di bawah -2 SD)",
         color: "text-[#34D399] bg-[#064E3B] border-[#059669] font-medium",
-        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada di bawah batas -2 SD (${formatMultiple(sd2Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata acuan (${formatMultiple(mean, 1)}). Area deviasi terendah secara komparatif.`
+        verdict: `Rasio P/E pada harga acuan ilustrasi (${formatMultiple(pe, 1)} pada ${formatRupiah(stock.currentPrice)}) berada di bawah batas -2 SD (${formatMultiple(sd2Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata acuan (${formatMultiple(mean, 1)}). Area deviasi terendah secara komparatif.`
       };
     } else if (pe <= sd1Minus) {
       return {
         label: "Undervalued (antara -2 SD dan -1 SD)",
         color: "text-[#34D399] bg-[#064E3B] border-[#059669] font-medium",
-        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada pada rentang deviasi rendah (${formatMultiple(sd2Minus, 1)} – ${formatMultiple(sd1Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata acuan (${formatMultiple(mean, 1)}).`
+        verdict: `Rasio P/E pada harga acuan ilustrasi (${formatMultiple(pe, 1)} pada ${formatRupiah(stock.currentPrice)}) berada pada rentang deviasi rendah (${formatMultiple(sd2Minus, 1)} – ${formatMultiple(sd1Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata acuan (${formatMultiple(mean, 1)}).`
       };
     } else if (pe <= mean) {
       return {
         label: "Valuasi wajar (antara -1 SD dan rerata)",
         color: "text-[#2DD4BF] bg-[#115E59]/50 border-[#14B8A6] font-medium",
-        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada mendekati rerata acuan (${formatMultiple(mean, 1)}), ${formatPersen(absDiff, 1)} di bawah titik tengah.`
+        verdict: `Rasio P/E pada harga acuan ilustrasi (${formatMultiple(pe, 1)} pada ${formatRupiah(stock.currentPrice)}) berada mendekati rerata acuan (${formatMultiple(mean, 1)}), ${formatPersen(absDiff, 1)} di bawah titik tengah.`
       };
     } else if (pe <= sd1Plus) {
       return {
         label: "Cukup premium (antara rerata dan +1 SD)",
         color: "text-[#FDE047] bg-[#78350F] border-[#D97706] font-medium",
-        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) berada ${formatPersen(absDiff, 1)} di atas rerata acuan (${formatMultiple(mean, 1)}), berada di bawah batas atas +1 SD (${formatMultiple(sd1Plus, 1)}).`
+        verdict: `Rasio P/E pada harga acuan ilustrasi (${formatMultiple(pe, 1)} pada ${formatRupiah(stock.currentPrice)}) berada ${formatPersen(absDiff, 1)} di atas rerata acuan (${formatMultiple(mean, 1)}), berada di bawah batas atas +1 SD (${formatMultiple(sd1Plus, 1)}).`
       };
     } else {
       return {
         label: "Overvalued (di atas +1 SD)",
         color: "text-[#F87171] bg-[#7F1D1D] border-[#DC2626] font-medium",
-        verdict: `Rasio P/E saat ini (${formatMultiple(pe, 1)}) melampaui batas deviasi atas +1 SD (${formatMultiple(sd1Plus, 1)}), ${formatPersen(absDiff, 1)} di atas rerata acuan (${formatMultiple(mean, 1)}).`
+        verdict: `Rasio P/E pada harga acuan ilustrasi (${formatMultiple(pe, 1)} pada ${formatRupiah(stock.currentPrice)}) melampaui batas deviasi atas +1 SD (${formatMultiple(sd1Plus, 1)}), ${formatPersen(absDiff, 1)} di atas rerata acuan (${formatMultiple(mean, 1)}).`
       };
     }
   }, [stock]);
@@ -429,7 +429,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 {marketStatus?.isOpen ? "Pasar Buka" : "Pasar Tutup"}
               </span>
               <span className="text-[11px] text-slate-400 hidden md:inline">
-                &bull; {marketStatus?.sessionText}
+                &bull; {marketStatus?.isOpen ? marketStatus?.sessionText : `Di luar jam bursa (${marketStatus?.dateWib || ''})`}
               </span>
             </div>
 
@@ -514,13 +514,13 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               <Info className="w-3.5 h-3.5 text-[#1E7B85] shrink-0 mt-0.5" />
               <div>
                 <span className="text-slate-300 font-medium">Catatan data valuasi: </span>
-                Pita deviasi P/E dan formula Benjamin Graham tetap menggunakan data laporan keuangan ilustrasi (harga acuan Rp {formatNumber(stock.currentPrice)}) untuk konsistensi analisis fundamental kuartalan.
+                Pita deviasi P/E dan diagnosis Benjamin Graham dihitung dari harga acuan ilustrasi ({formatRupiah(stock.currentPrice)}) dan EPS acuan ({formatRupiah(impliedEPS)}). Seluruh persentase &ldquo;Potensi&rdquo; dihitung terhadap harga acuan tersebut, bukan dari harga live pasar.
               </div>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1E2736]">
               <div>
                 <span className="text-xs text-slate-400 block font-sans">
-                  Diagnosis valuasi P/E (dihitung otomatis dari data acuan)
+                  Diagnosis valuasi P/E pada harga acuan ilustrasi ({formatRupiah(stock.currentPrice)})
                 </span>
                 <span className="text-sm font-semibold text-slate-100 mt-0.5 block font-sans">
                   {valuationDiagnosis.verdict}
@@ -570,7 +570,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     {formatRupiah(targetMeanPrice)}
                   </span>
                   <span className={`text-xs block mt-0.5 font-mono tnum ${meanUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
-                    Potensi: {formatPersen(meanUpside, 1, true)}
+                    Potensi: {formatPersen(meanUpside, 1, true)}{" "}
+                    <span className="text-[10px] text-slate-400 font-sans block">
+                      (vs harga acuan {formatRupiah(stock.currentPrice)}, bukan harga live)
+                    </span>
                   </span>
                 </div>
 
@@ -582,7 +585,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     {formatRupiah(grahamNumber)}
                   </span>
                   <span className={`text-xs block mt-0.5 font-mono tnum ${grahamUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
-                    Potensi: {formatPersen(grahamUpside, 1, true)}
+                    Potensi: {formatPersen(grahamUpside, 1, true)}{" "}
+                    <span className="text-[10px] text-slate-400 font-sans block">
+                      (vs harga acuan {formatRupiah(stock.currentPrice)}, bukan harga live)
+                    </span>
                   </span>
                   <span className="text-xs text-slate-400 block mt-2 font-sans leading-normal">
                     Catatan: Kurang relevan untuk perbankan dan saham pertumbuhan.
@@ -759,19 +765,19 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   <div className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-slate-400">Penurunan terbesar dari puncak (drawdown):</span>
                     <span className="text-slate-200 font-mono tnum">
-                      -{formatPersen(simulationResults.maxDrawdown, 1)}
+                      -{formatDesimal(simulationResults.maxDrawdown, 2)}%
                     </span>
                   </div>
 
                   {/* Alpha vs IHSG */}
                   <div className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-slate-400">Selisih kalkulasi vs acuan IHSG (Alpha):</span>
+                    <span className="text-slate-400">Selisih imbal hasil vs acuan IHSG (Alpha):</span>
                     <span
                       className={`font-mono tnum font-semibold ${
                         simulationResults.alphaVsIhsg >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"
                       }`}
                     >
-                      {formatPersen(simulationResults.alphaVsIhsg, 1, true)}{" "}
+                      {formatDesimal(simulationResults.alphaVsIhsg, 2, true)} poin persentase{" "}
                       <span className="font-sans font-normal text-xs text-slate-400">
                         ({simulationResults.alphaVsIhsg >= 0 ? "mengungguli simulasi IHSG" : "di bawah simulasi IHSG"})
                       </span>
@@ -799,11 +805,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               <Info className="w-3.5 h-3.5 text-[#1E7B85] shrink-0 mt-0.5" />
               <div>
                 <span className="text-slate-300 font-medium">Catatan data profil: </span>
-                Profil bisnis, keunggulan kompetitif, dan rasio fundamental menggunakan data analitis ilustrasi.
+                Profil bisnis, keunggulan kompetitif, dan rasio fundamental menggunakan data analitis ilustrasi (ringkasan contoh riset, belum diverifikasi bursa).
               </div>
-            </div>
-            <div className="text-[11px] text-slate-400 bg-[#0C1017] px-3 py-1.5 rounded-lg border border-[#1E2736]">
-              Ringkasan contoh, belum diverifikasi
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
