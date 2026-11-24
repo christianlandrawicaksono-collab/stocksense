@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import { MACRO_NEWS_DATA } from "@/data/macroData";
 import {
@@ -51,10 +51,18 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   const [chartTf, setChartTf] = useState<HistoryRange>("Semua");
 
   const [historyPoints, setHistoryPoints] = useState<MarketHistoryPoint[]>(() =>
-    getIllustrativeHistoryPoints(selectedTicker, "Semua")
+    provider === "yahoo" ? [] : getIllustrativeHistoryPoints(selectedTicker, "Semua")
   );
-  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
-  const [isHistoryFallback, setIsHistoryFallback] = useState<boolean>(true);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(provider === "yahoo");
+  const [isHistoryFallback, setIsHistoryFallback] = useState<boolean>(provider === "illustrative");
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [retryTrigger, setRetryTrigger] = useState<number>(0);
+
+  const handleRetry = useCallback(() => {
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    setRetryTrigger((c) => c + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +70,20 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     getHistory(selectedTicker, chartTf)
       .then((res) => {
         if (!cancelled) {
-          setHistoryPoints(res.points);
+          if (provider === "yahoo") {
+            // Jika mode Yahoo aktif: JANGAN PERNAH mencampur data ilustrasi di bawah harga live!
+            if (res.points.length === 0 || res.isFallback) {
+              setHistoryPoints([]);
+              setHistoryError("Riwayat harga tidak tersedia saat ini dari penyedia data.");
+            } else {
+              setHistoryPoints(res.points);
+              setHistoryError(null);
+            }
+          } else {
+            // Mode illustrative
+            setHistoryPoints(res.points.length > 0 ? res.points : getIllustrativeHistoryPoints(selectedTicker, chartTf));
+            setHistoryError(null);
+          }
           setIsHistoryFallback(res.isFallback);
           setIsHistoryLoading(false);
         }
@@ -70,7 +91,12 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       .catch((err) => {
         if (!cancelled) {
           console.warn("[TerminalMainPane] getHistory failed:", err);
-          setHistoryPoints(getIllustrativeHistoryPoints(selectedTicker, chartTf));
+          if (provider === "yahoo") {
+            setHistoryPoints([]);
+            setHistoryError("Koneksi ke penyedia data gagal. Silakan coba lagi.");
+          } else {
+            setHistoryPoints(getIllustrativeHistoryPoints(selectedTicker, chartTf));
+          }
           setIsHistoryFallback(true);
           setIsHistoryLoading(false);
         }
@@ -79,7 +105,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [selectedTicker, chartTf]);
+  }, [selectedTicker, chartTf, provider, retryTrigger]);
 
   // Article origin lookup for banner and cross-stock switching
   const originArticle = useMemo(() => {
@@ -459,6 +485,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           currentPrice={quote?.price ?? stock.currentPrice}
           changePercent={quote?.changePercent ?? stock.change1D}
           lastUpdated={quote?.lastUpdated || marketStatus?.formattedTime}
+          error={historyError}
+          onRetry={handleRetry}
         />
       </div>
 

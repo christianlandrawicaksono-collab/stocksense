@@ -64,6 +64,28 @@ export async function GET(
     console.error("[API /api/history] Error:", errorMsg);
     const { ticker: rawTicker } = await params;
     const ticker = (rawTicker || "BBCA").toUpperCase();
+    const providerEnv = process.env.MARKET_DATA_PROVIDER || "illustrative";
+
+    if (providerEnv === "yahoo") {
+      return NextResponse.json(
+        {
+          provider: "yahoo",
+          ticker,
+          range: "Semua",
+          points: [],
+          isFallback: true,
+          marketStatus: getIdxMarketStatus(),
+          error: errorMsg,
+          timestamp: new Date().toISOString(),
+        },
+        {
+          status: 200,
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        }
+      );
+    }
 
     return NextResponse.json(
       {

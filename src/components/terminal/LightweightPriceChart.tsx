@@ -14,8 +14,8 @@ import {
   SeriesMarker,
 } from "lightweight-charts";
 import { MarketHistoryPoint, HistoryRange, MarketProvider } from "@/lib/market-data";
-import { formatNumber, formatRupiah } from "@/lib/format";
-import { TrendingUp, BarChart2 } from "lucide-react";
+import { formatNumber, formatRupiah, formatPersen } from "@/lib/format";
+import { TrendingUp, BarChart2, AlertCircle, AlertTriangle, RotateCcw } from "lucide-react";
 
 interface LightweightPriceChartProps {
   ticker?: string;
@@ -28,6 +28,8 @@ interface LightweightPriceChartProps {
   currentPrice?: number;
   changePercent?: number;
   lastUpdated?: string;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 type ChartType = "line" | "candle";
@@ -39,7 +41,10 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   provider,
   isFallback = false,
   isLoading = false,
+  currentPrice,
   lastUpdated,
+  error,
+  onRetry,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -75,8 +80,29 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     return unique;
   }, [points]);
 
+  // Pemeriksaan konsistensi harga antara bar terakhir riwayat dan quote live di header
+  const priceConsistency = useMemo(() => {
+    if (!currentPrice || currentPrice <= 0 || sortedPoints.length === 0) {
+      return { isConsistent: true, isNoticeable: false, diffPct: 0, lastClose: 0 };
+    }
+    const lastClose = sortedPoints[sortedPoints.length - 1].close;
+    if (!lastClose || lastClose <= 0) {
+      return { isConsistent: true, isNoticeable: false, diffPct: 0, lastClose: 0 };
+    }
+    const diffPct = Math.abs((lastClose - currentPrice) / currentPrice) * 100;
+    const isSevereMismatch = diffPct > 20; // Selisih ekstrem (misal data ilustrasi 10.450 vs live 5.800)
+    const isNoticeableMismatch = diffPct > 5;
+
+    return {
+      isConsistent: !isSevereMismatch,
+      isNoticeable: isNoticeableMismatch,
+      diffPct,
+      lastClose,
+    };
+  }, [currentPrice, sortedPoints]);
+
   useEffect(() => {
-    if (!containerRef.current || sortedPoints.length === 0) return;
+    if (!containerRef.current || sortedPoints.length === 0 || !priceConsistency.isConsistent) return;
 
     // Bersihkan chart sebelumnya jika ada
     if (chartRef.current) {
@@ -243,7 +269,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         chartRef.current = null;
       }
     };
-  }, [sortedPoints, chartType, hasValidOHLC]);
+  }, [sortedPoints, chartType, hasValidOHLC, priceConsistency.isConsistent]);
 
   // Format tanggal Indonesia untuk tooltip
   const formatTooltipDate = (isoDate: string) => {
@@ -368,17 +394,70 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         )}
       </div>
 
+      {/* Peringatan jika terdeteksi selisih wajar antara bar riwayat dan harga live */}
+      {priceConsistency.isNoticeable && priceConsistency.isConsistent && (
+        <div className="bg-[#451A03]/80 border-b border-[#78350F] px-4 py-1.5 flex items-center justify-between text-[11px] text-[#FDE047] font-sans">
+          <div className="flex items-center space-x-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-[#F59E0B]" />
+            <span>
+              Perhatian: Harga bar terakhir riwayat ({formatRupiah(priceConsistency.lastClose)}) berselisih {formatPersen(priceConsistency.diffPct, 1)} dari harga quote ({formatRupiah(currentPrice || 0)}).
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Area Kanvas Lightweight Chart */}
       <div className="relative w-full h-[280px] bg-[#111622]">
-        <div ref={containerRef} className="w-full h-full" />
+        {error || !priceConsistency.isConsistent || (points.length === 0 && !isLoading) ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-[#111622]">
+            {!priceConsistency.isConsistent ? (
+              <>
+                <AlertTriangle className="w-7 h-7 text-[#EF4444] mb-2" />
+                <p className="text-sm font-semibold text-slate-100 font-sans">
+                  Inkonsistensi Data Riwayat Terdeteksi
+                </p>
+                <p className="text-xs text-slate-400 mt-1 max-w-md font-sans">
+                  Harga penutupan riwayat ({formatRupiah(priceConsistency.lastClose)}) berselisih {formatPersen(priceConsistency.diffPct, 1)} dari harga live ({formatRupiah(currentPrice || 0)}). Grafik ditangguhkan demi akurasi tampilan.
+                </p>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="w-7 h-7 text-[#EAB308] mb-2" />
+                <p className="text-sm font-semibold text-slate-100 font-sans">
+                  {error || "Riwayat harga tidak tersedia saat ini"}
+                </p>
+                <p className="text-xs text-slate-400 mt-1 max-w-sm font-sans">
+                  Gagal memuat data riwayat dari penyedia data. Header tetap menampilkan harga pasar terkini.
+                </p>
+              </>
+            )}
+
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-3.5 flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#1E2736] hover:bg-[#2A374A] border border-[#2E3B52] text-xs font-sans text-slate-200 transition"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-[#1E7B85]" />
+                <span>Coba Lagi</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div ref={containerRef} className="w-full h-full" />
+        )}
       </div>
 
       {/* Catatan Kaki Sumber Data */}
       <div className="px-4 py-2 bg-[#0C1017] border-t border-[#1E2736] flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-slate-400 gap-1 font-sans">
         <div>
-          {provider === "yahoo" && !isFallback ? (
+          {provider === "yahoo" && !isFallback && priceConsistency.isConsistent && points.length > 0 ? (
             <span className="text-slate-300">
               Sumber: <strong className="text-slate-200">Yahoo Finance (tidak resmi)</strong>. Tertunda sekitar 10 menit.
+            </span>
+          ) : provider === "yahoo" && (isFallback || !priceConsistency.isConsistent || points.length === 0) ? (
+            <span className="text-amber-400">
+              *Data riwayat Yahoo Finance sedang tidak tersedia untuk periode ini.
             </span>
           ) : (
             <span>

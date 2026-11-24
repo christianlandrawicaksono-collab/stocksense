@@ -253,13 +253,16 @@ export async function getHistoryServer(
   }
 
   if (!checkRateLimit()) {
-    console.warn("[MarketServer] Rate limit reached on history, fallback to illustrative");
-    return { points: getIllustrativeHistory(ticker, range), isFallback: true };
+    console.warn("[MarketServer] Rate limit reached on history, return empty without mixing illustrative");
+    return { points: [], isFallback: true };
   }
 
-  // Hitung period1 berdasarkan rentang
+  // Hitung period1 dan interval adaptif berdasarkan rentang waktu:
+  // - 1Th & 3Th: interval harian ("1d") untuk detail pergerakan harian
+  // - 5Th & Semua: interval mingguan ("1wk") agar payload ringan (~100KB vs >600KB), cepat, dan andal
   const today = new Date();
   let startDate = new Date();
+  let interval: "1d" | "1wk" = "1d";
 
   if (range === "1Th") {
     startDate.setFullYear(today.getFullYear() - 1);
@@ -267,9 +270,11 @@ export async function getHistoryServer(
     startDate.setFullYear(today.getFullYear() - 3);
   } else if (range === "5Th") {
     startDate.setFullYear(today.getFullYear() - 5);
+    interval = "1wk";
   } else {
-    // Semua: ambil riwayat maksimum yang tersedia di Yahoo Finance
+    // Semua: ambil riwayat maksimum sejak 2000 dengan interval mingguan
     startDate = new Date("2000-01-01");
+    interval = "1wk";
   }
 
   const period1 = startDate.toISOString().split("T")[0];
@@ -278,7 +283,7 @@ export async function getHistoryServer(
     const symbol = `${ticker}.JK`;
     const chartResult = await yf.chart(symbol, {
       period1,
-      interval: "1d",
+      interval,
       events: "div",
     });
 
@@ -288,19 +293,24 @@ export async function getHistoryServer(
 
     // Peta dividen berdasarkan tanggal (YYYY-MM-DD dalam zona waktu WIB)
     const dividendMap = new Map<string, number>();
+    const dividendList: { date: string; amount: number }[] = [];
     if (chartResult.events && chartResult.events.dividends) {
       for (const div of chartResult.events.dividends) {
         const divDate = toWibDateString(new Date(div.date));
-        dividendMap.set(divDate, div.amount);
+        if (interval === "1d") {
+          dividendMap.set(divDate, div.amount);
+        } else {
+          dividendList.push({ date: divDate, amount: div.amount });
+        }
       }
     }
 
-    // Ekstrak data harian yang valid (gunakan Close Asli / unadjusted close untuk grafik harga nominal bursa)
+    // Ekstrak data yang valid (gunakan Close Asli / unadjusted close untuk grafik harga nominal bursa)
     const points: ServerHistoryPoint[] = [];
     for (const q of chartResult.quotes) {
       if (typeof q.close !== "number" || isNaN(q.close)) continue;
       const timeStr = toWibDateString(new Date(q.date));
-      const divAmount = dividendMap.get(timeStr);
+      const divAmount = interval === "1d" ? dividendMap.get(timeStr) : undefined;
 
       points.push({
         time: timeStr,
@@ -315,6 +325,22 @@ export async function getHistoryServer(
 
     if (points.length === 0) {
       throw new Error("Parsed points length is 0");
+    }
+
+    // Untuk interval mingguan (1wk): petakan dividen ke bar mingguan yang memuat tanggal dividen
+    if (interval === "1wk" && dividendList.length > 0) {
+      for (const div of dividendList) {
+        let matchedBar: ServerHistoryPoint | null = null;
+        for (let i = points.length - 1; i >= 0; i--) {
+          if (points[i].time <= div.date) {
+            matchedBar = points[i];
+            break;
+          }
+        }
+        if (matchedBar) {
+          matchedBar.dividend = (matchedBar.dividend || 0) + div.amount;
+        }
+      }
     }
 
     // Periksa apakah harga live dari quote lebih baru daripada bar riwayat harian terakhir.
@@ -356,6 +382,6 @@ export async function getHistoryServer(
     return { points, isFallback: false };
   } catch (error) {
     console.error(`[MarketServer] Failed to fetch history for ${ticker} from Yahoo:`, error);
-    return { points: getIllustrativeHistory(ticker, range), isFallback: true };
+    return { points: [], isFallback: true };
   }
 }
