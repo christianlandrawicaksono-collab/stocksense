@@ -39,7 +39,6 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   provider,
   isFallback = false,
   isLoading = false,
-  currentPrice,
   lastUpdated,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,15 +72,8 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         unique.push({ ...p });
       }
     }
-    // Sinkronkan harga titik terakhir dengan currentPrice terkini agar konsisten dengan header
-    if (currentPrice && currentPrice > 0 && unique.length > 0) {
-      const last = unique[unique.length - 1];
-      last.close = currentPrice;
-      if (last.high !== undefined && last.high < currentPrice) last.high = currentPrice;
-      if (last.low !== undefined && last.low > currentPrice) last.low = currentPrice;
-    }
     return unique;
-  }, [points, currentPrice]);
+  }, [points]);
 
   useEffect(() => {
     if (!containerRef.current || sortedPoints.length === 0) return;

@@ -47,6 +47,15 @@ export interface ServerHistoryPoint {
   dividend?: number;
 }
 
+function toWibDateString(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 // ==============================================================================
 // In-Memory Server Cache & Simple Rate Limiter
 // ==============================================================================
@@ -268,11 +277,11 @@ export async function getHistoryServer(
       throw new Error(`No chart data returned for ${symbol}`);
     }
 
-    // Peta dividen berdasarkan tanggal (YYYY-MM-DD)
+    // Peta dividen berdasarkan tanggal (YYYY-MM-DD dalam zona waktu WIB)
     const dividendMap = new Map<string, number>();
     if (chartResult.events && chartResult.events.dividends) {
       for (const div of chartResult.events.dividends) {
-        const divDate = new Date(div.date).toISOString().split("T")[0];
+        const divDate = toWibDateString(new Date(div.date));
         dividendMap.set(divDate, div.amount);
       }
     }
@@ -281,7 +290,7 @@ export async function getHistoryServer(
     const points: ServerHistoryPoint[] = [];
     for (const q of chartResult.quotes) {
       if (typeof q.close !== "number" || isNaN(q.close)) continue;
-      const timeStr = new Date(q.date).toISOString().split("T")[0];
+      const timeStr = toWibDateString(new Date(q.date));
       const divAmount = dividendMap.get(timeStr);
 
       points.push({
@@ -299,18 +308,38 @@ export async function getHistoryServer(
       throw new Error("Parsed points length is 0");
     }
 
-    // Sinkronkan harga titik terakhir dengan regularMarketPrice dari meta Yahoo
-    // agar harga pada sumbu kanan grafik PASTI konsisten dengan harga di header
+    // Periksa apakah harga live dari quote lebih baru daripada bar riwayat harian terakhir.
+    // JANGAN pernah menimpa bar riwayat hari sebelumnya dengan harga live.
+    // Jika harga live lebih baru daripada bar terakhir, tambahkan sebagai titik baru bertanggal hari ini (WIB).
+    // Jika bar terakhir sudah bertanggal sama dengan hari ini (intraday), update harga sesi hari ini.
     const latestPrice =
       typeof chartResult.meta?.regularMarketPrice === "number" && chartResult.meta.regularMarketPrice > 0
         ? chartResult.meta.regularMarketPrice
         : null;
+    const metaMarketTime = chartResult.meta?.regularMarketTime
+      ? new Date(chartResult.meta.regularMarketTime)
+      : null;
 
-    if (latestPrice && points.length > 0) {
+    if (latestPrice && points.length > 0 && metaMarketTime) {
+      const quoteDateWib = toWibDateString(metaMarketTime);
       const lastPoint = points[points.length - 1];
-      lastPoint.close = latestPrice;
-      if (lastPoint.high < latestPrice) lastPoint.high = latestPrice;
-      if (lastPoint.low > latestPrice) lastPoint.low = latestPrice;
+
+      if (quoteDateWib > lastPoint.time) {
+        // Tanggal quote lebih baru daripada bar terakhir -> tambahkan titik baru hari ini (WIB)
+        points.push({
+          time: quoteDateWib,
+          open: latestPrice,
+          high: latestPrice,
+          low: latestPrice,
+          close: latestPrice,
+          volume: 0,
+        });
+      } else if (quoteDateWib === lastPoint.time) {
+        // Bar terakhir adalah bar hari ini (intraday) -> update harga close tick hari ini
+        lastPoint.close = latestPrice;
+        if (lastPoint.high < latestPrice) lastPoint.high = latestPrice;
+        if (lastPoint.low > latestPrice) lastPoint.low = latestPrice;
+      }
     }
 
     // Simpan ke cache
