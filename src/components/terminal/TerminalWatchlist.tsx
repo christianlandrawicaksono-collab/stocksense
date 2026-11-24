@@ -4,10 +4,13 @@ import React, { useState, useMemo } from "react";
 import { STOCKS_DATA } from "@/data/stocksData";
 import { formatNumber, formatMultiple, formatPersen } from "@/lib/format";
 import { Search, ArrowUpDown } from "lucide-react";
+import { MarketQuote, MarketProvider } from "@/lib/market-data";
 
 interface TerminalWatchlistProps {
   selectedTicker: string;
   onSelectTicker: (ticker: string) => void;
+  quotes?: Record<string, MarketQuote>;
+  provider?: MarketProvider;
 }
 
 type FilterPreset = "ALL" | "DIVIDEND" | "UNDERVALUED" | "PROFITABLE" | "LOW_DEBT";
@@ -16,37 +19,54 @@ type SortField = "ticker" | "currentPrice" | "change1D" | "peRatio" | "dividendY
 export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
   selectedTicker,
   onSelectTicker,
+  quotes,
+  provider = "illustrative",
 }) => {
   const [search, setSearch] = useState<string>("");
   const [filterPreset, setFilterPreset] = useState<FilterPreset>("ALL");
   const [sortField, setSortField] = useState<SortField>("ticker");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
 
-  const filteredAndSortedStocks = useMemo(() => {
-    return STOCKS_DATA.filter((s) => {
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const match =
-          s.ticker.toLowerCase().includes(q) ||
-          s.name.toLowerCase().includes(q) ||
-          s.sector.toLowerCase().includes(q);
-        if (!match) return false;
-      }
-
-      if (filterPreset === "DIVIDEND") return s.dividendYield >= 5.0;
-      if (filterPreset === "UNDERVALUED") return s.peRatio <= 12.0;
-      if (filterPreset === "PROFITABLE") return s.roe >= 18.0;
-      if (filterPreset === "LOW_DEBT") return s.der <= 1.0;
-      return true;
-    }).sort((a, b) => {
-      const valA = a[sortField];
-      const valB = b[sortField];
-      if (typeof valA === "string" && typeof valB === "string") {
-        return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      }
-      return sortAsc ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+  // Gabungkan metadata fundamental dengan harga live dari quotes (jika ada)
+  const mergedStocks = useMemo(() => {
+    return STOCKS_DATA.map((s) => {
+      const q = quotes?.[s.ticker];
+      return {
+        ...s,
+        currentPrice: q ? q.price : s.currentPrice,
+        change1D: q ? q.changePercent : s.change1D,
+        isLive: q ? !q.isFallback : false,
+      };
     });
-  }, [search, filterPreset, sortField, sortAsc]);
+  }, [quotes]);
+
+  const filteredAndSortedStocks = useMemo(() => {
+    return mergedStocks
+      .filter((s) => {
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          const match =
+            s.ticker.toLowerCase().includes(q) ||
+            s.name.toLowerCase().includes(q) ||
+            s.sector.toLowerCase().includes(q);
+          if (!match) return false;
+        }
+
+        if (filterPreset === "DIVIDEND") return s.dividendYield >= 5.0;
+        if (filterPreset === "UNDERVALUED") return s.peRatio <= 12.0;
+        if (filterPreset === "PROFITABLE") return s.roe >= 18.0;
+        if (filterPreset === "LOW_DEBT") return s.der <= 1.0;
+        return true;
+      })
+      .sort((a, b) => {
+        const valA = a[sortField];
+        const valB = b[sortField];
+        if (typeof valA === "string" && typeof valB === "string") {
+          return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return sortAsc ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
+      });
+  }, [mergedStocks, search, filterPreset, sortField, sortAsc]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -63,7 +83,11 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       <div className="p-3 border-b border-[#1E2736] bg-[#0E131C] space-y-2.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1E7B85]"></span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                provider === "yahoo" ? "bg-[#2EB886]" : "bg-[#1E7B85]"
+              }`}
+            ></span>
             <span className="text-xs font-semibold text-slate-300">
               Daftar pantau dan penyaring
             </span>
@@ -85,7 +109,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           />
         </div>
 
-        {/* Filter Presets Chips (Wrapped to second line when needed) */}
+        {/* Filter Presets Chips */}
         <div className="flex flex-wrap gap-1.5 pt-0.5">
           {[
             { id: "ALL", label: "Semua" },
@@ -128,17 +152,22 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         <button
           onClick={() => handleSort("change1D")}
           className="col-span-2 text-right flex items-center justify-end space-x-0.5 hover:text-slate-200"
-          title="Perubahan harga hari ini (data ilustrasi)"
+          title={
+            provider === "yahoo"
+              ? "Perubahan harga hari ini (Yahoo Finance, tertunda ~10 menit)"
+              : "Perubahan harga hari ini (data ilustrasi)"
+          }
         >
-          <span className="truncate">Hari ini*</span>
+          <span className="truncate">Hari ini</span>
           <ArrowUpDown className="w-2.5 h-2.5 shrink-0" />
         </button>
         <button
           onClick={() => handleSort("peRatio")}
           className="col-span-3 text-right flex items-center justify-end space-x-1 hover:text-slate-200"
+          title="Rasio P/E dan Dividen Yield (data fundamental ilustrasi)"
         >
-          <span>P/E</span>
-          <ArrowUpDown className="w-2.5 h-2.5" />
+          <span className="truncate">P/E (ilus)</span>
+          <ArrowUpDown className="w-2.5 h-2.5 shrink-0" />
         </button>
       </div>
 
@@ -205,7 +234,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                   </span>
                 </div>
 
-                {/* Valuation & Dividend (Mono, tnum) */}
+                {/* Valuation & Dividend (Mono, tnum) - Tetap Ilustrasi */}
                 <div className="col-span-3 text-right flex flex-col justify-center">
                   <span className="font-mono text-xs text-slate-200 tnum">
                     {formatMultiple(stock.peRatio, 1)}
@@ -222,8 +251,17 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
 
       {/* Pane Footer Note */}
       <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-        <span>Basis data: 9 emiten IDX</span>
-        <span>*Data ilustrasi, bukan harga pasar</span>
+        {provider === "yahoo" ? (
+          <>
+            <span>Harga: Yahoo Finance (tertunda ~10 mnt)</span>
+            <span>*P/E & Div: data ilustrasi</span>
+          </>
+        ) : (
+          <>
+            <span>Basis data: 9 emiten IDX</span>
+            <span>*Data ilustrasi, bukan harga pasar</span>
+          </>
+        )}
       </div>
     </div>
   );
