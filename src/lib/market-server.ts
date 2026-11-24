@@ -63,10 +63,11 @@ function toWibDateString(d: Date): string {
 interface CacheEntry<T> {
   data: T;
   cachedAt: number;
+  wibDate?: string;
 }
 
 const QUOTE_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk quote harga
-const HISTORY_CACHE_TTL_MS = 300 * 1000; // 5 menit untuk riwayat harian
+const HISTORY_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk riwayat harian (TTL pendek, tidak bertahan lintas hari)
 
 // Global in-memory cache
 const quotesCache = new Map<string, CacheEntry<ServerQuoteItem>>();
@@ -235,11 +236,19 @@ export async function getHistoryServer(
   ticker: string,
   range: string = "Semua"
 ): Promise<{ points: ServerHistoryPoint[]; isFallback: boolean }> {
-  const cacheKey = `${ticker}_${range}`;
+  const todayWib = toWibDateString(new Date());
+  const cacheKey = `${ticker}_${range}_${todayWib}`;
   const now = Date.now();
   const cached = historyCache.get(cacheKey);
 
-  if (cached && now - cached.cachedAt < HISTORY_CACHE_TTL_MS) {
+  // Bersihkan entri cache yang sudah kedaluwarsa lintas hari (bukan hari ini)
+  for (const [key, entry] of historyCache.entries()) {
+    if (entry.wibDate && entry.wibDate !== todayWib) {
+      historyCache.delete(key);
+    }
+  }
+
+  if (cached && cached.wibDate === todayWib && now - cached.cachedAt < HISTORY_CACHE_TTL_MS) {
     return { points: cached.data, isFallback: false };
   }
 
@@ -342,8 +351,8 @@ export async function getHistoryServer(
       }
     }
 
-    // Simpan ke cache
-    historyCache.set(cacheKey, { data: points, cachedAt: now });
+    // Simpan ke cache dengan stempel waktu dan tanggal WIB
+    historyCache.set(cacheKey, { data: points, cachedAt: now, wibDate: todayWib });
     return { points, isFallback: false };
   } catch (error) {
     console.error(`[MarketServer] Failed to fetch history for ${ticker} from Yahoo:`, error);

@@ -762,18 +762,30 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   </div>
 
                   {/* Max Drawdown */}
-                  <div className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-slate-400">Penurunan terbesar dari puncak (drawdown):</span>
-                    <span className="text-slate-200 font-mono tnum">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 gap-1">
+                    <div>
+                      <span className="text-slate-400 block">Penurunan terbesar dari puncak (drawdown):</span>
+                      <span className="text-[10px] text-slate-500 block">
+                        Dihitung dari nilai portofolio yang bertambah seiring setoran modal berkala.
+                      </span>
+                    </div>
+                    <span className="text-slate-200 font-mono tnum self-end sm:self-center">
                       -{formatDesimal(simulationResults.maxDrawdown, 2)}%
                     </span>
                   </div>
 
                   {/* Alpha vs IHSG */}
-                  <div className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-slate-400">Selisih imbal hasil vs acuan IHSG (Alpha):</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 gap-1">
+                    <div>
+                      <span className="text-slate-400 block">Selisih imbal hasil vs acuan IHSG (Alpha):</span>
+                      <span className="text-[10px] text-slate-500 block">
+                        {reinvestDividends
+                          ? "Saham memperhitungkan reinvestasi dividen (total return), sedangkan IHSG adalah indeks harga tanpa dividen."
+                          : "Saham dihitung tanpa dividen vs IHSG sebagai indeks harga murni."}
+                      </span>
+                    </div>
                     <span
-                      className={`font-mono tnum font-semibold ${
+                      className={`font-mono tnum font-semibold self-end sm:self-center ${
                         simulationResults.alphaVsIhsg >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"
                       }`}
                     >
