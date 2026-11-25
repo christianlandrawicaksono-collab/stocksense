@@ -86,6 +86,7 @@ export interface LiveMarketNewsItem {
   publishedWib: string;
   summary: string;
   category: LiveNewsCategory;
+  sentiment: SentimentType;
   tickers: string[];
 }
 

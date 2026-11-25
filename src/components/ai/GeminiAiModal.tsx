@@ -13,7 +13,7 @@ import {
   Check,
   RotateCcw,
 } from "lucide-react";
-import type { AiMarketContext, AiTurnInput } from "@/app/api/ai/analyze/route";
+import type { AiMarketContext } from "@/app/api/ai/analyze/route";
 import { formatMultiple, formatPersen, formatRupiah } from "@/lib/format";
 import { MarkdownMessage } from "./MarkdownMessage";
 
@@ -25,35 +25,32 @@ export interface AiChatMessage {
   model?: string | null;
 }
 
-let messageSeq = 0;
-function createMessageId(prefix: "u" | "a"): string {
-  messageSeq += 1;
-  return `${prefix}-${messageSeq}`;
-}
-
 interface GeminiAiModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialQuery?: string;
   context?: AiMarketContext;
   messages: AiChatMessage[];
-  onMessagesChange: React.Dispatch<React.SetStateAction<AiChatMessage[]>>;
+  isLoading: boolean;
+  warningMsg: string | null;
+  customApiKey: string;
+  onCustomApiKeyChange: (key: string) => void;
+  onSendMessage: (prompt: string) => void;
   onClearMessages: () => void;
 }
 
 export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
   isOpen,
   onClose,
-  initialQuery = "",
   context,
   messages,
-  onMessagesChange,
+  isLoading,
+  warningMsg,
+  customApiKey,
+  onCustomApiKeyChange,
+  onSendMessage,
   onClearMessages,
 }) => {
-  const [apiKey, setApiKey] = useState<string>("");
-  const [query, setQuery] = useState<string>(initialQuery);
-  const [warningMsg, setWarningMsg] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [query, setQuery] = useState<string>("");
   const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -97,7 +94,9 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     }
     if (context?.article) {
       items.push(
-        `Jelaskan mekanisme transmisi dan sektor pemenang dari berita: "${context.article.title}"`
+        context.article.isLive
+          ? `Bedah dampak pasar & saham terkait dari berita: "${context.article.title}"`
+          : `Jelaskan mekanisme transmisi dan sektor pemenang dari skenario: "${context.article.title}"`
       );
     }
     items.push(
@@ -108,18 +107,31 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
   }, [context]);
 
   const followUpChips = useMemo(() => {
-    if (!context?.stock) return [];
-    const sameSectorPeer = context.watchlistPeers?.find(
-      (p) => p.sector === context.stock?.sector && p.ticker !== context.stock?.ticker
-    );
-    const chips = [
-      `Risiko utama ${context.stock.ticker} saat ini?`,
-      `Pengaruh makro & kurs ke ${context.stock.ticker}?`,
-    ];
-    if (sameSectorPeer) {
-      chips.unshift(`Bandingkan dengan ${sameSectorPeer.ticker}`);
+    if (context?.stock) {
+      const sameSectorPeer = context.watchlistPeers?.find(
+        (p) => p.sector === context.stock?.sector && p.ticker !== context.stock?.ticker
+      );
+      const chips = [
+        `Risiko utama ${context.stock.ticker} saat ini?`,
+        `Pengaruh makro & kurs ke ${context.stock.ticker}?`,
+      ];
+      if (sameSectorPeer) {
+        chips.unshift(`Bandingkan dengan ${sameSectorPeer.ticker}`);
+      }
+      return chips.slice(0, 3);
     }
-    return chips.slice(0, 3);
+    if (context?.article) {
+      const firstTicker = context.article.tickers?.[0];
+      const chips = [
+        "Sektor apa saja yang paling terdampak?",
+        "Risiko jangka pendek yang perlu dicermati?",
+      ];
+      if (firstTicker) {
+        chips.unshift(`Bagaimana prospek ${firstTicker} dari berita ini?`);
+      }
+      return chips.slice(0, 3);
+    }
+    return [];
   }, [context]);
 
   if (!isOpen) return null;
@@ -136,66 +148,11 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
     }
   };
 
-  const handleAsk = async (userPrompt: string) => {
+  const handleAsk = (userPrompt: string) => {
     const trimmed = userPrompt.trim();
     if (!trimmed || isLoading) return;
-
-    const historyPayload: AiTurnInput[] = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    const userMsg: AiChatMessage = {
-      id: createMessageId("u"),
-      role: "user",
-      content: trimmed,
-    };
-
-    onMessagesChange((prev) => [...prev, userMsg]);
     setQuery("");
-    setIsLoading(true);
-    setWarningMsg(null);
-
-    try {
-      const res = await fetch("/api/ai/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: trimmed,
-          messages: historyPayload,
-          customApiKey: apiKey.trim() || undefined,
-          context,
-        }),
-      });
-
-      const data = (await res.json()) as {
-        reply?: string;
-        source?: "gemini" | "builtin";
-        model?: string;
-        warning?: string;
-        error?: string;
-      };
-
-      if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
-
-      const assistantMsg: AiChatMessage = {
-        id: createMessageId("a"),
-        role: "assistant",
-        content: data.reply || "Tidak ada respons yang dihasilkan.",
-        source: data.source || "builtin",
-        model: data.model || null,
-      };
-
-      onMessagesChange((prev) => [...prev, assistantMsg]);
-      setWarningMsg(data.warning || null);
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setWarningMsg(`Gagal menghubungi layanan AI: ${errMsg}`);
-    } finally {
-      setIsLoading(false);
-    }
+    onSendMessage(trimmed);
   };
 
   return (
@@ -235,10 +192,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
             {messages.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  onClearMessages();
-                  setWarningMsg(null);
-                }}
+                onClick={onClearMessages}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition"
                 title="Mulai percakapan baru"
               >
@@ -279,7 +233,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
             )}
             {context?.article && (
               <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 truncate max-w-[260px]">
-                Artikel: {context.article.title}
+                {context.article.isLive ? "Berita:" : "Skenario:"} {context.article.title}
               </span>
             )}
           </div>
@@ -295,8 +249,8 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
               <input
                 type="password"
                 placeholder="Masukkan API Key Google AI Studio..."
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                value={customApiKey}
+                onChange={(e) => onCustomApiKeyChange(e.target.value)}
                 className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
               />
               <button
