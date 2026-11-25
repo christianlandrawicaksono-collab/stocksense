@@ -5,7 +5,9 @@
 
 import YahooFinance from "yahoo-finance2";
 import { STOCKS_DATA, HISTORICAL_SERIES } from "@/data/stocksData";
+import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus } from "./market-hours";
+import { formatDesimal, formatNumber } from "./format";
 
 // Inisialisasi YahooFinance instance (singleton per proses server)
 const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
@@ -35,6 +37,13 @@ export interface ServerQuoteItem {
   lastUpdated: string;
   marketState: "OPEN" | "CLOSED";
   isFallback?: boolean;
+  peRatio?: number;
+  pbvRatio?: number;
+  eps?: number;
+  bvps?: number;
+  dividendYield?: number;
+  marketCapTrillion?: number;
+  financialCurrency?: string;
 }
 
 export interface ServerHistoryPoint {
@@ -68,10 +77,13 @@ interface CacheEntry<T> {
 
 const QUOTE_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk quote harga
 const HISTORY_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk riwayat harian (TTL pendek, tidak bertahan lintas hari)
+const MACRO_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk indikator makro
 
 // Global in-memory cache
 const quotesCache = new Map<string, CacheEntry<ServerQuoteItem>>();
 const historyCache = new Map<string, CacheEntry<ServerHistoryPoint[]>>();
+let macroCache: CacheEntry<MarketTickerItem[]> | null = null;
+let usdIdrCache: CacheEntry<number> | null = null;
 
 // Pembatas laju sederhana: maksimum 60 permintaan server per 60 detik
 let requestCountWindow = 0;
@@ -94,6 +106,8 @@ export function checkRateLimit(): boolean {
 export function getIllustrativeQuote(ticker: string): ServerQuoteItem {
   const stock = STOCKS_DATA.find((s) => s.ticker === ticker) || STOCKS_DATA[0];
   const marketStatus = getIdxMarketStatus();
+  const eps = stock.peRatio > 0 ? stock.currentPrice / stock.peRatio : undefined;
+  const bvps = stock.pbvRatio > 0 ? stock.currentPrice / stock.pbvRatio : undefined;
 
   return {
     ticker: stock.ticker,
@@ -105,6 +119,13 @@ export function getIllustrativeQuote(ticker: string): ServerQuoteItem {
     lastUpdated: marketStatus.formattedTime,
     marketState: marketStatus.isOpen ? "OPEN" : "CLOSED",
     isFallback: true,
+    peRatio: stock.peRatio,
+    pbvRatio: stock.pbvRatio,
+    eps,
+    bvps,
+    dividendYield: stock.dividendYield,
+    marketCapTrillion: stock.marketCapTrillion,
+    financialCurrency: "IDR",
   };
 }
 
@@ -133,9 +154,24 @@ export function getIllustrativeHistory(
 // Yahoo Finance Fetchers dengan Batching & Error Handling
 // ==============================================================================
 
+function readPositiveNum(obj: Record<string, unknown>, key: string): number | undefined {
+  const val = obj[key];
+  return typeof val === "number" && isFinite(val) && val > 0 ? val : undefined;
+}
+
+function readNum(obj: Record<string, unknown>, key: string): number | undefined {
+  const val = obj[key];
+  return typeof val === "number" && isFinite(val) ? val : undefined;
+}
+
+function readStr(obj: Record<string, unknown>, key: string): string | undefined {
+  const val = obj[key];
+  return typeof val === "string" && val.length > 0 ? val : undefined;
+}
+
 /**
- * Mengambil harga terakhir dan perubahan hari ini untuk banyak kode saham sekaligus.
- * Menggunakan batch call `yf.quote` untuk menghemat panggilan jaringan.
+ * Mengambil harga terakhir dan metrik valuasi untuk banyak kode saham sekaligus.
+ * Menggunakan batch call `yf.quote` (+ kurs IDR=X untuk konversi PBV laporan USD) untuk menghemat jaringan.
  */
 export async function getBatchQuotesServer(
   tickers: string[]
@@ -173,28 +209,81 @@ export async function getBatchQuotesServer(
   // 3. Panggilan batch ke Yahoo Finance
   try {
     const symbols = tickersToFetch.map((t) => `${t}.JK`);
-    const quotes = await yf.quote(symbols);
+    const needUsdIdr = !usdIdrCache || now - usdIdrCache.cachedAt >= QUOTE_CACHE_TTL_MS;
+    if (needUsdIdr) {
+      symbols.push("IDR=X");
+    }
 
-    // Normalize quotes array
+    const quotes = await yf.quote(symbols);
     const quoteList = Array.isArray(quotes) ? quotes : [quotes];
 
+    // Ekstrak kurs USD/IDR terbaru untuk normalisasi emiten ber-laporan keuangan USD (mis. ADRO, MEDC)
+    let activeUsdIdrRate = usdIdrCache?.data ?? 0;
     for (const quote of quoteList) {
-      if (!quote || !quote.symbol) continue;
+      if (quote && quote.symbol === "IDR=X") {
+        const rate = readPositiveNum(quote as unknown as Record<string, unknown>, "regularMarketPrice");
+        if (rate) {
+          activeUsdIdrRate = rate;
+          usdIdrCache = { data: rate, cachedAt: now };
+        }
+      }
+    }
+
+    for (const quote of quoteList) {
+      if (!quote || !quote.symbol || quote.symbol === "IDR=X") continue;
       const cleanTicker = quote.symbol.replace(/\.JK$/i, "").toUpperCase();
       const stockMeta = STOCKS_DATA.find((s) => s.ticker === cleanTicker);
+      const qRec = quote as unknown as Record<string, unknown>;
 
-      const price = typeof quote.regularMarketPrice === "number" ? quote.regularMarketPrice : 0;
-      const change = typeof quote.regularMarketChange === "number" ? quote.regularMarketChange : 0;
-      const changePercent =
-        typeof quote.regularMarketChangePercent === "number"
-          ? quote.regularMarketChangePercent
-          : 0;
-      const prevClose =
-        typeof quote.regularMarketPreviousClose === "number"
-          ? quote.regularMarketPreviousClose
-          : price - change;
+      const price = readPositiveNum(qRec, "regularMarketPrice") ?? 0;
+      const change = readNum(qRec, "regularMarketChange") ?? 0;
+      const changePercent = readNum(qRec, "regularMarketChangePercent") ?? 0;
+      const prevClose = readPositiveNum(qRec, "regularMarketPreviousClose") ?? price - change;
 
       if (price > 0) {
+        const financialCurrency = readStr(qRec, "financialCurrency");
+        const eps = readPositiveNum(qRec, "epsTrailingTwelveMonths");
+        const rawPe = readPositiveNum(qRec, "trailingPE");
+        const peRatio = rawPe ?? (eps ? price / eps : undefined);
+
+        const rawBv = readPositiveNum(qRec, "bookValue");
+        const rawPbv = readPositiveNum(qRec, "priceToBook");
+
+        let bvps: number | undefined;
+        let pbvRatio: number | undefined;
+
+        if (financialCurrency && financialCurrency !== "IDR") {
+          // Emiten melapor dalam USD -> konversi nilai buku ke IDR memakai kurs IDR=X
+          if (financialCurrency === "USD" && activeUsdIdrRate > 0 && rawBv) {
+            bvps = rawBv * activeUsdIdrRate;
+            pbvRatio = price / bvps;
+          }
+        } else {
+          if (rawBv) {
+            bvps = rawBv;
+          }
+          if (rawPbv && rawPbv < 100) {
+            pbvRatio = rawPbv;
+          } else if (bvps) {
+            const computedPbv = price / bvps;
+            if (computedPbv < 100) pbvRatio = computedPbv;
+          }
+        }
+
+        if (pbvRatio !== undefined && (pbvRatio <= 0 || pbvRatio > 100)) {
+          pbvRatio = undefined;
+          bvps = undefined;
+        }
+
+        const rawDivYield = readNum(qRec, "dividendYield");
+        const dividendYield =
+          rawDivYield !== undefined && rawDivYield >= 0 && rawDivYield < 100
+            ? rawDivYield
+            : undefined;
+
+        const rawMcap = readPositiveNum(qRec, "marketCap");
+        const marketCapTrillion = rawMcap ? rawMcap / 1e12 : undefined;
+
         const item: ServerQuoteItem = {
           ticker: cleanTicker,
           name: quote.shortName || quote.longName || stockMeta?.name || cleanTicker,
@@ -205,6 +294,13 @@ export async function getBatchQuotesServer(
           lastUpdated: marketStatus.formattedTime,
           marketState: marketStatus.isOpen ? "OPEN" : "CLOSED",
           isFallback: false,
+          peRatio,
+          pbvRatio,
+          eps,
+          bvps,
+          dividendYield,
+          marketCapTrillion,
+          financialCurrency,
         };
         quotesCache.set(cleanTicker, { data: item, cachedAt: now });
         result[cleanTicker] = item;
@@ -227,6 +323,98 @@ export async function getBatchQuotesServer(
   }
 
   return result;
+}
+
+const MACRO_SYMBOL_DEFS = [
+  { yahooSymbol: "^JKSE", displaySymbol: "IHSG", name: "Indeks Harga Saham Gabungan", format: "decimal2" },
+  { yahooSymbol: "IDR=X", displaySymbol: "USD/IDR", name: "Kurs Dolar AS / Rupiah", format: "integer" },
+  { yahooSymbol: "BZ=F", displaySymbol: "BRENT", name: "Minyak Mentah Brent (USD/bbl)", format: "usd2_bbl" },
+  { yahooSymbol: "MTF=F", displaySymbol: "COAL", name: "Batu Bara API2 (USD/t)", format: "usd2_ton" },
+  { yahooSymbol: "GC=F", displaySymbol: "GOLD", name: "Emas Dunia COMEX (USD/oz)", format: "usd2_oz" },
+  { yahooSymbol: "^GSPC", displaySymbol: "S&P 500", name: "Indeks S&P 500 Amerika Serikat", format: "decimal2" },
+] as const;
+
+function formatMacroValue(price: number, formatType: (typeof MACRO_SYMBOL_DEFS)[number]["format"]): string {
+  switch (formatType) {
+    case "integer":
+      return formatNumber(price);
+    case "usd2_bbl":
+      return `$${formatDesimal(price, 2)}/bbl`;
+    case "usd2_ton":
+      return `$${formatDesimal(price, 2)}/t`;
+    case "usd2_oz":
+      return `$${formatDesimal(price, 2)}/oz`;
+    case "decimal2":
+    default:
+      return formatDesimal(price, 2);
+  }
+}
+
+/**
+ * Mengambil daftar indikator makro & pasar global langsung dari Yahoo Finance.
+ * Tidak mencampur data statis ilustrasi: jika gagal, kembalikan array kosong + isFallback: true.
+ */
+export async function getMacroTickersServer(): Promise<{
+  tickers: MarketTickerItem[];
+  isFallback: boolean;
+}> {
+  const now = Date.now();
+  if (macroCache && now - macroCache.cachedAt < MACRO_CACHE_TTL_MS && macroCache.data.length > 0) {
+    return { tickers: macroCache.data, isFallback: false };
+  }
+
+  if (!checkRateLimit()) {
+    console.warn("[MarketServer] Rate limit reached on macro tickers");
+    return macroCache && macroCache.data.length > 0
+      ? { tickers: macroCache.data, isFallback: false }
+      : { tickers: [], isFallback: true };
+  }
+
+  try {
+    const symbols = MACRO_SYMBOL_DEFS.map((m) => m.yahooSymbol);
+    const quotes = await yf.quote(symbols);
+    const quoteList = Array.isArray(quotes) ? quotes : [quotes];
+
+    const bySymbol = new Map<string, Record<string, unknown>>();
+    for (const q of quoteList) {
+      if (q && q.symbol) {
+        bySymbol.set(q.symbol, q as unknown as Record<string, unknown>);
+      }
+    }
+
+    const items: MarketTickerItem[] = [];
+    for (const def of MACRO_SYMBOL_DEFS) {
+      const qRec = bySymbol.get(def.yahooSymbol);
+      if (!qRec) continue;
+
+      const price = readPositiveNum(qRec, "regularMarketPrice");
+      if (!price) continue;
+
+      if (def.yahooSymbol === "IDR=X") {
+        usdIdrCache = { data: price, cachedAt: now };
+      }
+
+      const change = readNum(qRec, "regularMarketChangePercent") ?? 0;
+      items.push({
+        symbol: def.displaySymbol,
+        name: def.name,
+        value: formatMacroValue(price, def.format),
+        change,
+        isPositive: change >= 0,
+        isFallback: false,
+      });
+    }
+
+    if (items.length === 0) {
+      throw new Error("No macro quotes parsed from Yahoo Finance");
+    }
+
+    macroCache = { data: items, cachedAt: now };
+    return { tickers: items, isFallback: false };
+  } catch (error) {
+    console.error("[MarketServer] Failed to fetch macro tickers from Yahoo Finance:", error);
+    return { tickers: [], isFallback: true };
+  }
 }
 
 /**

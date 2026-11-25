@@ -9,6 +9,8 @@
  */
 
 import { STOCKS_DATA, HISTORICAL_SERIES } from "@/data/stocksData";
+import { LIVE_MARKET_TICKERS } from "@/data/macroData";
+import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus, MarketStatus } from "./market-hours";
 
 export type MarketProvider = "illustrative" | "yahoo";
@@ -24,6 +26,13 @@ export interface MarketQuote {
   lastUpdated: string;
   marketState: "OPEN" | "CLOSED";
   isFallback?: boolean;
+  peRatio?: number;
+  pbvRatio?: number;
+  eps?: number;
+  bvps?: number;
+  dividendYield?: number;
+  marketCapTrillion?: number;
+  financialCurrency?: string;
 }
 
 export interface MarketHistoryPoint {
@@ -43,6 +52,14 @@ export interface QuotesResponse {
   timestamp: string;
 }
 
+export interface MacroResponse {
+  provider: MarketProvider;
+  tickers: MarketTickerItem[];
+  isFallback: boolean;
+  marketStatus: MarketStatus;
+  timestamp: string;
+}
+
 export interface HistoryResponse {
   provider: MarketProvider;
   ticker: string;
@@ -54,11 +71,11 @@ export interface HistoryResponse {
 }
 
 /**
- * Mendapatkan konfigurasi provider saat ini dari env
+ * Mendapatkan konfigurasi provider saat ini dari env publik (konsisten antara SSR dan Client hydration)
  */
 export function getActiveMarketProvider(): MarketProvider {
   if (typeof process !== "undefined" && process.env) {
-    if (process.env.NEXT_PUBLIC_MARKET_DATA_PROVIDER === "yahoo" || process.env.MARKET_DATA_PROVIDER === "yahoo") {
+    if (process.env.NEXT_PUBLIC_MARKET_DATA_PROVIDER === "yahoo") {
       return "yahoo";
     }
   }
@@ -74,6 +91,8 @@ export function getIllustrativeQuotesMap(tickers?: string[]): Record<string, Mar
   const list = STOCKS_DATA.filter((s) => !tickers || tickers.includes(s.ticker));
 
   for (const s of list) {
+    const eps = s.peRatio > 0 ? s.currentPrice / s.peRatio : undefined;
+    const bvps = s.pbvRatio > 0 ? s.currentPrice / s.pbvRatio : undefined;
     result[s.ticker] = {
       ticker: s.ticker,
       name: s.name,
@@ -84,6 +103,13 @@ export function getIllustrativeQuotesMap(tickers?: string[]): Record<string, Mar
       lastUpdated: status.formattedTime,
       marketState: status.isOpen ? "OPEN" : "CLOSED",
       isFallback: true,
+      peRatio: s.peRatio,
+      pbvRatio: s.pbvRatio,
+      eps,
+      bvps,
+      dividendYield: s.dividendYield,
+      marketCapTrillion: s.marketCapTrillion,
+      financialCurrency: "IDR",
     };
   }
   return result;
@@ -134,6 +160,46 @@ export async function getQuotes(tickers?: string[]): Promise<QuotesResponse> {
       provider: "illustrative",
       marketStatus: getIdxMarketStatus(),
       quotes: getIllustrativeQuotesMap(tickers),
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+/**
+ * Mengambil indikator makro & indeks pasar global dari server
+ */
+export async function getMacroTickers(): Promise<MacroResponse> {
+  try {
+    const res = await fetch("/api/macro", {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status}`);
+    }
+
+    const data: MacroResponse = await res.json();
+    return data;
+  } catch (error) {
+    console.warn("[market-data] getMacroTickers fetch failed:", error);
+    const isYahooMode = process.env.NEXT_PUBLIC_MARKET_DATA_PROVIDER === "yahoo";
+
+    if (isYahooMode) {
+      return {
+        provider: "yahoo",
+        tickers: [],
+        isFallback: true,
+        marketStatus: getIdxMarketStatus(),
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    return {
+      provider: "illustrative",
+      tickers: LIVE_MARKET_TICKERS,
+      isFallback: true,
+      marketStatus: getIdxMarketStatus(),
       timestamp: new Date().toISOString(),
     };
   }

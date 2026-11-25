@@ -25,7 +25,7 @@ function HomeContent() {
   const activeArticleId = searchParams.get("artikel") || null;
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
-  const { quotes, provider, marketStatus } = useMarketData();
+  const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } = useMarketData();
 
   // Helper to update URL params via Next.js router without full reload
   const updateUrlParams = (updates: {
@@ -145,7 +145,14 @@ function HomeContent() {
       </div>
 
       {/* 2. Ticker bar: HANYA TAMPIL DI TERMINAL (tidak di mode Berita) */}
-      {currentMode === "terminal" && <MarketTicker provider={provider} />}
+      {currentMode === "terminal" && (
+        <MarketTicker
+          provider={provider}
+          tickers={macroTickers}
+          isMacroFallback={isMacroFallback}
+          isLoading={isLoading}
+        />
+      )}
 
       {/* 3. Header navigasi permanen dengan toggle Berita/Terminal */}
       <Navbar
@@ -232,7 +239,11 @@ function HomeContent() {
           </div>
 
           <div className="text-center sm:text-right">
-            <span>Data ilustrasi untuk riset antarmuka dan simulasi strategi kuartalan.</span>
+            <span>
+              {provider === "yahoo"
+                ? "Harga & riwayat: Yahoo Finance (~10 menit tertunda); simulasi DCA & rasio profil memakai data acuan."
+                : "Data ilustrasi untuk riset antarmuka dan simulasi strategi kuartalan."}
+            </span>
           </div>
         </div>
       </footer>
