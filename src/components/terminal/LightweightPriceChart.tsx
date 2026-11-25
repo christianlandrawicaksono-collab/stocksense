@@ -5,16 +5,18 @@ import {
   createChart,
   LineSeries,
   CandlestickSeries,
+  HistogramSeries,
   createSeriesMarkers,
   ColorType,
   CrosshairMode,
+  LineStyle,
   IChartApi,
   ISeriesApi,
   Time,
   SeriesMarker,
 } from "lightweight-charts";
 import { MarketHistoryPoint, HistoryRange, MarketProvider } from "@/lib/market-data";
-import { formatNumber, formatRupiah, formatPersen } from "@/lib/format";
+import { formatNumber, formatDesimal, formatRupiah, formatPersen } from "@/lib/format";
 import { TrendingUp, BarChart2, AlertCircle, AlertTriangle, RotateCcw } from "lucide-react";
 
 interface LightweightPriceChartProps {
@@ -28,11 +30,40 @@ interface LightweightPriceChartProps {
   currentPrice?: number;
   changePercent?: number;
   lastUpdated?: string;
+  fairValuePrice?: number;
   error?: string | null;
   onRetry?: () => void;
 }
 
 type ChartType = "line" | "candle";
+
+function computeSMA(points: MarketHistoryPoint[], period: number): { time: Time; value: number }[] {
+  if (points.length < period) return [];
+  const res: { time: Time; value: number }[] = [];
+  let rollingSum = 0;
+
+  for (let i = 0; i < points.length; i++) {
+    rollingSum += points[i].close;
+    if (i >= period) {
+      rollingSum -= points[i - period].close;
+    }
+    if (i >= period - 1) {
+      res.push({
+        time: points[i].time as Time,
+        value: rollingSum / period,
+      });
+    }
+  }
+  return res;
+}
+
+function formatCompactVolume(vol: number): string {
+  if (!vol || vol <= 0) return "0";
+  if (vol >= 1e9) return `${formatDesimal(vol / 1e9, 2)} M`;
+  if (vol >= 1e6) return `${formatDesimal(vol / 1e6, 2)} jt`;
+  if (vol >= 1e3) return `${formatDesimal(vol / 1e3, 1)} rb`;
+  return formatNumber(vol);
+}
 
 export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   points,
@@ -43,6 +74,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   isLoading = false,
   currentPrice,
   lastUpdated,
+  fairValuePrice,
   error,
   onRetry,
 }) => {
@@ -50,12 +82,17 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   const chartRef = useRef<IChartApi | null>(null);
 
   const [chartType, setChartType] = useState<ChartType>("line");
+  const [showVolume, setShowVolume] = useState<boolean>(true);
+  const [showMa20, setShowMa20] = useState<boolean>(false);
+  const [showMa50, setShowMa50] = useState<boolean>(false);
+  const [showFairValue, setShowFairValue] = useState<boolean>(false);
   const [hoverData, setHoverData] = useState<{
     time: string;
     close: number;
     open?: number;
     high?: number;
     low?: number;
+    volume?: number;
     dividend?: number;
   } | null>(null);
 
@@ -79,6 +116,18 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     }
     return unique;
   }, [points]);
+
+  const hasValidVolume = useMemo(() => {
+    return hasValidOHLC && sortedPoints.some((p) => p.volume > 0);
+  }, [hasValidOHLC, sortedPoints]);
+
+  const pointByTime = useMemo(() => {
+    const map = new Map<string, MarketHistoryPoint>();
+    for (const p of sortedPoints) {
+      map.set(p.time, p);
+    }
+    return map;
+  }, [sortedPoints]);
 
   // Pemeriksaan konsistensi harga antara bar terakhir riwayat dan quote live di header
   const priceConsistency = useMemo(() => {
@@ -129,7 +178,9 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       },
       rightPriceScale: {
         borderColor: "#1E2736",
-        scaleMargins: { top: 0.12, bottom: 0.12 },
+        scaleMargins: hasValidVolume && showVolume
+          ? { top: 0.1, bottom: 0.24 }
+          : { top: 0.12, bottom: 0.12 },
       },
       timeScale: {
         borderColor: "#1E2736",
@@ -204,6 +255,59 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       series = lineSeries;
     }
 
+    // Pasang Histogram Volume di bawah grafik harga bila tersedia volume nyata
+    if (hasValidVolume && showVolume) {
+      const volumeSeries = chart.addSeries(HistogramSeries, {
+        priceFormat: { type: "volume" },
+        priceScaleId: "volume",
+      });
+      chart.priceScale("volume").applyOptions({
+        scaleMargins: { top: 0.78, bottom: 0 },
+      });
+      volumeSeries.setData(
+        sortedPoints.map((p) => ({
+          time: p.time as Time,
+          value: p.volume,
+          color:
+            p.close >= (p.open ?? p.close)
+              ? "rgba(46, 184, 134, 0.35)"
+              : "rgba(220, 82, 95, 0.35)",
+        }))
+      );
+    }
+
+    // Overlay Moving Average (MA20 / MA50)
+    const maConfigs = [
+      { enabled: showMa20, period: 20, color: "#F59E0B" },
+      { enabled: showMa50, period: 50, color: "#A855F7" },
+    ];
+    for (const ma of maConfigs) {
+      if (!ma.enabled) continue;
+      const maData = computeSMA(sortedPoints, ma.period);
+      if (maData.length > 0) {
+        const maSeries = chart.addSeries(LineSeries, {
+          color: ma.color,
+          lineWidth: 1,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        maSeries.setData(maData);
+      }
+    }
+
+    // Garis horizontal Target Harga Wajar (P/E Mean)
+    if (showFairValue && fairValuePrice && fairValuePrice > 0) {
+      series.createPriceLine({
+        price: fairValuePrice,
+        color: "#2DD4BF",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "Wajar Mean",
+      });
+    }
+
     // Pasang penanda dividen (markers) titik oranye tanpa teks di atas grafik
     const dividendMarkers: SeriesMarker<Time>[] = [];
     for (const p of sortedPoints) {
@@ -224,7 +328,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
 
     chart.timeScale().fitContent();
 
-    // Subscribe ke perpindahan crosshair untuk tooltip interaktif
+    // Subscribe ke perpindahan crosshair untuk tooltip interaktif (O(1) lookup via Map)
     chart.subscribeCrosshairMove((param) => {
       if (
         param.point === undefined ||
@@ -237,7 +341,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         setHoverData(null);
       } else {
         const timeStr = typeof param.time === "string" ? param.time : "";
-        const matched = sortedPoints.find((p) => p.time === timeStr);
+        const matched = pointByTime.get(timeStr);
         if (matched) {
           setHoverData({
             time: matched.time,
@@ -245,6 +349,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
             open: matched.open,
             high: matched.high,
             low: matched.low,
+            volume: matched.volume,
             dividend: matched.dividend,
           });
         }
@@ -269,7 +374,19 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         chartRef.current = null;
       }
     };
-  }, [sortedPoints, chartType, hasValidOHLC, priceConsistency.isConsistent]);
+  }, [
+    sortedPoints,
+    pointByTime,
+    chartType,
+    hasValidOHLC,
+    hasValidVolume,
+    showVolume,
+    showMa20,
+    showMa50,
+    showFairValue,
+    fairValuePrice,
+    priceConsistency.isConsistent,
+  ]);
 
   // Format tanggal Indonesia untuk tooltip
   const formatTooltipDate = (isoDate: string) => {
@@ -289,10 +406,10 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
 
   return (
     <div className="flex flex-col bg-[#111622] rounded-xl overflow-hidden font-sans">
-      {/* Sub-Header: Kontrol Tampilan & Timeframe */}
+      {/* Sub-Header: Kontrol Tampilan, Indikator & Timeframe */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-[#0C1017] border-b border-[#1E2736] text-xs">
-        {/* Kiri: Tipe Grafik & Penanda Dividen Info */}
-        <div className="flex items-center space-x-2">
+        {/* Kiri: Tipe Grafik, Toggle Indikator & Penanda Dividen Info */}
+        <div className="flex flex-wrap items-center gap-2">
           {hasValidOHLC && (
             <div className="flex items-center bg-[#080B10] p-0.5 rounded border border-[#1E2736]">
               <button
@@ -324,9 +441,65 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
             </div>
           )}
 
-          <div className="hidden sm:flex items-center space-x-1.5 text-[11px] text-slate-400">
+          {/* Toggle Indikator Teknikal & Garis Wajar */}
+          <div className="flex items-center flex-wrap gap-1">
+            {hasValidVolume && (
+              <button
+                type="button"
+                onClick={() => setShowVolume((v) => !v)}
+                className={`px-2 py-1 rounded text-[11px] font-mono border transition ${
+                  showVolume
+                    ? "bg-[#1E7B85]/20 border-[#1E7B85] text-slate-100"
+                    : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
+                }`}
+                title="Tampilkan / sembunyikan histogram volume"
+              >
+                Vol
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowMa20((v) => !v)}
+              className={`px-2 py-1 rounded text-[11px] font-mono border transition flex items-center space-x-1 ${
+                showMa20
+                  ? "bg-[#F59E0B]/15 border-[#F59E0B]/60 text-[#FCD34D]"
+                  : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
+              }`}
+              title={`Moving Average 20 bar (${timeframe === "1Th" || timeframe === "3Th" ? "20 hari" : "20 minggu"})`}
+            >
+              <span>MA20</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMa50((v) => !v)}
+              className={`px-2 py-1 rounded text-[11px] font-mono border transition flex items-center space-x-1 ${
+                showMa50
+                  ? "bg-[#A855F7]/15 border-[#A855F7]/60 text-[#D8B4FE]"
+                  : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
+              }`}
+              title={`Moving Average 50 bar (${timeframe === "1Th" || timeframe === "3Th" ? "50 hari" : "50 minggu"})`}
+            >
+              <span>MA50</span>
+            </button>
+            {fairValuePrice && fairValuePrice > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowFairValue((v) => !v)}
+                className={`px-2 py-1 rounded text-[11px] font-sans border transition ${
+                  showFairValue
+                    ? "bg-[#2DD4BF]/15 border-[#2DD4BF]/60 text-[#2DD4BF]"
+                    : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
+                }`}
+                title={`Garis target harga wajar P/E Mean (${formatRupiah(fairValuePrice)})`}
+              >
+                Wajar
+              </button>
+            )}
+          </div>
+
+          <div className="hidden md:flex items-center space-x-1.5 text-[11px] text-slate-400">
             <span className="w-2 h-2 rounded-full bg-[#F59E0B]"></span>
-            <span>Penanda dividen</span>
+            <span>Dividen</span>
           </div>
         </div>
 
@@ -374,6 +547,11 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
                   R: {formatNumber(hoverData.low || hoverData.close)}
                 </span>
               </>
+            )}
+            {hasValidVolume && hoverData.volume !== undefined && hoverData.volume > 0 && (
+              <span className="text-slate-400 text-[11px]">
+                Vol: {formatCompactVolume(hoverData.volume)}
+              </span>
             )}
             {hoverData.dividend !== undefined && hoverData.dividend > 0 && (
               <span className="px-1.5 py-0.5 rounded bg-[#F59E0B]/20 text-[#F59E0B] font-semibold text-[11px]">

@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import { MACRO_NEWS_DATA, MACRO_MARKET_SUMMARY } from "@/data/macroData";
-import { MacroCategory, SentimentType } from "@/types/market";
-import { Search } from "lucide-react";
+import { MacroCategory, MacroNewsItem, SentimentType } from "@/types/market";
+import { Search, Sparkles } from "lucide-react";
 
 // 9 Saham yang memiliki data lengkap di Terminal
 export const SUPPORTED_TERMINAL_TICKERS = new Set([
@@ -14,12 +14,14 @@ interface NewsViewProps {
   onSelectStockFromNews: (ticker: string, newsId: string, newsTitle: string) => void;
   activeArticleId?: string | null;
   onOpenArticle?: (articleId: string | null) => void;
+  onAskAiArticle?: (article: MacroNewsItem) => void;
 }
 
 export const NewsView: React.FC<NewsViewProps> = ({
   onSelectStockFromNews,
   activeArticleId: propArticleId = null,
   onOpenArticle,
+  onAskAiArticle,
 }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<"1W" | "1M">("1W");
   const [selectedCategory, setSelectedCategory] = useState<MacroCategory>("ALL");
@@ -97,14 +99,26 @@ export const NewsView: React.FC<NewsViewProps> = ({
       {/* JIKA MEMBUKA HALAMAN ARTIKEL */}
       {activeArticle ? (
         <article className="max-w-[680px] mx-auto py-6 px-4 sm:px-0 space-y-6">
-          {/* Navigasi kembali ke daftar dengan area ketuk minimal 44px */}
-          <button
-            type="button"
-            onClick={() => setActiveArticle(null)}
-            className="min-h-[44px] inline-flex items-center text-xs text-[#1E7B85] hover:underline font-medium"
-          >
-            ← Kembali ke daftar berita
-          </button>
+          {/* Navigasi kembali ke daftar & tanya AI dengan area ketuk minimal 44px */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveArticle(null)}
+              className="min-h-[44px] inline-flex items-center text-xs text-[#1E7B85] hover:underline font-medium"
+            >
+              ← Kembali ke daftar berita
+            </button>
+            {onAskAiArticle && (
+              <button
+                type="button"
+                onClick={() => onAskAiArticle(activeArticle)}
+                className="min-h-[44px] inline-flex items-center space-x-1.5 px-3 py-2 rounded-lg bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1E7B85] border border-[#D5D5CA] text-xs font-medium transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Tanya AI soal skenario ini</span>
+              </button>
+            )}
+          </div>
 
           {/* Label tegas skenario contoh */}
           <div className="border-b border-[#E5E5DC] pb-4 space-y-2">

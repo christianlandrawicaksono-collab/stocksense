@@ -16,7 +16,10 @@ export async function GET(
     const { ticker: rawTicker } = await params;
     const ticker = (rawTicker || "").toUpperCase();
 
-    if (!(SUPPORTED_TICKERS as readonly string[]).includes(ticker)) {
+    const isSupported =
+      (SUPPORTED_TICKERS as readonly string[]).includes(ticker) || ticker === "IHSG";
+
+    if (!isSupported) {
       return NextResponse.json(
         { error: `Ticker ${ticker} tidak didukung` },
         { status: 400 }

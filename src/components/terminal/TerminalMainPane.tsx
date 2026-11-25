@@ -10,9 +10,13 @@ import {
   formatPersen,
   formatRupiah,
   parseFormattedNumber,
-  calculateAnnualizedIRR,
 } from "@/lib/format";
-import { Layers, Calculator, Info, ArrowLeft, X } from "lucide-react";
+import {
+  aggregateHistoryToQuarterly,
+  mapIllustrativeToDcaPoints,
+  runQuarterlyDcaSimulation,
+} from "@/lib/dca-simulator";
+import { Layers, Calculator, Info, ArrowLeft, X, RotateCcw, Sparkles } from "lucide-react";
 import { LightweightPriceChart } from "./LightweightPriceChart";
 import {
   getHistory,
@@ -30,6 +34,7 @@ interface TerminalMainPaneProps {
   onSelectTicker?: (ticker: string) => void;
   onBackToArticle?: (newsId: string) => void;
   onCloseOriginPanel?: () => void;
+  onAskAiStock?: (ticker: string) => void;
   quote?: MarketQuote;
   provider?: MarketProvider;
   marketStatus?: MarketStatus;
@@ -43,6 +48,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   onSelectTicker,
   onBackToArticle,
   onCloseOriginPanel,
+  onAskAiStock,
   quote,
   provider = "illustrative",
   marketStatus,
@@ -122,15 +128,109 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     return Array.from(new Set(tickers));
   }, [originArticle, selectedTicker]);
 
-  // DCA Simulator inputs (Quarterly frequency matching 29 data points)
+  // DCA Simulator inputs (Quarterly frequency)
   const [quarterlyDCA, setQuarterlyDCA] = useState<number>(3000000); // Rp 3.000.000/kuartal (~1jt/bln)
   const [initialCapital, setInitialCapital] = useState<number>(0);
   const [simStartYear, setSimStartYear] = useState<string>("2020");
   const [reinvestDividends, setReinvestDividends] = useState<boolean>(true);
+  const [simSourcePref, setSimSourcePref] = useState<"auto" | "illustrative">("auto");
+  const [simRetryCount, setSimRetryCount] = useState<number>(0);
+  const [simYahooData, setSimYahooData] = useState<{
+    ticker: string;
+    stockPoints: MarketHistoryPoint[];
+    ihsgPoints: MarketHistoryPoint[];
+    error: string | null;
+  }>({
+    ticker: "",
+    stockPoints: [],
+    ihsgPoints: [],
+    error: null,
+  });
 
   // Raw string states for inputs with thousand separators
   const [dcaInputStr, setDcaInputStr] = useState<string>("3.000.000");
   const [lumpSumInputStr, setLumpSumInputStr] = useState<string>("0");
+
+  const useYahooSimulator = provider === "yahoo" && simSourcePref === "auto";
+  const isSimLoading =
+    useYahooSimulator &&
+    activeTab === "simulator" &&
+    simYahooData.ticker !== selectedTicker &&
+    simYahooData.error === null;
+
+  const handleSimRetry = useCallback(() => {
+    setSimYahooData({
+      ticker: "",
+      stockPoints: [],
+      ihsgPoints: [],
+      error: null,
+    });
+    setSimRetryCount((c) => c + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!useYahooSimulator || activeTab !== "simulator") return;
+    if (simYahooData.ticker === selectedTicker && !simYahooData.error) return;
+
+    let cancelled = false;
+    const stockFullPromise: Promise<{ points: MarketHistoryPoint[]; isFallback: boolean }> =
+      chartTf === "Semua" && historyPoints.length > 0 && !isHistoryFallback && !historyError
+        ? Promise.resolve({
+            points: historyPoints,
+            isFallback: false,
+          })
+        : getHistory(selectedTicker, "Semua");
+
+    Promise.all([stockFullPromise, getHistory("IHSG", "Semua")])
+      .then(([stockRes, ihsgRes]) => {
+        if (cancelled) return;
+        if (
+          stockRes.points.length === 0 ||
+          stockRes.isFallback ||
+          ihsgRes.points.length === 0 ||
+          ihsgRes.isFallback
+        ) {
+          setSimYahooData({
+            ticker: selectedTicker,
+            stockPoints: [],
+            ihsgPoints: [],
+            error: "Riwayat historis saham atau acuan IHSG tidak tersedia saat ini dari Yahoo Finance.",
+          });
+        } else {
+          setSimYahooData({
+            ticker: selectedTicker,
+            stockPoints: stockRes.points,
+            ihsgPoints: ihsgRes.points,
+            error: null,
+          });
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[TerminalMainPane] Simulator history fetch failed:", err);
+        setSimYahooData({
+          ticker: selectedTicker,
+          stockPoints: [],
+          ihsgPoints: [],
+          error: "Gagal memuat data historis simulasi dari penyedia data.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    useYahooSimulator,
+    activeTab,
+    selectedTicker,
+    simRetryCount,
+    chartTf,
+    historyPoints,
+    isHistoryFallback,
+    historyError,
+    simYahooData.ticker,
+    simYahooData.error,
+  ]);
 
   const stock = useMemo(() => {
     return STOCKS_DATA.find((s) => s.ticker === selectedTicker) || STOCKS_DATA[0];
@@ -242,133 +342,60 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     setLumpSumInputStr(formatNumber(num));
   };
 
-  // DCA Simulation Logic based strictly on Quarterly Intervals
+  // DCA Simulation Logic based on active source (Yahoo Finance weekly→quarterly or Illustrative 29-point quarterly)
+  const yahooAvailableStartYears = useMemo(() => {
+    if (!useYahooSimulator || simYahooData.stockPoints.length === 0) return [];
+    const firstYear = parseInt(simYahooData.stockPoints[0].time.slice(0, 4), 10) || 2020;
+    const candidates = [2015, 2018, 2020, 2021, 2022, 2023, 2024, 2025];
+    return candidates.filter((y) => y >= firstYear).map(String);
+  }, [useYahooSimulator, simYahooData.stockPoints]);
+
+  const simYearOptions =
+    useYahooSimulator && yahooAvailableStartYears.length > 0
+      ? yahooAvailableStartYears
+      : ["2020", "2021", "2022", "2023", "2024", "2025"];
+  const effectiveSimStartYear = simYearOptions.includes(simStartYear)
+    ? simStartYear
+    : simYearOptions.includes("2020")
+    ? "2020"
+    : simYearOptions[0] || "2020";
+
   const simulationResults = useMemo(() => {
-    const rawSeries = HISTORICAL_SERIES[selectedTicker] || [];
-    const ihsgSeries = IHSG_HISTORICAL;
-
-    const series = rawSeries.filter((d) => d.date >= `${simStartYear}-01`);
-    if (series.length < 2) return null;
-
-    let currentInvested = initialCapital;
-    let currentShares = 0;
-    let currentDividends = 0;
-    let currentIhsgUnits = 0;
-
-    const firstPrice = series[0].price;
-    const firstIhsg = ihsgSeries.find((i) => i.date === series[0].date)?.price || 6000;
-
-    if (initialCapital > 0) {
-      currentShares += Math.floor(initialCapital / firstPrice);
-      currentIhsgUnits += initialCapital / firstIhsg;
-    }
-
-    let peakValue = 0;
-    let maxDrawdown = 0;
-
-    interface TimelinePoint {
-      date: string;
-      price: number;
-      portfolioValue: number;
-      totalInvested: number;
-      ihsgValue: number;
-    }
-
-    const timelineData: TimelinePoint[] = [];
-
-    for (let index = 0; index < series.length; index++) {
-      const point = series[index];
-
-      // For index 0 (initial point), only lump-sum was placed. From index 1 onwards, quarterly DCA is deposited.
-      if (index > 0 && quarterlyDCA > 0) {
-        currentInvested += quarterlyDCA;
-        const boughtShares = Math.floor(quarterlyDCA / point.price);
-        currentShares += boughtShares;
-
-        const currentIhsg = ihsgSeries.find((i) => i.date === point.date)?.price || firstIhsg;
-        currentIhsgUnits += quarterlyDCA / currentIhsg;
+    if (useYahooSimulator) {
+      if (simYahooData.ticker !== selectedTicker || simYahooData.error || simYahooData.stockPoints.length === 0) {
+        return null;
       }
-
-      // Handle dividend
-      let currentDivAmount = 0;
-      if (point.dividend && point.dividend > 0) {
-        currentDivAmount = currentShares * point.dividend;
-        currentDividends += currentDivAmount;
-
-        if (reinvestDividends) {
-          const dripShares = Math.floor(currentDivAmount / point.price);
-          currentShares += dripShares;
-        }
-      }
-
-      const portfolioValue = currentShares * point.price + (!reinvestDividends ? currentDividends : 0);
-      const currentIhsg = ihsgSeries.find((i) => i.date === point.date)?.price || firstIhsg;
-      const ihsgValue = currentIhsgUnits * currentIhsg;
-
-      if (portfolioValue > peakValue) {
-        peakValue = portfolioValue;
-      } else if (peakValue > 0) {
-        const drawdown = ((peakValue - portfolioValue) / peakValue) * 100;
-        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-      }
-
-      timelineData.push({
-        date: point.date,
-        price: point.price,
-        portfolioValue,
-        totalInvested: currentInvested,
-        ihsgValue
+      const stockQ = aggregateHistoryToQuarterly(simYahooData.stockPoints);
+      const ihsgQ = aggregateHistoryToQuarterly(simYahooData.ihsgPoints);
+      return runQuarterlyDcaSimulation({
+        stockSeries: stockQ,
+        ihsgSeries: ihsgQ,
+        startYear: parseInt(effectiveSimStartYear, 10) || 2020,
+        quarterlyDCA,
+        initialCapital,
+        reinvestDividends,
       });
     }
 
-    const finalPoint = timelineData[timelineData.length - 1];
-    const totalQuarters = timelineData.length - 1;
-    const netProfit = finalPoint.portfolioValue - finalPoint.totalInvested;
-    const totalReturnPercent = finalPoint.totalInvested > 0
-      ? ((finalPoint.portfolioValue - finalPoint.totalInvested) / finalPoint.totalInvested) * 100
-      : 0;
-
-    // Duration in years
-    const years = totalQuarters / 4;
-
-    // Money-Weighted Internal Rate of Return (IRR)
-    const cashFlows: number[] = [];
-    for (let i = 0; i < series.length; i++) {
-      let cf = 0;
-      if (i === 0) {
-        if (initialCapital > 0) cf -= initialCapital;
-      } else {
-        if (quarterlyDCA > 0) cf -= quarterlyDCA;
-      }
-      if (i === series.length - 1) {
-        cf += finalPoint.portfolioValue;
-      }
-      cashFlows.push(cf);
-    }
-    const firstNonZero = cashFlows.findIndex((c) => c !== 0);
-    const validCashFlows = firstNonZero >= 0 ? cashFlows.slice(firstNonZero) : [];
-    const irr = calculateAnnualizedIRR(validCashFlows);
-    const simpleAnnualReturn = years > 0 ? totalReturnPercent / years : null;
-
-    const ihsgFinalReturn = finalPoint.totalInvested > 0
-      ? ((finalPoint.ihsgValue - finalPoint.totalInvested) / finalPoint.totalInvested) * 100
-      : 0;
-    const alphaVsIhsg = totalReturnPercent - ihsgFinalReturn;
-
-    return {
-      totalQuarters,
-      years,
-      totalInvested: finalPoint.totalInvested,
-      finalValue: finalPoint.portfolioValue,
-      netProfit,
-      totalReturnPercent,
-      irr,
-      simpleAnnualReturn,
-      maxDrawdown,
-      totalDividendsReceived: currentDividends,
-      alphaVsIhsg
-    };
-  }, [selectedTicker, quarterlyDCA, initialCapital, simStartYear, reinvestDividends]);
+    const stockQ = mapIllustrativeToDcaPoints(HISTORICAL_SERIES[selectedTicker] || []);
+    const ihsgQ = mapIllustrativeToDcaPoints(IHSG_HISTORICAL);
+    return runQuarterlyDcaSimulation({
+      stockSeries: stockQ,
+      ihsgSeries: ihsgQ,
+      startYear: parseInt(effectiveSimStartYear, 10) || 2020,
+      quarterlyDCA,
+      initialCapital,
+      reinvestDividends,
+    });
+  }, [
+    useYahooSimulator,
+    simYahooData,
+    selectedTicker,
+    quarterlyDCA,
+    initialCapital,
+    effectiveSimStartYear,
+    reinvestDividends,
+  ]);
 
   return (
     <div className="flex flex-col space-y-4 font-sans">
@@ -469,26 +496,40 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             </div>
           </div>
 
-          {/* Market Status & Data Delay Badge */}
+          {/* Market Status, Data Delay Badge & Contextual AI */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <div
-              className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-sans border ${
-                marketStatus?.isOpen
-                  ? "bg-[#2EB886]/10 border-[#2EB886]/30 text-[#2EB886]"
-                  : "bg-[#1E2736]/60 border-[#283548] text-slate-400"
-              }`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  marketStatus?.isOpen ? "bg-[#2EB886] animate-pulse" : "bg-slate-500"
+            <div className="flex items-center gap-2">
+              <div
+                className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-sans border ${
+                  marketStatus?.isOpen
+                    ? "bg-[#2EB886]/10 border-[#2EB886]/30 text-[#2EB886]"
+                    : "bg-[#1E2736]/60 border-[#283548] text-slate-400"
                 }`}
-              />
-              <span className="font-medium">
-                {marketStatus?.isOpen ? "Pasar Buka" : "Pasar Tutup"}
-              </span>
-              <span className="text-[11px] text-slate-400 hidden md:inline">
-                &bull; {marketStatus?.isOpen ? marketStatus?.sessionText : `Di luar jam bursa (${marketStatus?.dateWib || ''})`}
-              </span>
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    marketStatus?.isOpen ? "bg-[#2EB886] animate-pulse" : "bg-slate-500"
+                  }`}
+                />
+                <span className="font-medium">
+                  {marketStatus?.isOpen ? "Pasar Buka" : "Pasar Tutup"}
+                </span>
+                <span className="text-[11px] text-slate-400 hidden md:inline">
+                  &bull; {marketStatus?.isOpen ? marketStatus?.sessionText : `Di luar jam bursa (${marketStatus?.dateWib || ''})`}
+                </span>
+              </div>
+
+              {onAskAiStock && (
+                <button
+                  type="button"
+                  onClick={() => onAskAiStock(selectedTicker)}
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-sans bg-[#1E7B85]/15 hover:bg-[#1E7B85]/30 text-[#2DD4BF] border border-[#1E7B85]/40 transition"
+                  title={`Analisis AI kontekstual untuk ${selectedTicker}`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Tanya AI</span>
+                </button>
+              )}
             </div>
 
             <div className="text-[11px] text-slate-400 font-sans text-right sm:text-left">
@@ -517,6 +558,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           currentPrice={quote?.price ?? stock.currentPrice}
           changePercent={quote?.changePercent ?? stock.change1D}
           lastUpdated={quote?.lastUpdated || marketStatus?.formattedTime}
+          fairValuePrice={targetMeanPrice}
           error={historyError}
           onRetry={handleRetry}
         />
@@ -672,14 +714,46 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         {/* TAB 2: SIMULASI STRATEGI DCA */}
         {activeTab === "simulator" && (
           <div className="p-4 md:p-5 space-y-4">
-            {/* Notice data ilustrasi simulasi */}
-            <div className="bg-[#0C1017] border border-[#1E2736] rounded-lg p-2.5 flex items-start space-x-2 text-xs text-slate-400">
-              <Info className="w-3.5 h-3.5 text-[#1E7B85] shrink-0 mt-0.5" />
-              <div>
-                <span className="text-slate-300 font-medium">Catatan data simulasi: </span>
-                Simulasi strategi investasi kuartalan (DCA & Lump-Sum 2020–2026) dihitung dari dataset historis kuartalan ilustrasi.
+            {/* Notice & Pilihan Sumber Data Simulasi */}
+            <div className="bg-[#0C1017] border border-[#1E2736] rounded-lg p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-400">
+              <div className="flex items-start space-x-2">
+                <Info className="w-3.5 h-3.5 text-[#1E7B85] shrink-0 mt-0.5" />
+                <div>
+                  <span className="text-slate-300 font-medium">Catatan data simulasi: </span>
+                  {useYahooSimulator
+                    ? "Backtest kuartalan (DCA & Lump-Sum) dihitung dari riwayat harga penutupan dan dividen Yahoo Finance (sudah disesuaikan stock split) dengan acuan IHSG (^JKSE)."
+                    : "Simulasi strategi investasi kuartalan (DCA & Lump-Sum 2020–2026) dihitung dari dataset historis kuartalan ilustrasi."}
+                </div>
               </div>
+
+              {provider === "yahoo" && (
+                <div className="flex items-center bg-[#080B10] p-0.5 rounded border border-[#1E2736] shrink-0 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => setSimSourcePref("auto")}
+                    className={`px-2 py-1 rounded text-[11px] font-sans transition ${
+                      simSourcePref === "auto"
+                        ? "bg-[#1E7B85] text-white font-medium"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Yahoo Nyata
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSimSourcePref("illustrative")}
+                    className={`px-2 py-1 rounded text-[11px] font-sans transition ${
+                      simSourcePref === "illustrative"
+                        ? "bg-[#1E7B85] text-white font-medium"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Ilustrasi
+                  </button>
+                </div>
+              )}
             </div>
+
             {/* Input Controls with Thousand Separators */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-[#0C1017] rounded-xl border border-[#1E2736] text-xs">
               <div>
@@ -720,11 +794,11 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   Tahun mulai simulasi:
                 </label>
                 <select
-                  value={simStartYear}
+                  value={effectiveSimStartYear}
                   onChange={(e) => setSimStartYear(e.target.value)}
                   className="w-full bg-[#111622] border border-[#20293A] rounded px-2.5 py-1.5 text-slate-100 font-mono tnum focus:outline-none focus:border-[#1E7B85]"
                 >
-                  {["2020", "2021", "2022", "2023", "2024", "2025"].map((y) => (
+                  {simYearOptions.map((y) => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
@@ -756,11 +830,36 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             </div>
 
             {/* SINGLE UNIFIED SUMMARY BLOCK (Key-Value List) */}
-            {simulationResults ? (
+            {useYahooSimulator && isSimLoading ? (
+              <div className="p-6 text-center text-xs text-slate-300 bg-[#0C1017] rounded-xl border border-[#1E2736] animate-pulse">
+                Mengambil riwayat historis {selectedTicker} dan acuan IHSG (^JKSE) dari Yahoo Finance...
+              </div>
+            ) : useYahooSimulator && simYahooData.error ? (
+              <div className="p-5 text-center text-xs bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-3">
+                <p className="text-amber-300 font-medium">{simYahooData.error}</p>
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSimRetry}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#1E2736] hover:bg-[#2A374A] border border-[#2E3B52] text-slate-200 transition"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-[#1E7B85]" />
+                    <span>Coba Lagi</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSimSourcePref("illustrative")}
+                    className="inline-flex items-center px-3 py-1.5 rounded bg-[#0E131C] hover:bg-[#171F2C] border border-[#1E2736] text-slate-300 transition"
+                  >
+                    Pakai Skenario Ilustrasi
+                  </button>
+                </div>
+              </div>
+            ) : simulationResults ? (
               <div className="bg-[#0C1017] rounded-xl border border-[#1E2736] overflow-hidden">
-                <div className="p-3 bg-[#0E131C] border-b border-[#1E2736] flex items-center justify-between text-xs">
+                <div className="p-3 bg-[#0E131C] border-b border-[#1E2736] flex flex-wrap items-center justify-between gap-2 text-xs">
                   <span className="font-semibold text-slate-200">
-                    Hasil kalkulasi simulasi DCA (data ilustrasi: {simStartYear} – 2026, {simulationResults.totalQuarters} kuartal)
+                    Hasil kalkulasi simulasi DCA ({useYahooSimulator ? "Yahoo Finance" : "data ilustrasi"}: {simulationResults.startLabel} – {simulationResults.endLabel}, {simulationResults.totalQuarters} kuartal)
                   </span>
                   <span className="text-slate-400 font-mono tnum">
                     Durasi: {formatDesimal(simulationResults.years, 1)} tahun
@@ -868,7 +967,9 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 </div>
 
                 <div className="p-2.5 bg-[#0A0D14] border-t border-[#1E2736] text-[11px] text-slate-400">
-                  Perhitungan berbasis 29 titik kuartalan data ilustrasi. Setiap siklus mewakili penutupan 1 kuartal (3 bulan). Angka IRR dan Alpha merupakan hasil kalkulasi simulasi atas data ilustrasi ini.
+                  {useYahooSimulator
+                    ? `Perhitungan berbasis ${simulationResults.totalQuarters + 1} titik kuartalan yang diagregasikan dari data mingguan Yahoo Finance (sudah disesuaikan stock split) dan dibandingkan dengan IHSG (^JKSE).`
+                    : "Perhitungan berbasis 29 titik kuartalan data ilustrasi. Setiap siklus mewakili penutupan 1 kuartal (3 bulan). Angka IRR dan Alpha merupakan hasil kalkulasi simulasi atas data ilustrasi ini."}
                 </div>
               </div>
             ) : (

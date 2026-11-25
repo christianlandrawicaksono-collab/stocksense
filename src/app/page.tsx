@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
+import React, { useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Navbar, AppMode } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
@@ -9,6 +9,10 @@ import { TerminalMainPane } from "@/components/terminal/TerminalMainPane";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 import { useMarketData } from "@/hooks/useMarketData";
+import { STOCKS_DATA } from "@/data/stocksData";
+import { MACRO_NEWS_DATA } from "@/data/macroData";
+import type { AiMarketContext } from "@/app/api/ai/analyze/route";
+import { formatRupiah } from "@/lib/format";
 
 function HomeContent() {
   const searchParams = useSearchParams();
@@ -25,7 +29,77 @@ function HomeContent() {
   const activeArticleId = searchParams.get("artikel") || null;
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [aiInitialQuery, setAiInitialQuery] = useState<string>("");
+  const [aiSessionKey, setAiSessionKey] = useState<number>(0);
   const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } = useMarketData();
+
+  const activeAiContext: AiMarketContext = useMemo(() => {
+    const stockMeta = STOCKS_DATA.find((s) => s.ticker === selectedTicker) || STOCKS_DATA[0];
+    const activeQuote = quotes[selectedTicker];
+    const isLive = Boolean(provider === "yahoo" && activeQuote && !activeQuote.isFallback);
+    const activePrice = activeQuote?.price ?? stockMeta.currentPrice;
+    const activePe =
+      isLive && activeQuote?.peRatio && activeQuote.peRatio > 0
+        ? activeQuote.peRatio
+        : stockMeta.peRatio;
+    const activePbv =
+      isLive && activeQuote?.pbvRatio && activeQuote.pbvRatio > 0
+        ? activeQuote.pbvRatio
+        : stockMeta.pbvRatio;
+    const activeDiv =
+      isLive && activeQuote?.dividendYield !== undefined && activeQuote.dividendYield >= 0
+        ? activeQuote.dividendYield
+        : stockMeta.dividendYield;
+
+    const targetNewsId = currentMode === "berita" ? activeArticleId : originNewsId;
+    const matchedArticle = targetNewsId
+      ? MACRO_NEWS_DATA.find((n) => n.id === targetNewsId)
+      : undefined;
+
+    return {
+      mode: currentMode,
+      provider,
+      stock:
+        currentMode === "terminal"
+          ? {
+              ticker: stockMeta.ticker,
+              name: stockMeta.name,
+              sector: stockMeta.sector,
+              price: activePrice,
+              changePercent: activeQuote?.changePercent ?? stockMeta.change1D,
+              peRatio: activePe,
+              historicalPeMean: stockMeta.historicalPeMean,
+              pbvRatio: activePbv,
+              dividendYield: activeDiv,
+              roe: stockMeta.roe,
+              der: stockMeta.der,
+              isLive,
+              strengths: stockMeta.strengths,
+              risks: stockMeta.risks,
+            }
+          : undefined,
+      article: matchedArticle
+        ? {
+            title: matchedArticle.title,
+            category: matchedArticle.category,
+            catalyst: matchedArticle.catalyst,
+            summary: matchedArticle.summary,
+            overallImpact: matchedArticle.overallImpact,
+          }
+        : undefined,
+      macroTickers: macroTickers.map((t) => ({
+        symbol: t.symbol,
+        value: t.value,
+        change: t.change,
+      })),
+    };
+  }, [currentMode, provider, selectedTicker, quotes, activeArticleId, originNewsId, macroTickers]);
+
+  const openAiModalWithQuery = (prefill: string = "") => {
+    setAiInitialQuery(prefill);
+    setAiSessionKey((k) => k + 1);
+    setIsAiModalOpen(true);
+  };
 
   // Helper to update URL params via Next.js router without full reload
   const updateUrlParams = (updates: {
@@ -158,7 +232,7 @@ function HomeContent() {
       <Navbar
         currentMode={currentMode}
         onModeChange={handleModeChange}
-        onOpenAiModal={() => setIsAiModalOpen(true)}
+        onOpenAiModal={() => openAiModalWithQuery("")}
       />
 
       {/* 4. Area Konten Utama */}
@@ -203,6 +277,10 @@ function HomeContent() {
                 onSelectTicker={handleSelectTicker}
                 onBackToArticle={handleBackToArticle}
                 onCloseOriginPanel={() => updateUrlParams({ berita: null })}
+                onAskAiStock={(t) => {
+                  const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
+                  openAiModalWithQuery(`Evaluasi valuasi P/E, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
+                }}
                 quote={quotes[selectedTicker]}
                 provider={provider}
                 marketStatus={marketStatus}
@@ -216,6 +294,9 @@ function HomeContent() {
               onSelectStockFromNews={handleSelectStockFromNews}
               activeArticleId={activeArticleId}
               onOpenArticle={(id) => updateUrlParams({ mode: "berita", artikel: id })}
+              onAskAiArticle={(article) =>
+                openAiModalWithQuery(`Jelaskan transmisi ekonomi dan dampak saham dari skenario: "${article.title}"`)
+              }
             />
           </div>
         )}
@@ -249,10 +330,15 @@ function HomeContent() {
       </footer>
 
       {/* 6. Modal Konsultasi AI Gemini */}
-      <GeminiAiModal
-        isOpen={isAiModalOpen}
-        onClose={() => setIsAiModalOpen(false)}
-      />
+      {isAiModalOpen && (
+        <GeminiAiModal
+          key={aiSessionKey}
+          isOpen={isAiModalOpen}
+          onClose={() => setIsAiModalOpen(false)}
+          initialQuery={aiInitialQuery}
+          context={activeAiContext}
+        />
+      )}
     </div>
   );
 }
