@@ -7,6 +7,7 @@ import {
   formatRupiah,
   parseFormattedNumber,
   calculateAnnualizedIRR,
+  formatNewsCategoryLabel,
 } from "@/lib/format";
 
 describe("format utilities (id-ID)", () => {
@@ -54,5 +55,12 @@ describe("calculateAnnualizedIRR", () => {
     expect(calculateAnnualizedIRR([-100])).toBeNull();
     expect(calculateAnnualizedIRR([-100, -200])).toBeNull();
     expect(calculateAnnualizedIRR([100, 200])).toBeNull();
+  });
+
+  it("maps internal news category codes to Indonesian labels", () => {
+    expect(formatNewsCategoryLabel("MONETARY_CURRENCY")).toBe("Moneter dan FX");
+    expect(formatNewsCategoryLabel("DOMESTIC_POLITICS")).toBe("Politik dan fiskal");
+    expect(formatNewsCategoryLabel("CORPORATE")).toBe("Korporasi & bursa");
+    expect(formatNewsCategoryLabel("UNKNOWN")).toBe("Makroekonomi");
   });
 });
