@@ -70,3 +70,22 @@ export interface HistoricalDataPoint {
   dividend?: number;
 }
 
+export type LiveNewsCategory =
+  | "MONETARY_CURRENCY"
+  | "GLOBAL_MACRO"
+  | "DOMESTIC_POLITICS"
+  | "COMMODITIES"
+  | "CORPORATE";
+
+export interface LiveMarketNewsItem {
+  id: string;
+  title: string;
+  link: string;
+  publisher: string;
+  publishedAt: string;
+  publishedWib: string;
+  summary: string;
+  category: LiveNewsCategory;
+  tickers: string[];
+}
+

@@ -10,10 +10,13 @@ import {
   getActiveMarketProvider,
 } from "@/lib/market-data";
 import { LIVE_MARKET_TICKERS } from "@/data/macroData";
+import { STOCKS_DATA } from "@/data/stocksData";
 import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus, MarketStatus } from "@/lib/market-hours";
 
-export function useMarketData() {
+const DEFAULT_TICKERS = STOCKS_DATA.map((s) => s.ticker);
+
+export function useMarketData(extraTickers: string[] = []) {
   const [provider, setProvider] = useState<MarketProvider>(() =>
     getActiveMarketProvider()
   );
@@ -34,8 +37,23 @@ export function useMarketData() {
   );
   const [lastFetched, setLastFetched] = useState<string>("");
 
+  const normalizedExtraKey = Array.from(
+    new Set(
+      extraTickers
+        .map((t) => t.trim().toUpperCase())
+        .filter((t) => /^[A-Z]{4}$/.test(t) && !DEFAULT_TICKERS.includes(t))
+    )
+  )
+    .sort()
+    .join(",");
+
   const isFetchingRef = useRef(false);
   const prevIsOpenRef = useRef<boolean>(getIdxMarketStatus().isOpen);
+
+  const buildActiveTickerList = useCallback(() => {
+    const extra = normalizedExtraKey ? normalizedExtraKey.split(",") : [];
+    return [...DEFAULT_TICKERS, ...extra];
+  }, [normalizedExtraKey]);
 
   const fetchLatestMarketData = useCallback(async () => {
     if (isFetchingRef.current) return;
@@ -43,14 +61,15 @@ export function useMarketData() {
     setIsLoading(true);
 
     try {
+      const activeList = buildActiveTickerList();
       const [quotesRes, macroRes] = await Promise.allSettled([
-        getQuotes(),
+        getQuotes(activeList),
         getMacroTickers(),
       ]);
 
       if (quotesRes.status === "fulfilled" && quotesRes.value?.quotes) {
         const qData = quotesRes.value;
-        setQuotes(qData.quotes);
+        setQuotes((prev) => ({ ...prev, ...qData.quotes }));
         setProvider(qData.provider);
         setMarketStatus(qData.marketStatus);
         setLastFetched(qData.marketStatus.timeWib);
@@ -67,19 +86,19 @@ export function useMarketData() {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, []);
+  }, [buildActiveTickerList]);
 
   useEffect(() => {
     let isMounted = true;
+    const activeList = buildActiveTickerList();
 
-    // 1. Ambil data quotes & indikator makro saat mount secara paralel
-    Promise.allSettled([getQuotes(), getMacroTickers()])
+    Promise.allSettled([getQuotes(activeList), getMacroTickers()])
       .then(([quotesRes, macroRes]) => {
         if (!isMounted) return;
 
         if (quotesRes.status === "fulfilled" && quotesRes.value?.quotes) {
           const qData = quotesRes.value;
-          setQuotes(qData.quotes);
+          setQuotes((prev) => ({ ...prev, ...qData.quotes }));
           setProvider(qData.provider);
           setMarketStatus(qData.marketStatus);
           setLastFetched(qData.marketStatus.timeWib);
@@ -98,8 +117,6 @@ export function useMarketData() {
         if (isMounted) setIsLoading(false);
       });
 
-    // 2. Interval pengecekan status setiap 60 detik:
-    //    Selalu perbarui status jam bursa di UI; hanya fetch Yahoo saat bursa buka atau saat transisi tutup.
     const intervalId = setInterval(() => {
       const currentStatus = getIdxMarketStatus();
       setMarketStatus(currentStatus);
@@ -116,7 +133,6 @@ export function useMarketData() {
       }
     }, 60000);
 
-    // 3. Listener visibilitychange: saat tab kembali aktif, segarkan status bursa & data jika pasar buka
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         const currentStatus = getIdxMarketStatus();
@@ -135,7 +151,7 @@ export function useMarketData() {
       clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [fetchLatestMarketData]);
+  }, [buildActiveTickerList, fetchLatestMarketData]);
 
   return {
     quotes,

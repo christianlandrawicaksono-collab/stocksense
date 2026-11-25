@@ -21,10 +21,12 @@ import { LightweightPriceChart } from "./LightweightPriceChart";
 import {
   getHistory,
   getIllustrativeHistoryPoints,
+  getStockProfile,
   MarketHistoryPoint,
   MarketQuote,
   MarketProvider,
   HistoryRange,
+  StockProfileData,
 } from "@/lib/market-data";
 import { MarketStatus } from "@/lib/market-hours";
 
@@ -121,12 +123,15 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
   const otherSupportedTickers = useMemo(() => {
     if (!originArticle) return [];
-    const supported = ["ADRO", "ANTM", "ASII", "BBCA", "BBRI", "BMRI", "ICBP", "MEDC", "TLKM"];
+    const supported = new Set(["ADRO", "ANTM", "ASII", "BBCA", "BBRI", "BMRI", "ICBP", "MEDC", "TLKM"]);
     const tickers = originArticle.sectorImpacts
       .flatMap((s) => s.tickers)
-      .filter((t) => supported.includes(t) && t !== selectedTicker);
+      .filter((t) => {
+        if (t === selectedTicker) return false;
+        return provider === "yahoo" ? /^[A-Z]{4}$/.test(t) : supported.has(t);
+      });
     return Array.from(new Set(tickers));
-  }, [originArticle, selectedTicker]);
+  }, [originArticle, selectedTicker, provider]);
 
   // DCA Simulator inputs (Quarterly frequency)
   const [quarterlyDCA, setQuarterlyDCA] = useState<number>(3000000); // Rp 3.000.000/kuartal (~1jt/bln)
@@ -232,45 +237,126 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     simYahooData.error,
   ]);
 
-  const stock = useMemo(() => {
-    return STOCKS_DATA.find((s) => s.ticker === selectedTicker) || STOCKS_DATA[0];
+  const curatedStock = useMemo(() => {
+    return STOCKS_DATA.find((s) => s.ticker === selectedTicker) || null;
   }, [selectedTicker]);
 
-  // Historical quarterly series for selected ticker
+  const [customProfileState, setCustomProfileState] = useState<{
+    ticker: string;
+    profile: StockProfileData | null;
+  }>({ ticker: "", profile: null });
+
+  useEffect(() => {
+    if (curatedStock || provider !== "yahoo") return;
+    let cancelled = false;
+
+    getStockProfile(selectedTicker)
+      .then((profile) => {
+        if (!cancelled) {
+          setCustomProfileState({ ticker: selectedTicker, profile });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCustomProfileState({ ticker: selectedTicker, profile: null });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [curatedStock, provider, selectedTicker]);
+
+  const customProfile =
+    !curatedStock && customProfileState.ticker === selectedTicker
+      ? customProfileState.profile
+      : null;
+
+  const hasCuratedBands = Boolean(curatedStock);
+
+  const stock = useMemo(() => {
+    if (curatedStock) {
+      return curatedStock;
+    }
+    return {
+      ticker: selectedTicker,
+      name: customProfile?.name || quote?.name || `${selectedTicker} Tbk`,
+      sector: customProfile?.sector || "Bursa Efek Indonesia",
+      subsector: customProfile?.subsector || "Saham Tercatat BEI",
+      currentPrice: customProfile?.currentPrice ?? quote?.price ?? 0,
+      change1D: customProfile?.changePercent ?? quote?.changePercent ?? 0,
+      marketCapTrillion: customProfile?.marketCapTrillion ?? quote?.marketCapTrillion ?? 0,
+      peRatio: customProfile?.peRatio ?? quote?.peRatio ?? 0,
+      historicalPeMean: 0,
+      peSd1Plus: 0,
+      peSd1Minus: 0,
+      peSd2Plus: 0,
+      peSd2Minus: 0,
+      pbvRatio: customProfile?.pbvRatio ?? quote?.pbvRatio ?? 0,
+      historicalPbvMean: 0,
+      roe: customProfile?.roe,
+      der: customProfile?.der,
+      dividendYield: customProfile?.dividendYield ?? quote?.dividendYield ?? 0,
+      payoutRatio: undefined as number | undefined,
+      description:
+        customProfile?.description ||
+        `Emiten ${selectedTicker}.JK yang diperdagangkan di Bursa Efek Indonesia melalui Yahoo Finance.`,
+      strengths: [] as string[],
+      risks: [] as string[],
+    };
+  }, [curatedStock, customProfile, quote, selectedTicker]);
 
   // P/E Band and Fair Value Calculations (Live Yahoo apabila tersedia, fallback ke acuan ilustrasi)
-  const isLiveValuation = Boolean(provider === "yahoo" && quote && !quote.isFallback);
-  const activePrice = quote?.price && quote.price > 0 ? quote.price : stock.currentPrice;
-  const activeEps =
-    isLiveValuation && quote?.eps && quote.eps > 0
-      ? quote.eps
-      : stock.currentPrice / stock.peRatio;
-  const activeBvps =
-    isLiveValuation && quote?.bvps && quote.bvps > 0
-      ? quote.bvps
-      : stock.currentPrice / stock.pbvRatio;
-  const activePe =
-    isLiveValuation && quote?.peRatio && quote.peRatio > 0
-      ? quote.peRatio
-      : activeEps > 0
-      ? activePrice / activeEps
-      : stock.peRatio;
-  const activePbv =
-    isLiveValuation && quote?.pbvRatio && quote.pbvRatio > 0
-      ? quote.pbvRatio
-      : activeBvps > 0
-      ? activePrice / activeBvps
-      : stock.pbvRatio;
-  const activeDivYield =
-    isLiveValuation && quote?.dividendYield !== undefined && quote.dividendYield >= 0
-      ? quote.dividendYield
-      : stock.dividendYield;
+  const isLiveValuation = Boolean(
+    provider === "yahoo" && ((quote && !quote.isFallback) || customProfile?.isLive)
+  );
+  const activePrice =
+    (quote?.price && quote.price > 0 ? quote.price : undefined) ??
+    (customProfile?.currentPrice && customProfile.currentPrice > 0
+      ? customProfile.currentPrice
+      : undefined) ??
+    stock.currentPrice;
 
-  const targetMeanPrice = Math.round(activeEps * stock.historicalPeMean);
-  const targetSd1MinusPrice = Math.round(activeEps * stock.peSd1Minus);
-  const targetSd2MinusPrice = Math.round(activeEps * stock.peSd2Minus);
-  const targetSd1PlusPrice = Math.round(activeEps * stock.peSd1Plus);
-  const targetSd2PlusPrice = Math.round(activeEps * stock.peSd2Plus);
+  const fallbackEps =
+    curatedStock && curatedStock.peRatio > 0
+      ? curatedStock.currentPrice / curatedStock.peRatio
+      : 0;
+  const activeEps =
+    (isLiveValuation && quote?.eps && quote.eps > 0 ? quote.eps : undefined) ??
+    (customProfile?.eps && customProfile.eps > 0 ? customProfile.eps : undefined) ??
+    fallbackEps;
+
+  const fallbackBvps =
+    curatedStock && curatedStock.pbvRatio > 0
+      ? curatedStock.currentPrice / curatedStock.pbvRatio
+      : 0;
+  const activeBvps =
+    (isLiveValuation && quote?.bvps && quote.bvps > 0 ? quote.bvps : undefined) ??
+    (customProfile?.bvps && customProfile.bvps > 0 ? customProfile.bvps : undefined) ??
+    fallbackBvps;
+
+  const activePe =
+    (isLiveValuation && quote?.peRatio && quote.peRatio > 0 ? quote.peRatio : undefined) ??
+    (customProfile?.peRatio && customProfile.peRatio > 0 ? customProfile.peRatio : undefined) ??
+    (activeEps > 0 && activePrice > 0 ? activePrice / activeEps : stock.peRatio);
+
+  const activePbv =
+    (isLiveValuation && quote?.pbvRatio && quote.pbvRatio > 0 ? quote.pbvRatio : undefined) ??
+    (customProfile?.pbvRatio && customProfile.pbvRatio > 0 ? customProfile.pbvRatio : undefined) ??
+    (activeBvps > 0 && activePrice > 0 ? activePrice / activeBvps : stock.pbvRatio);
+
+  const activeDivYield =
+    (isLiveValuation && quote?.dividendYield !== undefined && quote.dividendYield >= 0
+      ? quote.dividendYield
+      : undefined) ??
+    (customProfile?.dividendYield !== undefined ? customProfile.dividendYield : undefined) ??
+    stock.dividendYield;
+
+  const targetMeanPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.historicalPeMean) : 0;
+  const targetSd1MinusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd1Minus) : 0;
+  const targetSd2MinusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd2Minus) : 0;
+  const targetSd1PlusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd1Plus) : 0;
+  const targetSd2PlusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd2Plus) : 0;
 
   const grahamNumber =
     activeEps > 0 && activeBvps > 0
@@ -281,11 +367,22 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       ? ((grahamNumber - activePrice) / activePrice) * 100
       : 0;
   const meanUpside =
-    activePrice > 0 ? ((targetMeanPrice - activePrice) / activePrice) * 100 : 0;
+    hasCuratedBands && targetMeanPrice > 0 && activePrice > 0
+      ? ((targetMeanPrice - activePrice) / activePrice) * 100
+      : 0;
 
-  // Valuation Diagnosis: Computed dynamically from active P/E position vs historical bands
-  // Contrast increased with vivid text & deep solid borders
+  // Valuation Diagnosis: Computed dynamically from active P/E position vs historical bands (for curated stocks)
   const valuationDiagnosis = useMemo(() => {
+    if (!hasCuratedBands || stock.historicalPeMean <= 0) {
+      return {
+        label: activePe > 0 ? `P/E Live ${formatMultiple(activePe, 1)}` : "Emiten Kustom BEI",
+        color: "text-[#2DD4BF] bg-[#115E59]/40 border-[#14B8A6]/60 font-medium",
+        verdict: activePe > 0
+          ? `Emiten kustom ${stock.ticker} diperdagangkan pada rasio P/E TTM ${formatMultiple(activePe, 1)} dan PBV ${activePbv > 0 ? formatMultiple(activePbv, 2) : "-"} (Yahoo Finance). Pita deviasi 5 tahun tersedia khusus pada 9 emiten kurasi.`
+          : `Data rasio P/E untuk emiten kustom ${stock.ticker} tidak tersedia atau negatif pada periode TTM terakhir.`,
+      };
+    }
+
     const pe = activePe;
     const mean = stock.historicalPeMean;
     const sd1Minus = stock.peSd1Minus;
@@ -327,7 +424,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) melampaui batas deviasi atas +1 SD (${formatMultiple(sd1Plus, 1)}), ${formatPersen(absDiff, 1)} di atas rerata historis (${formatMultiple(mean, 1)}).`
       };
     }
-  }, [stock, activePe, activePrice, isLiveValuation]);
+  }, [hasCuratedBands, stock, activePe, activePbv, activePrice, isLiveValuation]);
 
   // Handle Money Inputs with Thousand Separator
   const handleDcaChange = (valStr: string) => {
@@ -637,53 +734,83 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               </div>
             </div>
 
-            {/* P/E Deviation Band Table & Fair Value */}
+            {/* P/E Deviation Band Table (9 Saham Kurasi) atau Ringkasan Live (Emiten Kustom) + Fair Value */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Left: Deviation Level Breakdown */}
-              <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
-                <span className="text-xs text-slate-400 block mb-1">
-                  Pita deviasi P/E (berdasarkan EPS {isLiveValuation ? "TTM Yahoo" : "acuan"}: {formatRupiah(activeEps)})
-                </span>
-                <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                  <span>+2 SD (Mahal ekstrim - {formatMultiple(stock.peSd2Plus, 1)})</span>
-                  <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2PlusPrice)}</span>
+              {/* Left */}
+              {hasCuratedBands ? (
+                <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
+                  <span className="text-xs text-slate-400 block mb-1">
+                    Pita deviasi P/E (berdasarkan EPS {isLiveValuation ? "TTM Yahoo" : "acuan"}: {formatRupiah(activeEps)})
+                  </span>
+                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                    <span>+2 SD (Mahal ekstrim - {formatMultiple(stock.peSd2Plus, 1)})</span>
+                    <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2PlusPrice)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                    <span>+1 SD (Di atas rerata - {formatMultiple(stock.peSd1Plus, 1)})</span>
+                    <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1PlusPrice)}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#1E7B85]/30 bg-[#1E7B85]/10 px-1 rounded text-slate-100 font-medium">
+                    <span>Mean (Harga wajar acuan - {formatMultiple(stock.historicalPeMean, 1)})</span>
+                    <span className="font-mono tnum">{formatRupiah(targetMeanPrice)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                    <span>-1 SD (Area undervalued - {formatMultiple(stock.peSd1Minus, 1)})</span>
+                    <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1MinusPrice)}</span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-400">
+                    <span>-2 SD (Diskon ekstrim - {formatMultiple(stock.peSd2Minus, 1)})</span>
+                    <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2MinusPrice)}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                  <span>+1 SD (Di atas rerata - {formatMultiple(stock.peSd1Plus, 1)})</span>
-                  <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1PlusPrice)}</span>
+              ) : (
+                <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
+                  <span className="text-xs text-slate-400 block mb-1">
+                    Metrik valuasi langsung (Yahoo Finance — Emiten Kustom)
+                  </span>
+                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                    <span>EPS TTM</span>
+                    <span className="text-slate-200 font-mono tnum">{activeEps > 0 ? formatRupiah(activeEps) : "-"}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                    <span>BVPS (Nilai Buku / Saham)</span>
+                    <span className="text-slate-200 font-mono tnum">{activeBvps > 0 ? formatRupiah(activeBvps) : "-"}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                    <span>P/E Ratio (TTM)</span>
+                    <span className="text-slate-200 font-mono tnum">{activePe > 0 ? formatMultiple(activePe, 1) : "-"}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                    <span>PBV Ratio</span>
+                    <span className="text-slate-200 font-mono tnum">{activePbv > 0 ? formatMultiple(activePbv, 2) : "-"}</span>
+                  </div>
+                  <div className="flex justify-between py-1 text-slate-400">
+                    <span>Dividend Yield</span>
+                    <span className="text-slate-200 font-mono tnum">{activeDivYield > 0 ? formatPersen(activeDivYield, 1) : "-"}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between py-1.5 border-b border-[#1E7B85]/30 bg-[#1E7B85]/10 px-1 rounded text-slate-100 font-medium">
-                  <span>Mean (Harga wajar acuan - {formatMultiple(stock.historicalPeMean, 1)})</span>
-                  <span className="font-mono tnum">{formatRupiah(targetMeanPrice)}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                  <span>-1 SD (Area undervalued - {formatMultiple(stock.peSd1Minus, 1)})</span>
-                  <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1MinusPrice)}</span>
-                </div>
-                <div className="flex justify-between py-1 text-slate-400">
-                  <span>-2 SD (Diskon ekstrim - {formatMultiple(stock.peSd2Minus, 1)})</span>
-                  <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2MinusPrice)}</span>
-                </div>
-              </div>
+              )}
 
               {/* Right: Fair Value Target Cards */}
               <div className="space-y-3">
-                <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736]">
-                  <span className="text-xs text-slate-400 block mb-0.5">
-                    Target harga wajar (mean acuan):
-                  </span>
-                  <span className="text-lg font-bold font-mono text-slate-100 tnum">
-                    {formatRupiah(targetMeanPrice)}
-                  </span>
-                  <span className={`text-xs block mt-0.5 font-mono tnum ${meanUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
-                    Potensi: {formatPersen(meanUpside, 1, true)}{" "}
-                    <span className="text-[10px] text-slate-400 font-sans block">
-                      {isLiveValuation
-                        ? `(vs harga live ${formatRupiah(activePrice)})`
-                        : `(vs harga acuan ${formatRupiah(activePrice)}, bukan harga live)`}
+                {hasCuratedBands && (
+                  <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736]">
+                    <span className="text-xs text-slate-400 block mb-0.5">
+                      Target harga wajar (mean acuan):
                     </span>
-                  </span>
-                </div>
+                    <span className="text-lg font-bold font-mono text-slate-100 tnum">
+                      {formatRupiah(targetMeanPrice)}
+                    </span>
+                    <span className={`text-xs block mt-0.5 font-mono tnum ${meanUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
+                      Potensi: {formatPersen(meanUpside, 1, true)}{" "}
+                      <span className="text-[10px] text-slate-400 font-sans block">
+                        {isLiveValuation
+                          ? `(vs harga live ${formatRupiah(activePrice)})`
+                          : `(vs harga acuan ${formatRupiah(activePrice)}, bukan harga live)`}
+                      </span>
+                    </span>
+                  </div>
+                )}
 
                 <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736]">
                   <span className="text-xs text-slate-400 block mb-0.5">
@@ -988,7 +1115,9 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               <Info className="w-3.5 h-3.5 text-[#1E7B85] shrink-0 mt-0.5" />
               <div>
                 <span className="text-slate-300 font-medium">Catatan data profil: </span>
-                {isLiveValuation
+                {!hasCuratedBands
+                  ? "Emiten kustom bursa: ringkasan bisnis, PBV, ROE, DER (bila tersedia), dan Dividend Yield diambil dari profil Yahoo Finance."
+                  : isLiveValuation
                   ? "PBV Ratio & Dividend Yield diperbarui dari Yahoo Finance, sedangkan profil bisnis, kekuatan, risiko, ROE, DER, dan Payout Ratio menggunakan ringkasan acuan riset ilustrasi."
                   : "Profil bisnis, keunggulan kompetitif, dan rasio fundamental menggunakan data analitis ilustrasi (ringkasan contoh riset, belum diverifikasi bursa)."}
               </div>
@@ -998,54 +1127,72 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               {stock.description}
             </p>
 
-            {/* Metrics Key-Value Grid: Single neutral text color for ratios */}
+            {/* Metrics Key-Value Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
-                <span className="text-slate-400 block text-[11px]">ROE {isLiveValuation ? "(ilus)" : ""}</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{formatPersen(stock.roe, 1)}</span>
+                <span className="text-slate-400 block text-[11px]">ROE {hasCuratedBands && isLiveValuation ? "(ilus)" : !hasCuratedBands ? "(TTM)" : ""}</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">
+                  {stock.roe !== undefined ? formatPersen(stock.roe, 1) : "-"}
+                </span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
-                <span className="text-slate-400 block text-[11px]">PBV Ratio {isLiveValuation && quote?.pbvRatio ? "(Live)" : ""}</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{formatMultiple(activePbv, 2)}</span>
+                <span className="text-slate-400 block text-[11px]">PBV Ratio {isLiveValuation && activePbv > 0 ? "(Live)" : ""}</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">
+                  {activePbv > 0 ? formatMultiple(activePbv, 2) : "-"}
+                </span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
-                <span className="text-slate-400 block text-[11px]">DER {isLiveValuation ? "(ilus)" : "(Utang)"}</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{formatMultiple(stock.der, 2)}</span>
+                <span className="text-slate-400 block text-[11px]">DER {hasCuratedBands && isLiveValuation ? "(ilus)" : !hasCuratedBands ? "(Yahoo)" : "(Utang)"}</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">
+                  {stock.der !== undefined ? formatMultiple(stock.der, 2) : "-"}
+                </span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
-                <span className="text-slate-400 block text-[11px]">Dividend Yield {isLiveValuation && quote?.dividendYield !== undefined ? "(Live)" : ""}</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{formatPersen(activeDivYield, 1)}</span>
+                <span className="text-slate-400 block text-[11px]">Dividend Yield {isLiveValuation && activeDivYield > 0 ? "(Live)" : ""}</span>
+                <span className="font-mono tnum text-slate-100 font-semibold">
+                  {activeDivYield > 0 ? formatPersen(activeDivYield, 1) : "-"}
+                </span>
               </div>
               <div className="p-2.5 bg-[#0C1017] rounded-lg border border-[#1E2736]">
-                <span className="text-slate-400 block text-[11px]">Payout Ratio {isLiveValuation ? "(ilus)" : ""}</span>
-                <span className="font-mono tnum text-slate-100 font-semibold">{formatPersen(stock.payoutRatio, 1)}</span>
+                <span className="text-slate-400 block text-[11px]">
+                  {hasCuratedBands ? `Payout Ratio ${isLiveValuation ? "(ilus)" : ""}` : "Market Cap"}
+                </span>
+                <span className="font-mono tnum text-slate-100 font-semibold">
+                  {hasCuratedBands && stock.payoutRatio !== undefined
+                    ? formatPersen(stock.payoutRatio, 1)
+                    : !hasCuratedBands && stock.marketCapTrillion > 0
+                    ? `Rp ${formatDesimal(stock.marketCapTrillion, 1)} T`
+                    : "-"}
+                </span>
               </div>
             </div>
 
-            {/* Strengths & Risks */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs">
-              <div className="p-3 bg-[#0C1017] rounded-xl border border-[#1E2736]">
-                <span className="text-xs font-semibold text-slate-200 block mb-2">
-                  Kekuatan dan keunggulan
-                </span>
-                <ul className="space-y-1.5 text-slate-400 list-disc list-inside">
-                  {stock.strengths.map((s, idx) => (
-                    <li key={idx} className="leading-snug">{s}</li>
-                  ))}
-                </ul>
-              </div>
+            {/* Strengths & Risks (khusus emiten kurasi) */}
+            {(stock.strengths.length > 0 || stock.risks.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs">
+                <div className="p-3 bg-[#0C1017] rounded-xl border border-[#1E2736]">
+                  <span className="text-xs font-semibold text-slate-200 block mb-2">
+                    Kekuatan dan keunggulan
+                  </span>
+                  <ul className="space-y-1.5 text-slate-400 list-disc list-inside">
+                    {stock.strengths.map((s, idx) => (
+                      <li key={idx} className="leading-snug">{s}</li>
+                    ))}
+                  </ul>
+                </div>
 
-              <div className="p-3 bg-[#0C1017] rounded-xl border border-[#1E2736]">
-                <span className="text-xs font-semibold text-slate-200 block mb-2">
-                  Faktor risiko & tantangan
-                </span>
-                <ul className="space-y-1.5 text-slate-400 list-disc list-inside">
-                  {stock.risks.map((r, idx) => (
-                    <li key={idx} className="leading-snug">{r}</li>
-                  ))}
-                </ul>
+                <div className="p-3 bg-[#0C1017] rounded-xl border border-[#1E2736]">
+                  <span className="text-xs font-semibold text-slate-200 block mb-2">
+                    Faktor risiko & tantangan
+                  </span>
+                  <ul className="space-y-1.5 text-slate-400 list-disc list-inside">
+                    {stock.risks.map((r, idx) => (
+                      <li key={idx} className="leading-snug">{r}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>

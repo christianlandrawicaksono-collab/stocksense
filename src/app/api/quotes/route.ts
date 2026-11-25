@@ -4,6 +4,7 @@ import {
   ServerQuoteItem,
   getBatchQuotesServer,
   getIllustrativeQuote,
+  isValidIdxTickerFormat,
 } from "@/lib/market-server";
 import { getIdxMarketStatus } from "@/lib/market-hours";
 
@@ -12,20 +13,28 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const rawTickers = searchParams.get("tickers");
+    const providerEnv = process.env.MARKET_DATA_PROVIDER || "illustrative";
 
     let tickers: string[] = [];
     if (rawTickers) {
-      tickers = rawTickers
-        .split(",")
-        .map((t) => t.trim().toUpperCase())
-        .filter((t) => (SUPPORTED_TICKERS as readonly string[]).includes(t));
+      tickers = Array.from(
+        new Set(
+          rawTickers
+            .split(",")
+            .map((t) => t.trim().toUpperCase())
+            .filter((t) =>
+              providerEnv === "yahoo"
+                ? isValidIdxTickerFormat(t)
+                : (SUPPORTED_TICKERS as readonly string[]).includes(t)
+            )
+        )
+      ).slice(0, 25);
     }
 
     if (tickers.length === 0) {
       tickers = [...SUPPORTED_TICKERS];
     }
 
-    const providerEnv = process.env.MARKET_DATA_PROVIDER || "illustrative";
     const marketStatus = getIdxMarketStatus();
 
     let quotes: Record<string, ServerQuoteItem> = {};
@@ -35,9 +44,9 @@ export async function GET(request: NextRequest) {
       activeProvider = "yahoo";
       quotes = await getBatchQuotesServer(tickers);
     } else {
-      // Mode ilustrasi (statis)
       for (const t of tickers) {
-        quotes[t] = getIllustrativeQuote(t);
+        const illus = getIllustrativeQuote(t);
+        if (illus) quotes[t] = illus;
       }
     }
 
@@ -57,10 +66,10 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     const errorMsg = error instanceof Error ? error.message : "Unknown error";
     console.error("[API /api/quotes] Error:", errorMsg);
-    // Fallback darurat ke data ilustrasi jika terjadi pengecualian total
     const fallbackQuotes: Record<string, ServerQuoteItem> = {};
     for (const t of SUPPORTED_TICKERS) {
-      fallbackQuotes[t] = getIllustrativeQuote(t);
+      const illus = getIllustrativeQuote(t);
+      if (illus) fallbackQuotes[t] = illus;
     }
 
     return NextResponse.json(

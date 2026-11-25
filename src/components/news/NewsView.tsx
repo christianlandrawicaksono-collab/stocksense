@@ -1,20 +1,31 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { MACRO_NEWS_DATA, MACRO_MARKET_SUMMARY } from "@/data/macroData";
-import { MacroCategory, MacroNewsItem, SentimentType } from "@/types/market";
-import { Search, Sparkles } from "lucide-react";
+import {
+  LiveMarketNewsItem,
+  MacroCategory,
+  MacroNewsItem,
+  SentimentType,
+} from "@/types/market";
+import { getLiveMarketNews, MarketProvider } from "@/lib/market-data";
+import { Search, Sparkles, ExternalLink, RotateCcw } from "lucide-react";
 
-// 9 Saham yang memiliki data lengkap di Terminal
+// 9 Saham yang memiliki data kurasi lengkap di mode ilustrasi
 export const SUPPORTED_TERMINAL_TICKERS = new Set([
   "ADRO", "ANTM", "ASII", "BBCA", "BBRI", "BMRI", "ICBP", "MEDC", "TLKM"
 ]);
+
+type NewsSourceTab = "live" | "scenario";
+type NewsFilterCategory = MacroCategory | "CORPORATE";
 
 interface NewsViewProps {
   onSelectStockFromNews: (ticker: string, newsId: string, newsTitle: string) => void;
   activeArticleId?: string | null;
   onOpenArticle?: (articleId: string | null) => void;
   onAskAiArticle?: (article: MacroNewsItem) => void;
+  onAskAiLiveNews?: (item: LiveMarketNewsItem) => void;
+  provider?: MarketProvider;
 }
 
 export const NewsView: React.FC<NewsViewProps> = ({
@@ -22,12 +33,54 @@ export const NewsView: React.FC<NewsViewProps> = ({
   activeArticleId: propArticleId = null,
   onOpenArticle,
   onAskAiArticle,
+  onAskAiLiveNews,
+  provider = "illustrative",
 }) => {
+  const [sourceTabPref, setSourceTabPref] = useState<NewsSourceTab | null>(null);
+  const activeSourceTab: NewsSourceTab =
+    sourceTabPref ?? (provider === "yahoo" ? "live" : "scenario");
+
   const [selectedPeriod, setSelectedPeriod] = useState<"1W" | "1M">("1W");
-  const [selectedCategory, setSelectedCategory] = useState<MacroCategory>("ALL");
+  const [selectedCategory, setSelectedCategory] = useState<NewsFilterCategory>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [localArticleId, setLocalArticleId] = useState<string | null>(propArticleId);
   const [isMarketSummaryExpanded, setIsMarketSummaryExpanded] = useState<boolean>(false);
+
+  const [liveNewsState, setLiveNewsState] = useState<{
+    fetched: boolean;
+    items: LiveMarketNewsItem[];
+  }>({ fetched: false, items: [] });
+  const [liveRetryCount, setLiveRetryCount] = useState<number>(0);
+
+  const isLiveNewsLoading =
+    provider === "yahoo" && activeSourceTab === "live" && !liveNewsState.fetched;
+
+  const handleRetryLiveNews = useCallback(() => {
+    setLiveNewsState({ fetched: false, items: [] });
+    setLiveRetryCount((c) => c + 1);
+  }, []);
+
+  useEffect(() => {
+    if (provider !== "yahoo" || activeSourceTab !== "live") return;
+    if (liveNewsState.fetched) return;
+
+    let cancelled = false;
+    getLiveMarketNews()
+      .then((res) => {
+        if (!cancelled) {
+          setLiveNewsState({ fetched: true, items: res.items });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLiveNewsState({ fetched: true, items: [] });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, activeSourceTab, liveNewsState.fetched, liveRetryCount]);
 
   const activeArticleId = onOpenArticle ? propArticleId : localArticleId;
   const setActiveArticle = (id: string | null) => {
@@ -38,10 +91,37 @@ export const NewsView: React.FC<NewsViewProps> = ({
     }
   };
 
-  const filteredNews = useMemo(() => {
+  const canOpenTickerInTerminal = (ticker: string) => {
+    return provider === "yahoo"
+      ? /^[A-Z]{4}$/.test(ticker)
+      : SUPPORTED_TERMINAL_TICKERS.has(ticker);
+  };
+
+  const filteredLiveNews = useMemo(() => {
+    return liveNewsState.items.filter((item) => {
+      if (selectedCategory !== "ALL" && item.category !== selectedCategory) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const inTitle = item.title.toLowerCase().includes(q);
+        const inSummary = item.summary.toLowerCase().includes(q);
+        const inPublisher = item.publisher.toLowerCase().includes(q);
+        const inTickers = item.tickers.some((t) => t.toLowerCase().includes(q));
+        if (!inTitle && !inSummary && !inPublisher && !inTickers) return false;
+      }
+      return true;
+    });
+  }, [liveNewsState.items, selectedCategory, searchQuery]);
+
+  const filteredScenarioNews = useMemo(() => {
     return MACRO_NEWS_DATA.filter((item) => {
       if (item.period !== selectedPeriod) return false;
-      if (selectedCategory !== "ALL" && item.category !== selectedCategory) return false;
+      if (
+        selectedCategory !== "ALL" &&
+        selectedCategory !== "CORPORATE" &&
+        item.category !== selectedCategory
+      ) {
+        return false;
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -63,8 +143,11 @@ export const NewsView: React.FC<NewsViewProps> = ({
     return MACRO_NEWS_DATA.find((n) => n.id === activeArticleId) || null;
   }, [activeArticleId]);
 
-  const leadStory = filteredNews[0] || null;
-  const secondaryStories = filteredNews.slice(1);
+  const leadStory = filteredScenarioNews[0] || null;
+  const secondaryStories = filteredScenarioNews.slice(1);
+
+  const leadLiveStory = filteredLiveNews[0] || null;
+  const secondaryLiveStories = filteredLiveNews.slice(1);
 
   const getCategoryLabel = (cat: string) => {
     switch (cat) {
@@ -76,12 +159,13 @@ export const NewsView: React.FC<NewsViewProps> = ({
         return "Politik dan fiskal";
       case "COMMODITIES":
         return "Komoditas dan energi";
+      case "CORPORATE":
+        return "Korporasi & bursa";
       default:
         return "Makroekonomi";
     }
   };
 
-  // Gelapkan warna teks sentimen positif & negatif untuk memenuhi WCAG AA kontras tinggi (> 4.5:1)
   const renderSentimentText = (sentiment: SentimentType) => {
     switch (sentiment) {
       case "BULLISH":
@@ -96,10 +180,9 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
   return (
     <div className="w-full text-[#1A1C1E] font-sans">
-      {/* JIKA MEMBUKA HALAMAN ARTIKEL */}
+      {/* JIKA MEMBUKA HALAMAN ARTIKEL SKENARIO */}
       {activeArticle ? (
         <article className="max-w-[680px] mx-auto py-6 px-4 sm:px-0 space-y-6">
-          {/* Navigasi kembali ke daftar & tanya AI dengan area ketuk minimal 44px */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <button
               type="button"
@@ -120,13 +203,11 @@ export const NewsView: React.FC<NewsViewProps> = ({
             )}
           </div>
 
-          {/* Label tegas skenario contoh */}
           <div className="border-b border-[#E5E5DC] pb-4 space-y-2">
             <span className="text-xs text-[#7A8088] font-medium tracking-wide block">
               Skenario contoh, bukan berita.
             </span>
 
-            {/* Judul artikel: Literata, text-wrap: balance, tanpa menggantung */}
             <h1
               className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E] leading-snug"
               style={{ textWrap: "balance" }}
@@ -134,7 +215,6 @@ export const NewsView: React.FC<NewsViewProps> = ({
               {activeArticle.title}
             </h1>
 
-            {/* Baris meta teks biasa: kategori | sentimen | tanggal skenario */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#5A6068] pt-1">
               <span>{getCategoryLabel(activeArticle.category)}</span>
               <span className="text-[#D8D8CF]">|</span>
@@ -144,12 +224,10 @@ export const NewsView: React.FC<NewsViewProps> = ({
             </div>
           </div>
 
-          {/* Paragraf ringkasan isi artikel */}
           <div className="text-base sm:text-[17px] text-[#2A2E33] leading-relaxed font-sans border-b border-[#E5E5DC] pb-6">
             {activeArticle.summary}
           </div>
 
-          {/* Blok Katalis dan Implikasi dengan garis vertikal tipis di kiri (tanpa kartu) */}
           <div className="space-y-4 border-b border-[#E5E5DC] pb-6">
             <div className="border-l-2 border-[#1E7B85] pl-4 py-0.5 space-y-1">
               <span className="text-xs font-semibold text-[#1A1C1E] block">
@@ -170,7 +248,6 @@ export const NewsView: React.FC<NewsViewProps> = ({
             </div>
           </div>
 
-          {/* Bagian Emiten dan Sektor Terdampak: Tabel Hairline (Desktop) & Daftar Bertumpuk (Mobile) */}
           <section className="space-y-4 pt-2">
             <div>
               <h2 className="text-base sm:text-lg font-serif font-bold text-[#1A1C1E]">
@@ -181,7 +258,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
               </span>
             </div>
 
-            {/* Desktop Hairline Table (hidden on mobile) */}
+            {/* Desktop Table */}
             <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs divide-y divide-[#E5E5DC]">
                 <thead>
@@ -204,7 +281,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                       <td className="py-3 pr-4">
                         <div className="flex flex-wrap gap-1.5 font-mono tnum">
                           {sec.tickers.map((ticker) => {
-                            const isSupported = SUPPORTED_TERMINAL_TICKERS.has(ticker);
+                            const isSupported = canOpenTickerInTerminal(ticker);
                             if (isSupported) {
                               return (
                                 <button
@@ -240,7 +317,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
               </table>
             </div>
 
-            {/* Mobile Stacked List (per sektor bertumpuk, area ketuk min 44px) */}
+            {/* Mobile Stacked List */}
             <div className="sm:hidden divide-y divide-[#E5E5DC]">
               {activeArticle.sectorImpacts.map((sec, idx) => (
                 <div key={idx} className="py-3.5 space-y-2 text-xs">
@@ -251,7 +328,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                   <div className="flex flex-wrap items-center gap-2 font-mono tnum pt-0.5">
                     <span className="text-[#5A6068] font-sans text-xs">Emiten:</span>
                     {sec.tickers.map((ticker) => {
-                      const isSupported = SUPPORTED_TERMINAL_TICKERS.has(ticker);
+                      const isSupported = canOpenTickerInTerminal(ticker);
                       if (isSupported) {
                         return (
                           <button
@@ -284,13 +361,13 @@ export const NewsView: React.FC<NewsViewProps> = ({
               ))}
             </div>
 
-            {/* SATU catatan tegas di bawah tabel */}
             <p className="text-xs text-[#7A8088] pt-2 border-t border-[#E5E5DC]">
-              Ticker abu-abu belum tersedia di Terminal.
+              {provider === "yahoo"
+                ? "Semua kode saham IDX 4 huruf berwarna biru dapat dibuka langsung di Terminal (mode Yahoo Finance)."
+                : "Ticker abu-abu belum tersedia pada dataset contoh Terminal (aktif penuh di mode Yahoo Finance)."}
             </p>
           </section>
 
-          {/* Link kembali di bawah artikel dengan area ketuk minimal 44px */}
           <div className="pt-6 border-t border-[#E5E5DC]">
             <button
               type="button"
@@ -304,66 +381,112 @@ export const NewsView: React.FC<NewsViewProps> = ({
       ) : (
         /* BERANDA BERITA */
         <div className="max-w-7xl mx-auto py-6 space-y-6">
-          {/* Masthead sederhana (Logo StocksSense tidak diulang di sini) */}
-          <div className="border-b border-[#E5E5DC] pb-4 space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E]">
-              Warta makro dan transmisi kebijakan
-            </h1>
-            <p className="text-xs sm:text-sm text-[#5A6068]">
-              Skenario transmisi kebijakan ekonomi moneter dan fiskal terhadap kinerja sektoral saham.
-            </p>
-          </div>
-
-          {/* Ringkasan pasar: Di HP dipotong 2 baris dengan 'Selengkapnya', di Desktop tampil penuh */}
-          <div className="text-xs sm:text-sm text-[#3E4349] leading-relaxed border-b border-[#E5E5DC] pb-3">
-            <div className={!isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""}>
-              <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar (data contoh): </span>
-              {MACRO_MARKET_SUMMARY.summaryBrief}
+          <div className="border-b border-[#E5E5DC] pb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+            <div className="space-y-1">
+              <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E]">
+                {activeSourceTab === "live"
+                  ? "Warta pasar modal & makro terkini"
+                  : "Warta makro dan transmisi kebijakan"}
+              </h1>
+              <p className="text-xs sm:text-sm text-[#5A6068]">
+                {activeSourceTab === "live"
+                  ? "Berita terkini pasar saham Indonesia dari RSS publik (CNBC Indonesia & Google News IDX)."
+                  : "Skenario transmisi kebijakan ekonomi moneter dan fiskal terhadap kinerja sektoral saham."}
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsMarketSummaryExpanded(!isMarketSummaryExpanded)}
-              className="sm:hidden text-xs text-[#1E7B85] hover:underline font-medium min-h-[44px] inline-flex items-center"
-            >
-              {isMarketSummaryExpanded ? "Tutup ringkasan" : "Selengkapnya"}
-            </button>
-          </div>
 
-          {/* Baris Kontrol: Toggle periode + Kategori tab garis bawah + Kolom pencarian */}
-          <div className="space-y-3 border-b border-[#E5E5DC] pb-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              {/* Toggle 1 Minggu vs 1 Bulan sebagai tab teks bergaris bawah (min-h 44px) */}
-              <div className="flex items-center space-x-4 text-xs">
+            {provider === "yahoo" && (
+              <div className="flex items-center bg-[#EFEFEA] p-0.5 rounded-lg border border-[#D8D8CF] text-xs self-start">
                 <button
                   type="button"
-                  onClick={() => setSelectedPeriod("1W")}
-                  className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
-                    selectedPeriod === "1W"
-                      ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
+                  onClick={() => {
+                    setSourceTabPref("live");
+                    if (selectedCategory === "CORPORATE") setSelectedCategory("ALL");
+                  }}
+                  className={`min-h-[36px] px-3 py-1.5 rounded-md font-medium transition ${
+                    activeSourceTab === "live"
+                      ? "bg-[#1E7B85] text-white shadow-sm"
                       : "text-[#5A6068] hover:text-[#1A1C1E]"
                   }`}
                 >
-                  1 Minggu terakhir
+                  Berita Pasar Terkini
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedPeriod("1M")}
-                  className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
-                    selectedPeriod === "1M"
-                      ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
+                  onClick={() => {
+                    setSourceTabPref("scenario");
+                    if (selectedCategory === "CORPORATE") setSelectedCategory("ALL");
+                  }}
+                  className={`min-h-[36px] px-3 py-1.5 rounded-md font-medium transition ${
+                    activeSourceTab === "scenario"
+                      ? "bg-[#1E7B85] text-white shadow-sm"
                       : "text-[#5A6068] hover:text-[#1A1C1E]"
                   }`}
                 >
-                  1 Bulan terakhir
+                  Skenario Contoh
                 </button>
               </div>
+            )}
+          </div>
 
-              {/* Kolom pencarian berita / ticker dengan tinggi 44px */}
+          {activeSourceTab === "scenario" && (
+            <div className="text-xs sm:text-sm text-[#3E4349] leading-relaxed border-b border-[#E5E5DC] pb-3">
+              <div className={!isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""}>
+                <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar (data contoh): </span>
+                {MACRO_MARKET_SUMMARY.summaryBrief}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMarketSummaryExpanded(!isMarketSummaryExpanded)}
+                className="sm:hidden text-xs text-[#1E7B85] hover:underline font-medium min-h-[44px] inline-flex items-center"
+              >
+                {isMarketSummaryExpanded ? "Tutup ringkasan" : "Selengkapnya"}
+              </button>
+            </div>
+          )}
+
+          {/* Baris Kontrol */}
+          <div className="space-y-3 border-b border-[#E5E5DC] pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {activeSourceTab === "scenario" ? (
+                <div className="flex items-center space-x-4 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPeriod("1W")}
+                    className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
+                      selectedPeriod === "1W"
+                        ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
+                        : "text-[#5A6068] hover:text-[#1A1C1E]"
+                    }`}
+                  >
+                    1 Minggu terakhir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPeriod("1M")}
+                    className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
+                      selectedPeriod === "1M"
+                        ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
+                        : "text-[#5A6068] hover:text-[#1A1C1E]"
+                    }`}
+                  >
+                    1 Bulan terakhir
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2 text-xs text-[#5A6068]">
+                  <span className="w-2 h-2 rounded-full bg-[#2EB886]"></span>
+                  <span>
+                    Feed langsung: CNBC Indonesia Market &amp; Google News BEI ({filteredLiveNews.length} berita)
+                  </span>
+                </div>
+              )}
+
               <div className="relative w-full sm:w-64">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#7A8088]" />
                 <input
                   type="text"
-                  placeholder="Cari skenario berita atau ticker..."
+                  placeholder="Cari berita atau kode saham..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full h-[44px] pl-9 pr-3 bg-transparent border border-[#D8D8CF] rounded text-xs text-[#1A1C1E] placeholder-[#7A8088] focus:outline-none focus:border-[#1E7B85]"
@@ -371,10 +494,12 @@ export const NewsView: React.FC<NewsViewProps> = ({
               </div>
             </div>
 
-            {/* Kategori tab teks dengan garis bawah untuk yang aktif (bukan pill, min-h 44px) */}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs pt-1">
               {[
                 { id: "ALL", label: "Semua" },
+                ...(activeSourceTab === "live"
+                  ? [{ id: "CORPORATE", label: "Korporasi & bursa" }]
+                  : []),
                 { id: "MONETARY_CURRENCY", label: "Moneter dan FX" },
                 { id: "GLOBAL_MACRO", label: "Makro global" },
                 { id: "DOMESTIC_POLITICS", label: "Politik dan fiskal" },
@@ -383,7 +508,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 <button
                   key={cat.id}
                   type="button"
-                  onClick={() => setSelectedCategory(cat.id as MacroCategory)}
+                  onClick={() => setSelectedCategory(cat.id as NewsFilterCategory)}
                   className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
                     selectedCategory === cat.id
                       ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
@@ -396,14 +521,193 @@ export const NewsView: React.FC<NewsViewProps> = ({
             </div>
           </div>
 
-          {/* DAFTAR BERITA: STRUKTUR DARI SPASI DAN GARIS TIPIS (TANPA KARTU ATAU BINGKAI) */}
-          {filteredNews.length === 0 ? (
+          {/* KONTEN TAB 1: BERITA PASAR TERKINI (RSS NYATA) */}
+          {activeSourceTab === "live" ? (
+            isLiveNewsLoading ? (
+              <div className="py-12 text-center text-xs text-[#5A6068] animate-pulse">
+                Mengambil berita pasar modal Indonesia terkini...
+              </div>
+            ) : filteredLiveNews.length === 0 ? (
+              <div className="py-12 text-center space-y-3 text-xs text-[#5A6068]">
+                <p>
+                  {liveNewsState.items.length === 0
+                    ? "Berita pasar terkini belum dapat dimuat dari sumber RSS saat ini."
+                    : "Tidak ada berita terkini yang cocok dengan filter pencarian Anda."}
+                </p>
+                <div className="flex items-center justify-center gap-2">
+                  {liveNewsState.items.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={handleRetryLiveNews}
+                      className="min-h-[40px] inline-flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] transition"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#1E7B85]" />
+                      <span>Coba Lagi</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSourceTabPref("scenario")}
+                    className="min-h-[40px] inline-flex items-center px-3 py-1.5 rounded bg-[#1E7B85] text-white transition"
+                  >
+                    Buka Skenario Contoh
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
+                {leadLiveStory && (
+                  <div className="lg:col-span-7 space-y-3">
+                    <div className="flex flex-wrap items-center gap-x-2 text-xs text-[#5A6068]">
+                      <span className="font-semibold text-[#1E7B85]">{leadLiveStory.publisher}</span>
+                      <span className="text-[#D8D8CF]">|</span>
+                      <span>{getCategoryLabel(leadLiveStory.category)}</span>
+                      <span className="text-[#D8D8CF]">|</span>
+                      <span>{leadLiveStory.publishedWib}</span>
+                    </div>
+
+                    <h2
+                      className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E] leading-snug"
+                      style={{ textWrap: "balance" }}
+                    >
+                      <a
+                        href={leadLiveStory.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-[#1E7B85] transition"
+                      >
+                        {leadLiveStory.title}
+                      </a>
+                    </h2>
+
+                    <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
+                      {leadLiveStory.summary}
+                    </p>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[#5A6068] border-t border-[#E5E5DC]">
+                      <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
+                        {leadLiveStory.tickers.length > 0 && (
+                          <>
+                            <span className="font-sans">Emiten terkait:</span>
+                            {leadLiveStory.tickers.map((t) => (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => onSelectStockFromNews(t, "", leadLiveStory.title)}
+                                className="min-h-[36px] px-2 py-0.5 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D8D8CF] font-semibold transition"
+                                title={`Buka ${t} di Terminal`}
+                              >
+                                {t}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {onAskAiLiveNews && (
+                          <button
+                            type="button"
+                            onClick={() => onAskAiLiveNews(leadLiveStory)}
+                            className="min-h-[40px] inline-flex items-center space-x-1 text-[#1E7B85] hover:underline font-medium"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Bedah dengan AI</span>
+                          </button>
+                        )}
+                        <a
+                          href={leadLiveStory.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-h-[40px] inline-flex items-center space-x-1 text-[#2A2E33] hover:text-[#1E7B85] hover:underline font-medium"
+                        >
+                          <span>Sumber asli</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="lg:col-span-5 space-y-5 lg:border-l lg:border-[#E5E5DC] lg:pl-8">
+                  <span className="text-xs font-semibold text-[#5A6068] block">
+                    Berita terbaru lainnya
+                  </span>
+
+                  <div className="divide-y divide-[#E5E5DC]">
+                    {secondaryLiveStories.map((story) => (
+                      <div key={story.id} className="py-4 first:pt-0 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs text-[#5A6068]">
+                          <span className="font-medium text-[#1E7B85]">{story.publisher}</span>
+                          <span>{story.publishedWib}</span>
+                        </div>
+
+                        <h3
+                          className="text-base sm:text-lg font-serif font-bold text-[#1A1C1E] leading-snug"
+                          style={{ textWrap: "balance" }}
+                        >
+                          <a
+                            href={story.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-[#1E7B85] transition"
+                          >
+                            {story.title}
+                          </a>
+                        </h3>
+
+                        <p className="text-xs text-[#3E4349] line-clamp-2 leading-relaxed">
+                          {story.summary}
+                        </p>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
+                          <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
+                            {story.tickers.slice(0, 3).map((t) => (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => onSelectStockFromNews(t, "", story.title)}
+                                className="px-1.5 py-0.5 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D8D8CF] font-semibold transition"
+                                title={`Buka ${t} di Terminal`}
+                              >
+                                {t}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {onAskAiLiveNews && (
+                              <button
+                                type="button"
+                                onClick={() => onAskAiLiveNews(story)}
+                                className="inline-flex items-center space-x-1 text-[#1E7B85] hover:underline font-medium"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                <span>Bedah AI</span>
+                              </button>
+                            )}
+                            <a
+                              href={story.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-0.5 text-[#5A6068] hover:text-[#1E7B85] hover:underline"
+                            >
+                              <span>Baca</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )
+          ) : /* KONTEN TAB 2: SKENARIO CONTOH */ filteredScenarioNews.length === 0 ? (
             <div className="py-12 text-center text-xs text-[#5A6068]">
               Tidak ada skenario berita yang cocok dengan filter yang dipilih.
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
-              {/* Satu berita utama besar (Lead Story) */}
               {leadStory && (
                 <div className="lg:col-span-7 space-y-3">
                   <div className="flex items-center space-x-2 text-xs text-[#5A6068]">
@@ -432,16 +736,16 @@ export const NewsView: React.FC<NewsViewProps> = ({
                       {(() => {
                         const supported = leadStory.sectorImpacts
                           .flatMap((s) => s.tickers)
-                          .filter((t) => SUPPORTED_TERMINAL_TICKERS.has(t));
+                          .filter((t) => canOpenTickerInTerminal(t));
                         const other = leadStory.sectorImpacts
                           .flatMap((s) => s.tickers)
-                          .filter((t) => !SUPPORTED_TERMINAL_TICKERS.has(t));
+                          .filter((t) => !canOpenTickerInTerminal(t));
                         const combined = Array.from(new Set([...supported, ...other])).slice(0, 5);
                         return combined.map((t) => (
                           <span
                             key={t}
                             className={
-                              SUPPORTED_TERMINAL_TICKERS.has(t)
+                              canOpenTickerInTerminal(t)
                                 ? "text-[#1E7B85] font-semibold"
                                 : "text-[#7A8088]"
                             }
@@ -462,7 +766,6 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 </div>
               )}
 
-              {/* Warta lainnya: Sentence case, tanpa uppercase */}
               <div className="lg:col-span-5 space-y-5 lg:border-l lg:border-[#E5E5DC] lg:pl-8">
                 <span className="text-xs font-semibold text-[#5A6068] block">
                   Warta lainnya
@@ -494,7 +797,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                             <span
                               key={t}
                               className={
-                                SUPPORTED_TERMINAL_TICKERS.has(t)
+                                canOpenTickerInTerminal(t)
                                   ? "text-[#1E7B85] font-semibold"
                                   : "text-[#9CA3AF]"
                               }

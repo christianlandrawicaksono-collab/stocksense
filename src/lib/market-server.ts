@@ -3,16 +3,18 @@
  * Digunakan hanya di server (Next.js route handlers) - TIDAK diimpor di komponen klien.
  */
 
-import YahooFinance from "yahoo-finance2";
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus } from "./market-hours";
 import { formatDesimal, formatNumber } from "./format";
+import {
+  fetchYahooQuotesCached,
+  fetchYahooChartCached,
+  fetchYahooProfileCached,
+  fetchYahooSearchCached,
+} from "./yahoo-cache";
 
-// Inisialisasi YahooFinance instance (singleton per proses server)
-const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
-
-// 9 kode saham IDX yang didukung
+// 9 kode saham IDX bawaan di daftar pantau kurasi
 export const SUPPORTED_TICKERS = [
   "ADRO",
   "ANTM",
@@ -26,6 +28,10 @@ export const SUPPORTED_TICKERS = [
 ] as const;
 
 export type SupportedTicker = (typeof SUPPORTED_TICKERS)[number];
+
+export function isValidIdxTickerFormat(ticker: string): boolean {
+  return /^[A-Z]{4}$/.test(ticker);
+}
 
 export interface ServerQuoteItem {
   ticker: string;
@@ -56,6 +62,42 @@ export interface ServerHistoryPoint {
   dividend?: number;
 }
 
+export interface ServerStockSearchItem {
+  ticker: string;
+  name: string;
+  sector?: string;
+  isDefaultWatchlist: boolean;
+}
+
+export interface ServerStockProfile {
+  ticker: string;
+  name: string;
+  sector: string;
+  subsector: string;
+  hasCuratedBands: boolean;
+  isLive: boolean;
+  currentPrice: number;
+  changePercent: number;
+  peRatio?: number;
+  pbvRatio?: number;
+  eps?: number;
+  bvps?: number;
+  dividendYield?: number;
+  marketCapTrillion?: number;
+  financialCurrency?: string;
+  roe?: number;
+  der?: number;
+  payoutRatio?: number;
+  historicalPeMean?: number;
+  peSd1Plus?: number;
+  peSd1Minus?: number;
+  peSd2Plus?: number;
+  peSd2Minus?: number;
+  description: string;
+  strengths: string[];
+  risks: string[];
+}
+
 function toWibDateString(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -75,17 +117,16 @@ interface CacheEntry<T> {
   wibDate?: string;
 }
 
-const QUOTE_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk quote harga
-const HISTORY_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk riwayat harian (TTL pendek, tidak bertahan lintas hari)
-const MACRO_CACHE_TTL_MS = 60 * 1000; // 60 detik untuk indikator makro
+const QUOTE_CACHE_TTL_MS = 60 * 1000;
+const HISTORY_CACHE_TTL_MS = 60 * 1000;
+const MACRO_CACHE_TTL_MS = 60 * 1000;
 
-// Global in-memory cache
 const quotesCache = new Map<string, CacheEntry<ServerQuoteItem>>();
 const historyCache = new Map<string, CacheEntry<ServerHistoryPoint[]>>();
 let macroCache: CacheEntry<MarketTickerItem[]> | null = null;
 let usdIdrCache: CacheEntry<number> | null = null;
 
-// Pembatas laju sederhana: maksimum 60 permintaan server per 60 detik
+// Pembatas laju sederhana: maksimum 80 permintaan server per 60 detik
 let requestCountWindow = 0;
 let windowStartTime = Date.now();
 
@@ -96,15 +137,17 @@ export function checkRateLimit(): boolean {
     requestCountWindow = 0;
   }
   requestCountWindow++;
-  return requestCountWindow <= 60;
+  return requestCountWindow <= 80;
 }
 
 // ==============================================================================
-// Fallback Generator dari Data Ilustrasi
+// Fallback Generator dari Data Ilustrasi (khusus 9 saham kurasi)
 // ==============================================================================
 
-export function getIllustrativeQuote(ticker: string): ServerQuoteItem {
-  const stock = STOCKS_DATA.find((s) => s.ticker === ticker) || STOCKS_DATA[0];
+export function getIllustrativeQuote(ticker: string): ServerQuoteItem | null {
+  const stock = STOCKS_DATA.find((s) => s.ticker === ticker);
+  if (!stock) return null;
+
   const marketStatus = getIdxMarketStatus();
   const eps = stock.peRatio > 0 ? stock.currentPrice / stock.peRatio : undefined;
   const bvps = stock.pbvRatio > 0 ? stock.currentPrice / stock.pbvRatio : undefined;
@@ -151,7 +194,7 @@ export function getIllustrativeHistory(
 }
 
 // ==============================================================================
-// Yahoo Finance Fetchers dengan Batching & Error Handling
+// Yahoo Finance Fetchers (Backed by Next.js "use cache" + in-memory guard)
 // ==============================================================================
 
 function readPositiveNum(obj: Record<string, unknown>, key: string): number | undefined {
@@ -170,8 +213,7 @@ function readStr(obj: Record<string, unknown>, key: string): string | undefined 
 }
 
 /**
- * Mengambil harga terakhir dan metrik valuasi untuk banyak kode saham sekaligus.
- * Menggunakan batch call `yf.quote` (+ kurs IDR=X untuk konversi PBV laporan USD) untuk menghemat jaringan.
+ * Mengambil harga terakhir dan metrik valuasi untuk banyak kode saham IDX sekaligus.
  */
 export async function getBatchQuotesServer(
   tickers: string[]
@@ -181,7 +223,6 @@ export async function getBatchQuotesServer(
   const now = Date.now();
   const marketStatus = getIdxMarketStatus();
 
-  // 1. Cek cache in-memory terlebih dahulu
   for (const ticker of tickers) {
     const cached = quotesCache.get(ticker);
     if (cached && now - cached.cachedAt < QUOTE_CACHE_TTL_MS) {
@@ -191,22 +232,24 @@ export async function getBatchQuotesServer(
     }
   }
 
-  // Jika semua sudah tersedia di cache, langsung kembalikan
   if (tickersToFetch.length === 0) {
     return result;
   }
 
-  // 2. Cek pembatas laju
   if (!checkRateLimit()) {
     console.warn("[MarketServer] Rate limit reached, using cached or illustrative data");
     for (const ticker of tickersToFetch) {
       const cached = quotesCache.get(ticker);
-      result[ticker] = cached ? cached.data : getIllustrativeQuote(ticker);
+      if (cached) {
+        result[ticker] = cached.data;
+      } else {
+        const illus = getIllustrativeQuote(ticker);
+        if (illus) result[ticker] = illus;
+      }
     }
     return result;
   }
 
-  // 3. Panggilan batch ke Yahoo Finance
   try {
     const symbols = tickersToFetch.map((t) => `${t}.JK`);
     const needUsdIdr = !usdIdrCache || now - usdIdrCache.cachedAt >= QUOTE_CACHE_TTL_MS;
@@ -214,14 +257,13 @@ export async function getBatchQuotesServer(
       symbols.push("IDR=X");
     }
 
-    const quotes = await yf.quote(symbols);
-    const quoteList = Array.isArray(quotes) ? quotes : [quotes];
+    const symbolsKey = [...symbols].sort().join(",");
+    const quoteList = await fetchYahooQuotesCached(symbolsKey);
 
-    // Ekstrak kurs USD/IDR terbaru untuk normalisasi emiten ber-laporan keuangan USD (mis. ADRO, MEDC)
     let activeUsdIdrRate = usdIdrCache?.data ?? 0;
-    for (const quote of quoteList) {
-      if (quote && quote.symbol === "IDR=X") {
-        const rate = readPositiveNum(quote as unknown as Record<string, unknown>, "regularMarketPrice");
+    for (const qRec of quoteList) {
+      if (readStr(qRec, "symbol") === "IDR=X") {
+        const rate = readPositiveNum(qRec, "regularMarketPrice");
         if (rate) {
           activeUsdIdrRate = rate;
           usdIdrCache = { data: rate, cachedAt: now };
@@ -229,11 +271,11 @@ export async function getBatchQuotesServer(
       }
     }
 
-    for (const quote of quoteList) {
-      if (!quote || !quote.symbol || quote.symbol === "IDR=X") continue;
-      const cleanTicker = quote.symbol.replace(/\.JK$/i, "").toUpperCase();
+    for (const qRec of quoteList) {
+      const rawSym = readStr(qRec, "symbol");
+      if (!rawSym || rawSym === "IDR=X") continue;
+      const cleanTicker = rawSym.replace(/\.JK$/i, "").toUpperCase();
       const stockMeta = STOCKS_DATA.find((s) => s.ticker === cleanTicker);
-      const qRec = quote as unknown as Record<string, unknown>;
 
       const price = readPositiveNum(qRec, "regularMarketPrice") ?? 0;
       const change = readNum(qRec, "regularMarketChange") ?? 0;
@@ -253,7 +295,6 @@ export async function getBatchQuotesServer(
         let pbvRatio: number | undefined;
 
         if (financialCurrency && financialCurrency !== "IDR") {
-          // Emiten melapor dalam USD -> konversi nilai buku ke IDR memakai kurs IDR=X
           if (financialCurrency === "USD" && activeUsdIdrRate > 0 && rawBv) {
             bvps = rawBv * activeUsdIdrRate;
             pbvRatio = price / bvps;
@@ -286,7 +327,7 @@ export async function getBatchQuotesServer(
 
         const item: ServerQuoteItem = {
           ticker: cleanTicker,
-          name: quote.shortName || quote.longName || stockMeta?.name || cleanTicker,
+          name: readStr(qRec, "shortName") || readStr(qRec, "longName") || stockMeta?.name || cleanTicker,
           price,
           change,
           changePercent,
@@ -310,14 +351,16 @@ export async function getBatchQuotesServer(
     console.error("[MarketServer] Failed to fetch quotes from Yahoo Finance:", error);
   }
 
-  // 4. Fallback jika ada emiten yang gagal diambil dari Yahoo
   for (const ticker of tickersToFetch) {
     if (!result[ticker]) {
       const cached = quotesCache.get(ticker);
       if (cached) {
         result[ticker] = cached.data;
       } else {
-        result[ticker] = getIllustrativeQuote(ticker);
+        const illus = getIllustrativeQuote(ticker);
+        if (illus) {
+          result[ticker] = illus;
+        }
       }
     }
   }
@@ -352,7 +395,6 @@ function formatMacroValue(price: number, formatType: (typeof MACRO_SYMBOL_DEFS)[
 
 /**
  * Mengambil daftar indikator makro & pasar global langsung dari Yahoo Finance.
- * Tidak mencampur data statis ilustrasi: jika gagal, kembalikan array kosong + isFallback: true.
  */
 export async function getMacroTickersServer(): Promise<{
   tickers: MarketTickerItem[];
@@ -371,14 +413,14 @@ export async function getMacroTickersServer(): Promise<{
   }
 
   try {
-    const symbols = MACRO_SYMBOL_DEFS.map((m) => m.yahooSymbol);
-    const quotes = await yf.quote(symbols);
-    const quoteList = Array.isArray(quotes) ? quotes : [quotes];
+    const symbolsKey = MACRO_SYMBOL_DEFS.map((m) => m.yahooSymbol).sort().join(",");
+    const quoteList = await fetchYahooQuotesCached(symbolsKey);
 
     const bySymbol = new Map<string, Record<string, unknown>>();
-    for (const q of quoteList) {
-      if (q && q.symbol) {
-        bySymbol.set(q.symbol, q as unknown as Record<string, unknown>);
+    for (const qRec of quoteList) {
+      const sym = readStr(qRec, "symbol");
+      if (sym) {
+        bySymbol.set(sym, qRec);
       }
     }
 
@@ -418,7 +460,7 @@ export async function getMacroTickersServer(): Promise<{
 }
 
 /**
- * Mengambil riwayat harga harian dan dividen dari Yahoo Finance.
+ * Mengambil riwayat harga harian/mingguan dan dividen dari Yahoo Finance.
  */
 export async function getHistoryServer(
   ticker: string,
@@ -429,7 +471,6 @@ export async function getHistoryServer(
   const now = Date.now();
   const cached = historyCache.get(cacheKey);
 
-  // Bersihkan entri cache yang sudah kedaluwarsa lintas hari (bukan hari ini)
   for (const [key, entry] of historyCache.entries()) {
     if (entry.wibDate && entry.wibDate !== todayWib) {
       historyCache.delete(key);
@@ -445,9 +486,6 @@ export async function getHistoryServer(
     return { points: [], isFallback: true };
   }
 
-  // Hitung period1 dan interval adaptif berdasarkan rentang waktu:
-  // - 1Th & 3Th: interval harian ("1d") untuk detail pergerakan harian
-  // - 5Th & Semua: interval mingguan ("1wk") agar payload ringan (~100KB vs >600KB), cepat, dan andal
   const today = new Date();
   let startDate = new Date();
   let interval: "1d" | "1wk" = "1d";
@@ -460,7 +498,6 @@ export async function getHistoryServer(
     startDate.setFullYear(today.getFullYear() - 5);
     interval = "1wk";
   } else {
-    // Semua: ambil riwayat maksimum sejak 2000 dengan interval mingguan
     startDate = new Date("2000-01-01");
     interval = "1wk";
   }
@@ -469,45 +506,43 @@ export async function getHistoryServer(
 
   try {
     const symbol = ticker === "IHSG" ? "^JKSE" : `${ticker}.JK`;
-    const chartResult = await yf.chart(
+    const includeDividends = ticker !== "IHSG";
+    const chartResult = await fetchYahooChartCached(
       symbol,
-      ticker === "IHSG"
-        ? { period1, interval }
-        : { period1, interval, events: "div" }
+      period1,
+      interval,
+      includeDividends,
+      todayWib
     );
 
-    if (!chartResult || !chartResult.quotes || chartResult.quotes.length === 0) {
-      throw new Error(`No chart data returned for ${symbol}`);
-    }
-
-    // Peta dividen berdasarkan tanggal (YYYY-MM-DD dalam zona waktu WIB)
     const dividendMap = new Map<string, number>();
     const dividendList: { date: string; amount: number }[] = [];
-    if (chartResult.events && chartResult.events.dividends) {
-      for (const div of chartResult.events.dividends) {
-        const divDate = toWibDateString(new Date(div.date));
-        if (interval === "1d") {
-          dividendMap.set(divDate, div.amount);
-        } else {
-          dividendList.push({ date: divDate, amount: div.amount });
-        }
+    for (const div of chartResult.dividends) {
+      const divDate = toWibDateString(new Date(div.date));
+      if (interval === "1d") {
+        dividendMap.set(divDate, div.amount);
+      } else {
+        dividendList.push({ date: divDate, amount: div.amount });
       }
     }
 
-    // Ekstrak data yang valid (gunakan Close Asli / unadjusted close untuk grafik harga nominal bursa)
     const points: ServerHistoryPoint[] = [];
     for (const q of chartResult.quotes) {
-      if (typeof q.close !== "number" || isNaN(q.close)) continue;
-      const timeStr = toWibDateString(new Date(q.date));
+      const closeVal = readNum(q, "close");
+      if (closeVal === undefined || isNaN(closeVal)) continue;
+
+      const rawDate = q.date;
+      if (typeof rawDate !== "string" && !(rawDate instanceof Date)) continue;
+      const timeStr = toWibDateString(new Date(rawDate));
       const divAmount = interval === "1d" ? dividendMap.get(timeStr) : undefined;
 
       points.push({
         time: timeStr,
-        open: typeof q.open === "number" ? q.open : q.close,
-        high: typeof q.high === "number" ? q.high : q.close,
-        low: typeof q.low === "number" ? q.low : q.close,
-        close: q.close,
-        volume: typeof q.volume === "number" ? q.volume : 0,
+        open: readNum(q, "open") ?? closeVal,
+        high: readNum(q, "high") ?? closeVal,
+        low: readNum(q, "low") ?? closeVal,
+        close: closeVal,
+        volume: readNum(q, "volume") ?? 0,
         dividend: divAmount,
       });
     }
@@ -516,7 +551,6 @@ export async function getHistoryServer(
       throw new Error("Parsed points length is 0");
     }
 
-    // Untuk interval mingguan (1wk): petakan dividen ke bar mingguan yang memuat tanggal dividen
     if (interval === "1wk" && dividendList.length > 0) {
       for (const div of dividendList) {
         let matchedBar: ServerHistoryPoint | null = null;
@@ -532,24 +566,14 @@ export async function getHistoryServer(
       }
     }
 
-    // Periksa apakah harga live dari quote lebih baru daripada bar riwayat harian terakhir.
-    // JANGAN pernah menimpa bar riwayat hari sebelumnya dengan harga live.
-    // Jika harga live lebih baru daripada bar terakhir, tambahkan sebagai titik baru bertanggal hari ini (WIB).
-    // Jika bar terakhir sudah bertanggal sama dengan hari ini (intraday), update harga sesi hari ini.
-    const latestPrice =
-      typeof chartResult.meta?.regularMarketPrice === "number" && chartResult.meta.regularMarketPrice > 0
-        ? chartResult.meta.regularMarketPrice
-        : null;
-    const metaMarketTime = chartResult.meta?.regularMarketTime
-      ? new Date(chartResult.meta.regularMarketTime)
-      : null;
+    const latestPrice = chartResult.metaPrice;
+    const metaMarketTime = chartResult.metaTime ? new Date(chartResult.metaTime) : null;
 
     if (latestPrice && points.length > 0 && metaMarketTime) {
       const quoteDateWib = toWibDateString(metaMarketTime);
       const lastPoint = points[points.length - 1];
 
       if (quoteDateWib > lastPoint.time) {
-        // Tanggal quote lebih baru daripada bar terakhir -> tambahkan titik baru hari ini (WIB)
         points.push({
           time: quoteDateWib,
           open: latestPrice,
@@ -559,18 +583,202 @@ export async function getHistoryServer(
           volume: 0,
         });
       } else if (quoteDateWib === lastPoint.time) {
-        // Bar terakhir adalah bar hari ini (intraday) -> update harga close tick hari ini
         lastPoint.close = latestPrice;
         if (lastPoint.high < latestPrice) lastPoint.high = latestPrice;
         if (lastPoint.low > latestPrice) lastPoint.low = latestPrice;
       }
     }
 
-    // Simpan ke cache dengan stempel waktu dan tanggal WIB
     historyCache.set(cacheKey, { data: points, cachedAt: now, wibDate: todayWib });
     return { points, isFallback: false };
   } catch (error) {
     console.error(`[MarketServer] Failed to fetch history for ${ticker} from Yahoo:`, error);
     return { points: [], isFallback: true };
   }
+}
+
+/**
+ * Pencarian emiten IDX (menggabungkan 9 watchlist kurasi + pencarian .JK via Yahoo Search / direct ticker lookup).
+ */
+export async function searchIdxStocksServer(
+  rawQuery: string,
+  provider: string
+): Promise<ServerStockSearchItem[]> {
+  const q = rawQuery.trim();
+  if (!q) return [];
+  const lower = q.toLowerCase();
+  const upper = q.toUpperCase();
+
+  const curatedMatches: ServerStockSearchItem[] = STOCKS_DATA.filter(
+    (s) =>
+      s.ticker.toLowerCase().includes(lower) ||
+      s.name.toLowerCase().includes(lower) ||
+      s.sector.toLowerCase().includes(lower)
+  ).map((s) => ({
+    ticker: s.ticker,
+    name: s.name,
+    sector: s.sector,
+    isDefaultWatchlist: true,
+  }));
+
+  if (provider !== "yahoo") {
+    return curatedMatches;
+  }
+
+  const seen = new Set(curatedMatches.map((m) => m.ticker));
+  const combined = [...curatedMatches];
+
+  try {
+    const yahooItems = await fetchYahooSearchCached(q);
+    for (const item of yahooItems) {
+      if (!seen.has(item.symbol)) {
+        seen.add(item.symbol);
+        combined.push({
+          ticker: item.symbol,
+          name: item.name,
+          sector: item.sector,
+          isDefaultWatchlist: false,
+        });
+      }
+    }
+
+    // Jika pengguna mengetik kode 4 huruf persis dan belum muncul di search, verifikasi langsung via yf.quote
+    if (isValidIdxTickerFormat(upper) && !seen.has(upper)) {
+      const directQuotes = await getBatchQuotesServer([upper]);
+      const match = directQuotes[upper];
+      if (match && !match.isFallback) {
+        combined.unshift({
+          ticker: match.ticker,
+          name: match.name,
+          isDefaultWatchlist: false,
+        });
+      }
+    }
+  } catch (error) {
+    console.warn(`[MarketServer] Search failed for "${q}":`, error);
+  }
+
+  return combined.slice(0, 12);
+}
+
+/**
+ * Mengambil profil & metrik emiten untuk 9 saham kurasi maupun saham IDX kustom.
+ */
+export async function getStockProfileServer(
+  rawTicker: string,
+  provider: string
+): Promise<ServerStockProfile | null> {
+  const ticker = rawTicker.trim().toUpperCase();
+  const curated = STOCKS_DATA.find((s) => s.ticker === ticker);
+
+  if (curated) {
+    if (provider !== "yahoo") {
+      return {
+        ticker: curated.ticker,
+        name: curated.name,
+        sector: curated.sector,
+        subsector: curated.subsector,
+        hasCuratedBands: true,
+        isLive: false,
+        currentPrice: curated.currentPrice,
+        changePercent: curated.change1D,
+        peRatio: curated.peRatio,
+        pbvRatio: curated.pbvRatio,
+        eps: curated.currentPrice / curated.peRatio,
+        bvps: curated.currentPrice / curated.pbvRatio,
+        dividendYield: curated.dividendYield,
+        marketCapTrillion: curated.marketCapTrillion,
+        financialCurrency: "IDR",
+        roe: curated.roe,
+        der: curated.der,
+        payoutRatio: curated.payoutRatio,
+        historicalPeMean: curated.historicalPeMean,
+        peSd1Plus: curated.peSd1Plus,
+        peSd1Minus: curated.peSd1Minus,
+        peSd2Plus: curated.peSd2Plus,
+        peSd2Minus: curated.peSd2Minus,
+        description: curated.description,
+        strengths: curated.strengths,
+        risks: curated.risks,
+      };
+    }
+
+    const quotes = await getBatchQuotesServer([ticker]);
+    const q = quotes[ticker];
+    const isLive = Boolean(q && !q.isFallback);
+
+    return {
+      ticker: curated.ticker,
+      name: curated.name,
+      sector: curated.sector,
+      subsector: curated.subsector,
+      hasCuratedBands: true,
+      isLive,
+      currentPrice: q?.price ?? curated.currentPrice,
+      changePercent: q?.changePercent ?? curated.change1D,
+      peRatio: isLive && q?.peRatio ? q.peRatio : curated.peRatio,
+      pbvRatio: isLive && q?.pbvRatio ? q.pbvRatio : curated.pbvRatio,
+      eps: isLive && q?.eps ? q.eps : curated.currentPrice / curated.peRatio,
+      bvps: isLive && q?.bvps ? q.bvps : curated.currentPrice / curated.pbvRatio,
+      dividendYield:
+        isLive && q?.dividendYield !== undefined ? q.dividendYield : curated.dividendYield,
+      marketCapTrillion:
+        isLive && q?.marketCapTrillion ? q.marketCapTrillion : curated.marketCapTrillion,
+      financialCurrency: q?.financialCurrency ?? "IDR",
+      roe: curated.roe,
+      der: curated.der,
+      payoutRatio: curated.payoutRatio,
+      historicalPeMean: curated.historicalPeMean,
+      peSd1Plus: curated.peSd1Plus,
+      peSd1Minus: curated.peSd1Minus,
+      peSd2Plus: curated.peSd2Plus,
+      peSd2Minus: curated.peSd2Minus,
+      description: curated.description,
+      strengths: curated.strengths,
+      risks: curated.risks,
+    };
+  }
+
+  // Emiten kustom di luar 9 saham kurasi: wajib valid format 4 huruf dan mode Yahoo aktif
+  if (provider !== "yahoo" || !isValidIdxTickerFormat(ticker)) {
+    return null;
+  }
+
+  const [quotesRes, profileRes] = await Promise.allSettled([
+    getBatchQuotesServer([ticker]),
+    fetchYahooProfileCached(`${ticker}.JK`),
+  ]);
+
+  const quoteMap = quotesRes.status === "fulfilled" ? quotesRes.value : {};
+  const q = quoteMap[ticker];
+  if (!q || q.isFallback || q.price <= 0) {
+    return null;
+  }
+
+  const profileMeta = profileRes.status === "fulfilled" ? profileRes.value : {};
+
+  return {
+    ticker: q.ticker,
+    name: q.name,
+    sector: profileMeta.sector || "Bursa Efek Indonesia",
+    subsector: profileMeta.industry || "Saham Tercatat BEI",
+    hasCuratedBands: false,
+    isLive: true,
+    currentPrice: q.price,
+    changePercent: q.changePercent,
+    peRatio: q.peRatio,
+    pbvRatio: q.pbvRatio,
+    eps: q.eps,
+    bvps: q.bvps,
+    dividendYield: q.dividendYield,
+    marketCapTrillion: q.marketCapTrillion,
+    financialCurrency: q.financialCurrency,
+    roe: profileMeta.roe,
+    der: profileMeta.der,
+    description:
+      profileMeta.description ||
+      `Profil emiten ${q.name} (${q.ticker}.JK) pada Bursa Efek Indonesia melalui Yahoo Finance.`,
+    strengths: [],
+    risks: [],
+  };
 }

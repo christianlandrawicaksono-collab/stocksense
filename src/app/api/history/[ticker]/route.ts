@@ -4,6 +4,7 @@ import {
   ServerHistoryPoint,
   getHistoryServer,
   getIllustrativeHistory,
+  isValidIdxTickerFormat,
 } from "@/lib/market-server";
 import { getIdxMarketStatus } from "@/lib/market-hours";
 
@@ -15,21 +16,22 @@ export async function GET(
   try {
     const { ticker: rawTicker } = await params;
     const ticker = (rawTicker || "").toUpperCase();
+    const providerEnv = process.env.MARKET_DATA_PROVIDER || "illustrative";
 
-    const isSupported =
+    const isCurated =
       (SUPPORTED_TICKERS as readonly string[]).includes(ticker) || ticker === "IHSG";
+    const isAllowed =
+      isCurated || (providerEnv === "yahoo" && isValidIdxTickerFormat(ticker));
 
-    if (!isSupported) {
+    if (!isAllowed) {
       return NextResponse.json(
-        { error: `Ticker ${ticker} tidak didukung` },
+        { error: `Ticker ${ticker} tidak didukung pada mode ${providerEnv}` },
         { status: 400 }
       );
     }
 
     const { searchParams } = new URL(request.url);
     const range = searchParams.get("range") || "Semua";
-
-    const providerEnv = process.env.MARKET_DATA_PROVIDER || "illustrative";
     const marketStatus = getIdxMarketStatus();
 
     let points: ServerHistoryPoint[] = [];

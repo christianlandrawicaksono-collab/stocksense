@@ -10,7 +10,7 @@
 
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import { LIVE_MARKET_TICKERS } from "@/data/macroData";
-import { MarketTickerItem } from "@/types/market";
+import { LiveMarketNewsItem, MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus, MarketStatus } from "./market-hours";
 
 export type MarketProvider = "illustrative" | "yahoo";
@@ -58,6 +58,42 @@ export interface MacroResponse {
   isFallback: boolean;
   marketStatus: MarketStatus;
   timestamp: string;
+}
+
+export interface StockSearchItem {
+  ticker: string;
+  name: string;
+  sector?: string;
+  isDefaultWatchlist: boolean;
+}
+
+export interface StockProfileData {
+  ticker: string;
+  name: string;
+  sector: string;
+  subsector: string;
+  hasCuratedBands: boolean;
+  isLive: boolean;
+  currentPrice: number;
+  changePercent: number;
+  peRatio?: number;
+  pbvRatio?: number;
+  eps?: number;
+  bvps?: number;
+  dividendYield?: number;
+  marketCapTrillion?: number;
+  financialCurrency?: string;
+  roe?: number;
+  der?: number;
+  payoutRatio?: number;
+  historicalPeMean?: number;
+  peSd1Plus?: number;
+  peSd1Minus?: number;
+  peSd2Plus?: number;
+  peSd2Minus?: number;
+  description: string;
+  strengths: string[];
+  risks: string[];
 }
 
 export interface HistoryResponse {
@@ -248,6 +284,77 @@ export async function getHistory(
       isFallback: true,
       marketStatus: getIdxMarketStatus(),
       timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+/**
+ * Mencari saham IDX (.JK) berdasarkan kode atau nama emiten
+ */
+export async function searchStocks(query: string): Promise<StockSearchItem[]> {
+  const q = query.trim();
+  if (!q) return [];
+  try {
+    const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { results?: StockSearchItem[] };
+    return Array.isArray(data.results) ? data.results : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Mengambil profil & metrik valuasi lengkap untuk emiten kurasi maupun kustom IDX
+ */
+export async function getStockProfile(ticker: string): Promise<StockProfileData | null> {
+  try {
+    const res = await fetch(`/api/stocks/${encodeURIComponent(ticker.toUpperCase())}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { profile?: StockProfileData };
+    return data.profile || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mengambil berita pasar modal Indonesia terkini (RSS CNBC Indonesia & Google News IDX)
+ */
+export async function getLiveMarketNews(): Promise<{
+  provider: MarketProvider;
+  items: LiveMarketNewsItem[];
+  isFallback: boolean;
+}> {
+  try {
+    const res = await fetch("/api/news", {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status}`);
+    }
+    const data = (await res.json()) as {
+      provider?: MarketProvider;
+      items?: LiveMarketNewsItem[];
+      isFallback?: boolean;
+    };
+    return {
+      provider: data.provider || getActiveMarketProvider(),
+      items: Array.isArray(data.items) ? data.items : [],
+      isFallback: Boolean(data.isFallback),
+    };
+  } catch {
+    return {
+      provider: getActiveMarketProvider(),
+      items: [],
+      isFallback: true,
     };
   }
 }
