@@ -4,6 +4,7 @@ export interface MarketTickerItem {
   value: string;
   change: number;
   isPositive: boolean;
+  isFallback?: boolean;
 }
 
 export type TimeframeType = "1W" | "1M" | "3M" | "1Y";

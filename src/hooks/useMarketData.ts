@@ -3,40 +3,63 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getQuotes,
+  getMacroTickers,
   getIllustrativeQuotesMap,
   MarketQuote,
   MarketProvider,
   getActiveMarketProvider,
 } from "@/lib/market-data";
+import { LIVE_MARKET_TICKERS } from "@/data/macroData";
+import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus, MarketStatus } from "@/lib/market-hours";
 
 export function useMarketData() {
+  const [provider, setProvider] = useState<MarketProvider>(() =>
+    getActiveMarketProvider()
+  );
   const [quotes, setQuotes] = useState<Record<string, MarketQuote>>(() =>
     getIllustrativeQuotesMap()
   );
-  const [provider, setProvider] = useState<MarketProvider>(() =>
-    getActiveMarketProvider()
+  const [macroTickers, setMacroTickers] = useState<MarketTickerItem[]>(() =>
+    getActiveMarketProvider() === "yahoo" ? [] : LIVE_MARKET_TICKERS
+  );
+  const [isMacroFallback, setIsMacroFallback] = useState<boolean>(
+    () => getActiveMarketProvider() !== "yahoo"
   );
   const [marketStatus, setMarketStatus] = useState<MarketStatus>(() =>
     getIdxMarketStatus()
   );
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => getActiveMarketProvider() === "yahoo"
+  );
   const [lastFetched, setLastFetched] = useState<string>("");
 
   const isFetchingRef = useRef(false);
+  const prevIsOpenRef = useRef<boolean>(getIdxMarketStatus().isOpen);
 
-  const fetchLatestQuotes = useCallback(async () => {
+  const fetchLatestMarketData = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     setIsLoading(true);
 
     try {
-      const data = await getQuotes();
-      if (data && data.quotes) {
-        setQuotes(data.quotes);
-        setProvider(data.provider);
-        setMarketStatus(data.marketStatus);
-        setLastFetched(data.marketStatus.timeWib);
+      const [quotesRes, macroRes] = await Promise.allSettled([
+        getQuotes(),
+        getMacroTickers(),
+      ]);
+
+      if (quotesRes.status === "fulfilled" && quotesRes.value?.quotes) {
+        const qData = quotesRes.value;
+        setQuotes(qData.quotes);
+        setProvider(qData.provider);
+        setMarketStatus(qData.marketStatus);
+        setLastFetched(qData.marketStatus.timeWib);
+      }
+
+      if (macroRes.status === "fulfilled" && macroRes.value) {
+        const mData = macroRes.value;
+        setMacroTickers(mData.tickers);
+        setIsMacroFallback(mData.isFallback);
       }
     } catch (err) {
       console.warn("[useMarketData] Polling fetch error:", err);
@@ -49,47 +72,58 @@ export function useMarketData() {
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Ambil data pertama kali saat mount secara asinkron (tanpa synchronous setState dalam effect body)
-    getQuotes()
-      .then((data) => {
-        if (isMounted && data && data.quotes) {
-          setQuotes(data.quotes);
-          setProvider(data.provider);
-          setMarketStatus(data.marketStatus);
-          setLastFetched(data.marketStatus.timeWib);
+    // 1. Ambil data quotes & indikator makro saat mount secara paralel
+    Promise.allSettled([getQuotes(), getMacroTickers()])
+      .then(([quotesRes, macroRes]) => {
+        if (!isMounted) return;
+
+        if (quotesRes.status === "fulfilled" && quotesRes.value?.quotes) {
+          const qData = quotesRes.value;
+          setQuotes(qData.quotes);
+          setProvider(qData.provider);
+          setMarketStatus(qData.marketStatus);
+          setLastFetched(qData.marketStatus.timeWib);
+        }
+
+        if (macroRes.status === "fulfilled" && macroRes.value) {
+          const mData = macroRes.value;
+          setMacroTickers(mData.tickers);
+          setIsMacroFallback(mData.isFallback);
         }
       })
       .catch((err) => {
         console.warn("[useMarketData] Initial fetch error:", err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
       });
 
-    // 2. Pasang interval polling ~60 detik HANYA saat jam bursa buka
-    let intervalId: NodeJS.Timeout | null = null;
-
-    const setupPolling = () => {
-      if (intervalId) clearInterval(intervalId);
-
+    // 2. Interval pengecekan status setiap 60 detik:
+    //    Selalu perbarui status jam bursa di UI; hanya fetch Yahoo saat bursa buka atau saat transisi tutup.
+    const intervalId = setInterval(() => {
       const currentStatus = getIdxMarketStatus();
-      if (!currentStatus.isOpen) {
-        // Jangan polling jika pasar tutup
-        return;
+      setMarketStatus(currentStatus);
+
+      const wasOpen = prevIsOpenRef.current;
+      prevIsOpenRef.current = currentStatus.isOpen;
+
+      if (
+        (currentStatus.isOpen || wasOpen) &&
+        typeof document !== "undefined" &&
+        document.visibilityState === "visible"
+      ) {
+        fetchLatestMarketData();
       }
+    }, 60000);
 
-      intervalId = setInterval(() => {
-        if (typeof document !== "undefined" && document.visibilityState === "visible") {
-          fetchLatestQuotes();
-        }
-      }, 60000);
-    };
-
-    setupPolling();
-
-    // 3. Listener visibilitychange: saat tab kembali aktif, refresh jika pasar sedang buka
+    // 3. Listener visibilitychange: saat tab kembali aktif, segarkan status bursa & data jika pasar buka
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         const currentStatus = getIdxMarketStatus();
+        setMarketStatus(currentStatus);
+        prevIsOpenRef.current = currentStatus.isOpen;
         if (currentStatus.isOpen) {
-          fetchLatestQuotes();
+          fetchLatestMarketData();
         }
       }
     };
@@ -98,17 +132,19 @@ export function useMarketData() {
 
     return () => {
       isMounted = false;
-      if (intervalId) clearInterval(intervalId);
+      clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [fetchLatestQuotes]);
+  }, [fetchLatestMarketData]);
 
   return {
     quotes,
+    macroTickers,
+    isMacroFallback,
     provider,
     marketStatus,
     isLoading,
     lastFetched,
-    refetch: fetchLatestQuotes,
+    refetch: fetchLatestMarketData,
   };
 }

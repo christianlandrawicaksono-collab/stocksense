@@ -27,18 +27,25 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
   const [sortField, setSortField] = useState<SortField>("ticker");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
 
-  // Gabungkan metadata fundamental dengan harga live dari quotes (jika ada)
+  // Gabungkan metadata fundamental dengan harga & rasio valuasi live dari quotes (jika ada)
   const mergedStocks = useMemo(() => {
     return STOCKS_DATA.map((s) => {
       const q = quotes?.[s.ticker];
+      const isLive = Boolean(provider === "yahoo" && q && !q.isFallback);
       return {
         ...s,
         currentPrice: q ? q.price : s.currentPrice,
         change1D: q ? q.changePercent : s.change1D,
-        isLive: q ? !q.isFallback : false,
+        peRatio: isLive && q?.peRatio && q.peRatio > 0 ? q.peRatio : s.peRatio,
+        pbvRatio: isLive && q?.pbvRatio && q.pbvRatio > 0 ? q.pbvRatio : s.pbvRatio,
+        dividendYield:
+          isLive && q?.dividendYield !== undefined && q.dividendYield >= 0
+            ? q.dividendYield
+            : s.dividendYield,
+        isLive,
       };
     });
-  }, [quotes]);
+  }, [quotes, provider]);
 
   const filteredAndSortedStocks = useMemo(() => {
     return mergedStocks
@@ -164,9 +171,13 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         <button
           onClick={() => handleSort("peRatio")}
           className="col-span-3 text-right flex items-center justify-end space-x-1 hover:text-slate-200"
-          title="Rasio P/E dan Dividen Yield (data fundamental ilustrasi)"
+          title={
+            provider === "yahoo"
+              ? "Rasio P/E (TTM) dan Dividen Yield (Yahoo Finance)"
+              : "Rasio P/E dan Dividen Yield (data fundamental ilustrasi)"
+          }
         >
-          <span className="truncate">P/E (ilus)</span>
+          <span className="truncate">{provider === "yahoo" ? "P/E (Live)" : "P/E (ilus)"}</span>
           <ArrowUpDown className="w-2.5 h-2.5 shrink-0" />
         </button>
       </div>
@@ -203,6 +214,14 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                     >
                       {stock.ticker}
                     </span>
+                    {provider === "yahoo" && !stock.isLive && (
+                      <span
+                        className="text-[9px] font-sans px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                        title="Quote Yahoo gagal diambil; menggunakan data acuan ilustrasi sementara"
+                      >
+                        ilus
+                      </span>
+                    )}
                   </div>
                   <span className="text-[11px] text-slate-400 truncate">
                     {stock.name}
@@ -253,8 +272,8 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
         {provider === "yahoo" ? (
           <>
-            <span>Harga: Yahoo Finance (tertunda ~10 mnt)</span>
-            <span>*P/E & Div: data ilustrasi</span>
+            <span>Harga, P/E, PBV, Div: Yahoo (~10 mnt)</span>
+            <span>*Filter ROE &amp; DER: profil ilustrasi</span>
           </>
         ) : (
           <>
