@@ -34,8 +34,14 @@ describe("news-server RSS helpers", () => {
     expect(companyTickers).toEqual(expect.arrayContaining(["UNVR", "ARTO", "AMMN", "INCO"]));
   });
 
-  it("categorizes macroeconomic and commodity news accurately", () => {
+  it("categorizes macroeconomic, regulatory, and commodity news accurately", () => {
     expect(categorizeNewsItem("Bank Indonesia Tahan BI-Rate 6%", "Rupiah menguat")).toBe(
+      "MONETARY_CURRENCY"
+    );
+    expect(
+      categorizeNewsItem("BEI Percepat Reformasi Transparansi Likuiditas dan Pengawasan", "")
+    ).toBe("DOMESTIC_POLITICS");
+    expect(categorizeNewsItem("Likuiditas Perbankan Ketat Menjelang Akhir Tahun", "")).toBe(
       "MONETARY_CURRENCY"
     );
     expect(categorizeNewsItem("Harga Minyak Brent & Batubara Menguat", "Emiten energi")).toBe(

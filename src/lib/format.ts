@@ -192,3 +192,23 @@ export function calculateAnnualizedIRR(cashFlows: number[]): number | null {
 
   return null;
 }
+
+/**
+ * Mengubah kode kategori berita internal menjadi label bahasa Indonesia yang ringkas.
+ */
+export function formatNewsCategoryLabel(category: string): string {
+  switch (category) {
+    case "MONETARY_CURRENCY":
+      return "Moneter dan FX";
+    case "GLOBAL_MACRO":
+      return "Makro global";
+    case "DOMESTIC_POLITICS":
+      return "Politik dan fiskal";
+    case "COMMODITIES":
+      return "Komoditas dan energi";
+    case "CORPORATE":
+      return "Korporasi & bursa";
+    default:
+      return "Makroekonomi";
+  }
+}

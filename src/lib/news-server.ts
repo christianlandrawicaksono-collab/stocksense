@@ -170,7 +170,7 @@ export function categorizeNewsItem(title: string, summary: string): LiveNewsCate
   const txt = `${title} ${summary}`.toLowerCase();
 
   if (
-    /bi-rate|bank indonesia|suku bunga|rupiah|kurs|dolar|\busd\b|inflasi|moneter|\bdpk\b|likuiditas|the fed|obligasi|sbn/.test(
+    /bi-rate|bank indonesia|suku bunga|rupiah|kurs|dolar|\busd\b|inflasi|moneter|\bdpk\b|the fed|obligasi|sbn/.test(
       txt
     )
   ) {
@@ -186,7 +186,7 @@ export function categorizeNewsItem(title: string, summary: string): LiveNewsCate
   }
 
   if (
-    /apbn|pajak|\bppn\b|danantara|bumn|presiden|menteri|fiskal|pemerintah|regulasi|\bojk\b|suspensi|\bbei\b/.test(
+    /apbn|pajak|\bppn\b|danantara|bumn|presiden|menteri|fiskal|pemerintah|regulasi|pengawasan|\bojk\b|suspensi|\bbei\b/.test(
       txt
     )
   ) {
@@ -195,6 +195,10 @@ export function categorizeNewsItem(title: string, summary: string): LiveNewsCate
 
   if (/amerika|\bas\b|china|tiongkok|tarif|trump|global|resesi|wall street|s&p|geopolitik/.test(txt)) {
     return "GLOBAL_MACRO";
+  }
+
+  if (/likuiditas/.test(txt)) {
+    return "MONETARY_CURRENCY";
   }
 
   return "CORPORATE";

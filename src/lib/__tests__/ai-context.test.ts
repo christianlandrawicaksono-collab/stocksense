@@ -66,6 +66,8 @@ describe("ai-context helpers", () => {
 
     expect(reply).toContain("### Bedah Berita Pasar: ANTM dan MDKA Menguat Seiring Reli Emas");
     expect(reply).toContain("**ANTM, MDKA**");
+    expect(reply).toContain("Komoditas dan energi");
+    expect(reply).not.toContain("COMMODITIES");
     expect(reply).toContain("Kontan");
   });
 });

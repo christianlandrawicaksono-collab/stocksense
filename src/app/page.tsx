@@ -62,6 +62,7 @@ function HomeContent() {
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [customTickers, setCustomTickers] = useState<string[]>([]);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
+  const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
 
   const {
     messages: aiMessages,
@@ -142,6 +143,8 @@ function HomeContent() {
         ? buildLiveNewsArticleContext(activeLiveNewsForAi)
         : matchedScenarioArticle
         ? buildScenarioArticleContext(matchedScenarioArticle)
+        : currentMode === "terminal" && originLiveNews
+        ? buildLiveNewsArticleContext(originLiveNews)
         : undefined;
 
     return {
@@ -182,6 +185,7 @@ function HomeContent() {
     quotes,
     activeArticleId,
     originNewsId,
+    originLiveNews,
     macroTickers,
     activeLiveNewsForAi,
   ]);
@@ -241,6 +245,7 @@ function HomeContent() {
         artikel: null,
       });
     } else {
+      setOriginLiveNews(null);
       updateUrlParams({
         mode: "berita",
         berita: null,
@@ -249,14 +254,30 @@ function HomeContent() {
   };
 
   // Navigate from News ticker link to Terminal
-  const handleSelectStockFromNews = (ticker: string, newsId: string) => {
+  const handleSelectStockFromNews = (
+    ticker: string,
+    newsId: string,
+    _newsTitle: string,
+    liveItem?: LiveMarketNewsItem
+  ) => {
     handleAddCustomTicker(ticker);
-    updateUrlParams({
-      mode: "terminal",
-      saham: ticker,
-      berita: newsId || null,
-      artikel: null,
-    });
+    if (liveItem) {
+      setOriginLiveNews(liveItem);
+      updateUrlParams({
+        mode: "terminal",
+        saham: ticker,
+        berita: null,
+        artikel: null,
+      });
+    } else {
+      setOriginLiveNews(null);
+      updateUrlParams({
+        mode: "terminal",
+        saham: ticker,
+        berita: newsId || null,
+        artikel: null,
+      });
+    }
     setTimeout(() => {
       document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 60);
@@ -275,9 +296,19 @@ function HomeContent() {
 
   // Back from Terminal to the exact same News article
   const handleBackToArticle = (newsId: string) => {
+    setOriginLiveNews(null);
     updateUrlParams({
       mode: "berita",
       artikel: newsId,
+      berita: null,
+    });
+  };
+
+  const handleBackToLiveNews = () => {
+    setOriginLiveNews(null);
+    updateUrlParams({
+      mode: "berita",
+      artikel: null,
       berita: null,
     });
   };
@@ -370,9 +401,14 @@ function HomeContent() {
               <TerminalMainPane
                 selectedTicker={selectedTicker}
                 originNewsId={originNewsId}
+                originLiveNews={originLiveNews}
                 onSelectTicker={handleSelectTicker}
                 onBackToArticle={handleBackToArticle}
-                onCloseOriginPanel={() => updateUrlParams({ berita: null })}
+                onBackToLiveNews={handleBackToLiveNews}
+                onCloseOriginPanel={() => {
+                  setOriginLiveNews(null);
+                  updateUrlParams({ berita: null });
+                }}
                 onAskAiStock={(t) => {
                   setActiveLiveNewsForAi(null);
                   const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
@@ -389,6 +425,9 @@ function HomeContent() {
           <div className="w-full">
             <NewsView
               provider={provider}
+              macroTickers={macroTickers}
+              isMacroFallback={isMacroFallback}
+              isMacroLoading={isLoading}
               onSelectStockFromNews={handleSelectStockFromNews}
               activeArticleId={activeArticleId}
               onOpenArticle={(id) => {

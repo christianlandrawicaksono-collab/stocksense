@@ -1,4 +1,4 @@
-import { formatMultiple, formatPersen, formatRupiah } from "@/lib/format";
+import { formatMultiple, formatNewsCategoryLabel, formatPersen, formatRupiah } from "@/lib/format";
 
 export interface AiStockContext {
   ticker: string;
@@ -113,7 +113,9 @@ export function buildContextSummary(context?: AiMarketContext): string {
   if (context.article) {
     const a = context.article;
     if (a.isLive) {
-      const metaParts = [a.publisher, a.publishedWib, a.category].filter(Boolean).join(" • ");
+      const metaParts = [a.publisher, a.publishedWib, formatNewsCategoryLabel(a.category)]
+        .filter(Boolean)
+        .join(" • ");
       const tickerInfo =
         a.tickers && a.tickers.length > 0 ? ` Emiten disebut: ${a.tickers.join(", ")}.` : "";
       const summaryInfo = a.summary ? ` Ringkasan: ${a.summary}` : "";
@@ -122,7 +124,7 @@ export function buildContextSummary(context?: AiMarketContext): string {
       );
     } else {
       illustrativeLines.push(
-        `Artikel Skenario Terbuka (Contoh): "${a.title}" (${a.category}). Katalis: ${a.catalyst}. Implikasi: ${a.overallImpact}. Ringkasan: ${a.summary}`
+        `Artikel Skenario Terbuka (Contoh): "${a.title}" (${formatNewsCategoryLabel(a.category)}). Katalis: ${a.catalyst}. Implikasi: ${a.overallImpact}. Ringkasan: ${a.summary}`
       );
     }
   }
@@ -198,10 +200,11 @@ ${rows}
         a.tickers && a.tickers.length > 0
           ? a.tickers.join(", ")
           : "emiten sektoral terkait di IHSG";
+      const categoryLabel = formatNewsCategoryLabel(a.category);
       return `### Bedah Berita Pasar: ${a.title}
 
 1. **Sumber & Konteks:** ${a.publisher || "Media Pasar Modal"}${a.publishedWib ? ` (${a.publishedWib})` : ""}.${a.summary ? ` ${a.summary}` : ""}
-2. **Emiten & Sektor Sorotan:** Fokus utama tertuju pada **${tickerText}** pada kategori *${a.category}*.${macroLine ? ` (Indikator makro terkini: ${macroLine}).` : ""}
+2. **Emiten & Sektor Sorotan:** Fokus utama tertuju pada **${tickerText}** pada kategori *${categoryLabel}*.${macroLine ? ` (Indikator makro terkini: ${macroLine}).` : ""}
 3. **Tindak Lanjut Riset:** Klik badge emiten atau buka saham terkait di **Terminal** untuk meninjau grafik harga, rasio valuasi P/E-PBV, serta simulasi DCA.`;
     }
 
