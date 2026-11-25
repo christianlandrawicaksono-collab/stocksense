@@ -12,6 +12,7 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { STOCKS_DATA } from "@/data/stocksData";
 import { MACRO_NEWS_DATA } from "@/data/macroData";
 import type { AiMarketContext } from "@/app/api/ai/analyze/route";
+import type { LiveMarketNewsItem } from "@/types/market";
 import { formatRupiah } from "@/lib/format";
 
 function HomeContent() {
@@ -32,30 +33,49 @@ function HomeContent() {
   const [aiInitialQuery, setAiInitialQuery] = useState<string>("");
   const [aiSessionKey, setAiSessionKey] = useState<number>(0);
   const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
-  const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } = useMarketData();
+  const [customTickers, setCustomTickers] = useState<string[]>([]);
+  const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
+
+  const trackedTickers = useMemo(
+    () => [selectedTicker, ...customTickers],
+    [selectedTicker, customTickers]
+  );
+
+  const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } =
+    useMarketData(trackedTickers);
+
+  const handleAddCustomTicker = (ticker: string) => {
+    const clean = ticker.trim().toUpperCase();
+    if (!/^[A-Z]{4}$/.test(clean)) return;
+    setCustomTickers((prev) => (prev.includes(clean) ? prev : [clean, ...prev]));
+  };
 
   const activeAiContext: AiMarketContext = useMemo(() => {
-    const stockMeta = STOCKS_DATA.find((s) => s.ticker === selectedTicker) || STOCKS_DATA[0];
+    const curatedMeta = STOCKS_DATA.find((s) => s.ticker === selectedTicker) || null;
     const activeQuote = quotes[selectedTicker];
     const isLive = Boolean(provider === "yahoo" && activeQuote && !activeQuote.isFallback);
-    const activePrice = activeQuote?.price ?? stockMeta.currentPrice;
+    const activePrice = activeQuote?.price ?? curatedMeta?.currentPrice ?? 0;
+
     const activeEps =
       isLive && activeQuote?.eps && activeQuote.eps > 0
         ? activeQuote.eps
-        : stockMeta.currentPrice / stockMeta.peRatio;
-    const targetMeanPrice = Math.round(activeEps * stockMeta.historicalPeMean);
+        : curatedMeta
+        ? curatedMeta.currentPrice / curatedMeta.peRatio
+        : 0;
+    const targetMeanPrice =
+      curatedMeta && activeEps > 0 ? Math.round(activeEps * curatedMeta.historicalPeMean) : undefined;
     const activePe =
       isLive && activeQuote?.peRatio && activeQuote.peRatio > 0
         ? activeQuote.peRatio
-        : stockMeta.peRatio;
+        : curatedMeta?.peRatio ?? 0;
     const activePbv =
       isLive && activeQuote?.pbvRatio && activeQuote.pbvRatio > 0
         ? activeQuote.pbvRatio
-        : stockMeta.pbvRatio;
+        : curatedMeta?.pbvRatio ?? 0;
     const activeDiv =
       isLive && activeQuote?.dividendYield !== undefined && activeQuote.dividendYield >= 0
         ? activeQuote.dividendYield
-        : stockMeta.dividendYield;
+        : curatedMeta?.dividendYield ?? 0;
 
     const watchlistPeers = STOCKS_DATA.map((s) => {
       const q = quotes[s.ticker];
@@ -76,50 +96,73 @@ function HomeContent() {
     });
 
     const targetNewsId = currentMode === "berita" ? activeArticleId : originNewsId;
-    const matchedArticle = targetNewsId
+    const matchedScenarioArticle = targetNewsId
       ? MACRO_NEWS_DATA.find((n) => n.id === targetNewsId)
       : undefined;
+
+    const articleContext =
+      currentMode === "berita" && activeLiveNewsForAi
+        ? {
+            title: activeLiveNewsForAi.title,
+            category: activeLiveNewsForAi.category,
+            catalyst: `Sumber berita: ${activeLiveNewsForAi.publisher} (${activeLiveNewsForAi.publishedWib})`,
+            summary: activeLiveNewsForAi.summary,
+            overallImpact:
+              activeLiveNewsForAi.tickers.length > 0
+                ? `Emiten disebut: ${activeLiveNewsForAi.tickers.join(", ")}`
+                : "Berita pasar modal terkini.",
+          }
+        : matchedScenarioArticle
+        ? {
+            title: matchedScenarioArticle.title,
+            category: matchedScenarioArticle.category,
+            catalyst: matchedScenarioArticle.catalyst,
+            summary: matchedScenarioArticle.summary,
+            overallImpact: matchedScenarioArticle.overallImpact,
+          }
+        : undefined;
 
     return {
       mode: currentMode,
       provider,
       stock:
-        currentMode === "terminal"
+        currentMode === "terminal" && activePrice > 0
           ? {
-              ticker: stockMeta.ticker,
-              name: stockMeta.name,
-              sector: stockMeta.sector,
+              ticker: curatedMeta?.ticker || selectedTicker,
+              name: curatedMeta?.name || activeQuote?.name || selectedTicker,
+              sector: curatedMeta?.sector || "Bursa Efek Indonesia",
               price: activePrice,
-              changePercent: activeQuote?.changePercent ?? stockMeta.change1D,
+              changePercent: activeQuote?.changePercent ?? curatedMeta?.change1D ?? 0,
               peRatio: activePe,
-              historicalPeMean: stockMeta.historicalPeMean,
+              historicalPeMean: curatedMeta?.historicalPeMean ?? 0,
               targetMeanPrice,
               pbvRatio: activePbv,
               dividendYield: activeDiv,
-              roe: stockMeta.roe,
-              der: stockMeta.der,
+              roe: curatedMeta?.roe ?? 0,
+              der: curatedMeta?.der ?? 0,
               isLive,
-              strengths: stockMeta.strengths,
-              risks: stockMeta.risks,
+              strengths: curatedMeta?.strengths ?? [],
+              risks: curatedMeta?.risks ?? [],
             }
           : undefined,
       watchlistPeers,
-      article: matchedArticle
-        ? {
-            title: matchedArticle.title,
-            category: matchedArticle.category,
-            catalyst: matchedArticle.catalyst,
-            summary: matchedArticle.summary,
-            overallImpact: matchedArticle.overallImpact,
-          }
-        : undefined,
+      article: articleContext,
       macroTickers: macroTickers.map((t) => ({
         symbol: t.symbol,
         value: t.value,
         change: t.change,
       })),
     };
-  }, [currentMode, provider, selectedTicker, quotes, activeArticleId, originNewsId, macroTickers]);
+  }, [
+    currentMode,
+    provider,
+    selectedTicker,
+    quotes,
+    activeArticleId,
+    originNewsId,
+    macroTickers,
+    activeLiveNewsForAi,
+  ]);
 
   const openAiModalWithQuery = (prefill: string = "") => {
     setAiInitialQuery(prefill);
@@ -183,10 +226,11 @@ function HomeContent() {
 
   // Navigate from News ticker link to Terminal
   const handleSelectStockFromNews = (ticker: string, newsId: string) => {
+    handleAddCustomTicker(ticker);
     updateUrlParams({
       mode: "terminal",
       saham: ticker,
-      berita: newsId,
+      berita: newsId || null,
       artikel: null,
     });
     setTimeout(() => {
@@ -279,6 +323,8 @@ function HomeContent() {
                 onSelectTicker={handleSelectTicker}
                 quotes={quotes}
                 provider={provider}
+                customTickers={customTickers}
+                onAddCustomTicker={handleAddCustomTicker}
               />
             </div>
 
@@ -310,8 +356,9 @@ function HomeContent() {
                 onBackToArticle={handleBackToArticle}
                 onCloseOriginPanel={() => updateUrlParams({ berita: null })}
                 onAskAiStock={(t) => {
+                  setActiveLiveNewsForAi(null);
                   const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
-                  openAiModalWithQuery(`Evaluasi valuasi P/E, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
+                  openAiModalWithQuery(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
                 }}
                 quote={quotes[selectedTicker]}
                 provider={provider}
@@ -323,12 +370,21 @@ function HomeContent() {
           /* TAMPILAN BERITA TERANG PENUH (tanpa bingkai/tepi gelap) */
           <div className="w-full">
             <NewsView
+              provider={provider}
               onSelectStockFromNews={handleSelectStockFromNews}
               activeArticleId={activeArticleId}
-              onOpenArticle={(id) => updateUrlParams({ mode: "berita", artikel: id })}
-              onAskAiArticle={(article) =>
-                openAiModalWithQuery(`Jelaskan transmisi ekonomi dan dampak saham dari skenario: "${article.title}"`)
-              }
+              onOpenArticle={(id) => {
+                setActiveLiveNewsForAi(null);
+                updateUrlParams({ mode: "berita", artikel: id });
+              }}
+              onAskAiArticle={(article) => {
+                setActiveLiveNewsForAi(null);
+                openAiModalWithQuery(`Jelaskan transmisi ekonomi dan dampak saham dari skenario: "${article.title}"`);
+              }}
+              onAskAiLiveNews={(item) => {
+                setActiveLiveNewsForAi(item);
+                openAiModalWithQuery(`Bedah dampak pasar & saham terkait dari berita: "${item.title}"`);
+              }}
             />
           </div>
         )}
