@@ -7,7 +7,7 @@ import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
 import { TerminalMainPane } from "@/components/terminal/TerminalMainPane";
 import { NewsView } from "@/components/news/NewsView";
-import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
+import { GeminiAiModal, AiChatMessage } from "@/components/ai/GeminiAiModal";
 import { useMarketData } from "@/hooks/useMarketData";
 import { STOCKS_DATA } from "@/data/stocksData";
 import { MACRO_NEWS_DATA } from "@/data/macroData";
@@ -31,6 +31,7 @@ function HomeContent() {
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [aiInitialQuery, setAiInitialQuery] = useState<string>("");
   const [aiSessionKey, setAiSessionKey] = useState<number>(0);
+  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
   const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } = useMarketData();
 
   const activeAiContext: AiMarketContext = useMemo(() => {
@@ -38,6 +39,11 @@ function HomeContent() {
     const activeQuote = quotes[selectedTicker];
     const isLive = Boolean(provider === "yahoo" && activeQuote && !activeQuote.isFallback);
     const activePrice = activeQuote?.price ?? stockMeta.currentPrice;
+    const activeEps =
+      isLive && activeQuote?.eps && activeQuote.eps > 0
+        ? activeQuote.eps
+        : stockMeta.currentPrice / stockMeta.peRatio;
+    const targetMeanPrice = Math.round(activeEps * stockMeta.historicalPeMean);
     const activePe =
       isLive && activeQuote?.peRatio && activeQuote.peRatio > 0
         ? activeQuote.peRatio
@@ -50,6 +56,24 @@ function HomeContent() {
       isLive && activeQuote?.dividendYield !== undefined && activeQuote.dividendYield >= 0
         ? activeQuote.dividendYield
         : stockMeta.dividendYield;
+
+    const watchlistPeers = STOCKS_DATA.map((s) => {
+      const q = quotes[s.ticker];
+      const peerLive = Boolean(provider === "yahoo" && q && !q.isFallback);
+      return {
+        ticker: s.ticker,
+        sector: s.sector,
+        price: q?.price ?? s.currentPrice,
+        changePercent: q?.changePercent ?? s.change1D,
+        peRatio: peerLive && q?.peRatio && q.peRatio > 0 ? q.peRatio : s.peRatio,
+        pbvRatio: peerLive && q?.pbvRatio && q.pbvRatio > 0 ? q.pbvRatio : s.pbvRatio,
+        dividendYield:
+          peerLive && q?.dividendYield !== undefined && q.dividendYield >= 0
+            ? q.dividendYield
+            : s.dividendYield,
+        isLive: peerLive,
+      };
+    });
 
     const targetNewsId = currentMode === "berita" ? activeArticleId : originNewsId;
     const matchedArticle = targetNewsId
@@ -69,6 +93,7 @@ function HomeContent() {
               changePercent: activeQuote?.changePercent ?? stockMeta.change1D,
               peRatio: activePe,
               historicalPeMean: stockMeta.historicalPeMean,
+              targetMeanPrice,
               pbvRatio: activePbv,
               dividendYield: activeDiv,
               roe: stockMeta.roe,
@@ -78,6 +103,7 @@ function HomeContent() {
               risks: stockMeta.risks,
             }
           : undefined,
+      watchlistPeers,
       article: matchedArticle
         ? {
             title: matchedArticle.title,
@@ -192,11 +218,11 @@ function HomeContent() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col font-sans transition-colors ${
+      className={`min-h-screen flex flex-col font-sans transition-[colors,padding] duration-200 ${
         isLight
           ? "bg-[#FBFBFA] text-[#1A1C1E]"
           : "bg-[#0C1017] text-slate-100"
-      }`}
+      } ${isAiModalOpen ? "lg:pr-[400px] xl:pr-[440px]" : ""}`}
     >
       {/* 1. Satu strip tipis disclaimer di bagian paling atas */}
       <div
@@ -232,7 +258,13 @@ function HomeContent() {
       <Navbar
         currentMode={currentMode}
         onModeChange={handleModeChange}
-        onOpenAiModal={() => openAiModalWithQuery("")}
+        onOpenAiModal={() => {
+          if (!isAiModalOpen) {
+            setAiInitialQuery("");
+            setAiSessionKey((k) => k + 1);
+          }
+          setIsAiModalOpen((prev) => !prev);
+        }}
       />
 
       {/* 4. Area Konten Utama */}
@@ -329,7 +361,7 @@ function HomeContent() {
         </div>
       </footer>
 
-      {/* 6. Modal Konsultasi AI Gemini */}
+      {/* 6. Side Panel Konsultasi AI Gemini */}
       {isAiModalOpen && (
         <GeminiAiModal
           key={aiSessionKey}
@@ -337,6 +369,9 @@ function HomeContent() {
           onClose={() => setIsAiModalOpen(false)}
           initialQuery={aiInitialQuery}
           context={activeAiContext}
+          messages={aiMessages}
+          onMessagesChange={setAiMessages}
+          onClearMessages={() => setAiMessages([])}
         />
       )}
     </div>
