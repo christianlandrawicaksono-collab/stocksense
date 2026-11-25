@@ -563,6 +563,8 @@ export const NewsView: React.FC<NewsViewProps> = ({
                       <span className="text-[#D8D8CF]">|</span>
                       <span>{getCategoryLabel(leadLiveStory.category)}</span>
                       <span className="text-[#D8D8CF]">|</span>
+                      {renderSentimentText(leadLiveStory.sentiment || "NEUTRAL")}
+                      <span className="text-[#D8D8CF]">|</span>
                       <span>{leadLiveStory.publishedWib}</span>
                     </div>
 
@@ -580,9 +582,11 @@ export const NewsView: React.FC<NewsViewProps> = ({
                       </a>
                     </h2>
 
-                    <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
-                      {leadLiveStory.summary}
-                    </p>
+                    {leadLiveStory.summary && (
+                      <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
+                        {leadLiveStory.summary}
+                      </p>
+                    )}
 
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[#5A6068] border-t border-[#E5E5DC]">
                       <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
@@ -637,8 +641,12 @@ export const NewsView: React.FC<NewsViewProps> = ({
                   <div className="divide-y divide-[#E5E5DC]">
                     {secondaryLiveStories.map((story) => (
                       <div key={story.id} className="py-4 first:pt-0 space-y-1.5">
-                        <div className="flex items-center justify-between text-xs text-[#5A6068]">
-                          <span className="font-medium text-[#1E7B85]">{story.publisher}</span>
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5A6068]">
+                          <div className="flex items-center gap-x-2">
+                            <span className="font-medium text-[#1E7B85]">{story.publisher}</span>
+                            <span className="text-[#D8D8CF]">|</span>
+                            {renderSentimentText(story.sentiment || "NEUTRAL")}
+                          </div>
                           <span>{story.publishedWib}</span>
                         </div>
 
@@ -656,9 +664,11 @@ export const NewsView: React.FC<NewsViewProps> = ({
                           </a>
                         </h3>
 
-                        <p className="text-xs text-[#3E4349] line-clamp-2 leading-relaxed">
-                          {story.summary}
-                        </p>
+                        {story.summary && (
+                          <p className="text-xs text-[#3E4349] line-clamp-2 leading-relaxed">
+                            {story.summary}
+                          </p>
+                        )}
 
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
                           <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">

@@ -7,13 +7,43 @@ import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
 import { TerminalMainPane } from "@/components/terminal/TerminalMainPane";
 import { NewsView } from "@/components/news/NewsView";
-import { GeminiAiModal, AiChatMessage } from "@/components/ai/GeminiAiModal";
+import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 import { useMarketData } from "@/hooks/useMarketData";
+import { useAiChat } from "@/hooks/useAiChat";
 import { STOCKS_DATA } from "@/data/stocksData";
 import { MACRO_NEWS_DATA } from "@/data/macroData";
-import type { AiMarketContext } from "@/app/api/ai/analyze/route";
-import type { LiveMarketNewsItem } from "@/types/market";
+import type { AiArticleContext, AiMarketContext } from "@/app/api/ai/analyze/route";
+import type { LiveMarketNewsItem, MacroNewsItem } from "@/types/market";
 import { formatRupiah } from "@/lib/format";
+
+function buildLiveNewsArticleContext(item: LiveMarketNewsItem): AiArticleContext {
+  return {
+    title: item.title,
+    category: item.category,
+    catalyst: `Sumber berita: ${item.publisher} (${item.publishedWib})`,
+    summary: item.summary,
+    overallImpact:
+      item.tickers.length > 0
+        ? `Emiten disebut: ${item.tickers.join(", ")}`
+        : "Berita pasar modal terkini.",
+    isLive: true,
+    publisher: item.publisher,
+    publishedWib: item.publishedWib,
+    link: item.link,
+    tickers: item.tickers,
+  };
+}
+
+function buildScenarioArticleContext(article: MacroNewsItem): AiArticleContext {
+  return {
+    title: article.title,
+    category: article.category,
+    catalyst: article.catalyst,
+    summary: article.summary,
+    overallImpact: article.overallImpact,
+    isLive: false,
+  };
+}
 
 function HomeContent() {
   const searchParams = useSearchParams();
@@ -30,11 +60,18 @@ function HomeContent() {
   const activeArticleId = searchParams.get("artikel") || null;
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
-  const [aiInitialQuery, setAiInitialQuery] = useState<string>("");
-  const [aiSessionKey, setAiSessionKey] = useState<number>(0);
-  const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
   const [customTickers, setCustomTickers] = useState<string[]>([]);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
+
+  const {
+    messages: aiMessages,
+    customApiKey: aiCustomApiKey,
+    setCustomApiKey: setAiCustomApiKey,
+    warningMsg: aiWarningMsg,
+    isLoading: isAiLoading,
+    sendMessage: sendAiMessage,
+    clearMessages: clearAiMessages,
+  } = useAiChat();
 
   const trackedTickers = useMemo(
     () => [selectedTicker, ...customTickers],
@@ -102,24 +139,9 @@ function HomeContent() {
 
     const articleContext =
       currentMode === "berita" && activeLiveNewsForAi
-        ? {
-            title: activeLiveNewsForAi.title,
-            category: activeLiveNewsForAi.category,
-            catalyst: `Sumber berita: ${activeLiveNewsForAi.publisher} (${activeLiveNewsForAi.publishedWib})`,
-            summary: activeLiveNewsForAi.summary,
-            overallImpact:
-              activeLiveNewsForAi.tickers.length > 0
-                ? `Emiten disebut: ${activeLiveNewsForAi.tickers.join(", ")}`
-                : "Berita pasar modal terkini.",
-          }
+        ? buildLiveNewsArticleContext(activeLiveNewsForAi)
         : matchedScenarioArticle
-        ? {
-            title: matchedScenarioArticle.title,
-            category: matchedScenarioArticle.category,
-            catalyst: matchedScenarioArticle.catalyst,
-            summary: matchedScenarioArticle.summary,
-            overallImpact: matchedScenarioArticle.overallImpact,
-          }
+        ? buildScenarioArticleContext(matchedScenarioArticle)
         : undefined;
 
     return {
@@ -164,10 +186,12 @@ function HomeContent() {
     activeLiveNewsForAi,
   ]);
 
-  const openAiModalWithQuery = (prefill: string = "") => {
-    setAiInitialQuery(prefill);
-    setAiSessionKey((k) => k + 1);
+  const runAiAnalysis = (prompt: string, overrideArticle?: AiArticleContext) => {
     setIsAiModalOpen(true);
+    const ctx: AiMarketContext = overrideArticle
+      ? { ...activeAiContext, article: overrideArticle }
+      : activeAiContext;
+    void sendAiMessage(prompt, ctx);
   };
 
   // Helper to update URL params via Next.js router without full reload
@@ -302,13 +326,7 @@ function HomeContent() {
       <Navbar
         currentMode={currentMode}
         onModeChange={handleModeChange}
-        onOpenAiModal={() => {
-          if (!isAiModalOpen) {
-            setAiInitialQuery("");
-            setAiSessionKey((k) => k + 1);
-          }
-          setIsAiModalOpen((prev) => !prev);
-        }}
+        onOpenAiModal={() => setIsAiModalOpen((prev) => !prev)}
       />
 
       {/* 4. Area Konten Utama */}
@@ -358,7 +376,7 @@ function HomeContent() {
                 onAskAiStock={(t) => {
                   setActiveLiveNewsForAi(null);
                   const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
-                  openAiModalWithQuery(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
+                  runAiAnalysis(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
                 }}
                 quote={quotes[selectedTicker]}
                 provider={provider}
@@ -379,11 +397,17 @@ function HomeContent() {
               }}
               onAskAiArticle={(article) => {
                 setActiveLiveNewsForAi(null);
-                openAiModalWithQuery(`Jelaskan transmisi ekonomi dan dampak saham dari skenario: "${article.title}"`);
+                runAiAnalysis(
+                  `Jelaskan transmisi ekonomi dan dampak saham dari skenario: "${article.title}"`,
+                  buildScenarioArticleContext(article)
+                );
               }}
               onAskAiLiveNews={(item) => {
                 setActiveLiveNewsForAi(item);
-                openAiModalWithQuery(`Bedah dampak pasar & saham terkait dari berita: "${item.title}"`);
+                runAiAnalysis(
+                  `Bedah dampak pasar & saham terkait dari berita: "${item.title}"`,
+                  buildLiveNewsArticleContext(item)
+                );
               }}
             />
           </div>
@@ -420,14 +444,18 @@ function HomeContent() {
       {/* 6. Side Panel Konsultasi AI Gemini */}
       {isAiModalOpen && (
         <GeminiAiModal
-          key={aiSessionKey}
           isOpen={isAiModalOpen}
           onClose={() => setIsAiModalOpen(false)}
-          initialQuery={aiInitialQuery}
           context={activeAiContext}
           messages={aiMessages}
-          onMessagesChange={setAiMessages}
-          onClearMessages={() => setAiMessages([])}
+          isLoading={isAiLoading}
+          warningMsg={aiWarningMsg}
+          customApiKey={aiCustomApiKey}
+          onCustomApiKeyChange={setAiCustomApiKey}
+          onSendMessage={(prompt) => {
+            void sendAiMessage(prompt, activeAiContext);
+          }}
+          onClearMessages={clearAiMessages}
         />
       )}
     </div>
