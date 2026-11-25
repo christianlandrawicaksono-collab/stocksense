@@ -8,7 +8,7 @@
  * - "yahoo"        : Data live tertunda ~10 menit via route handler server /api/quotes & /api/history
  */
 
-import { STOCKS_DATA, HISTORICAL_SERIES } from "@/data/stocksData";
+import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import { LIVE_MARKET_TICKERS } from "@/data/macroData";
 import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus, MarketStatus } from "./market-hours";
@@ -119,7 +119,7 @@ export function getIllustrativeHistoryPoints(
   ticker: string,
   range: HistoryRange = "Semua"
 ): MarketHistoryPoint[] {
-  const raw = HISTORICAL_SERIES[ticker] || [];
+  const raw = ticker === "IHSG" ? IHSG_HISTORICAL : HISTORICAL_SERIES[ticker] || [];
   let sliced = raw;
   if (range === "1Th") sliced = raw.slice(-5);
   else if (range === "3Th") sliced = raw.slice(-13);

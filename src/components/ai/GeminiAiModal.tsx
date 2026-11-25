@@ -1,145 +1,105 @@
 "use client";
 
-import React, { useState } from "react";
-import { 
-  X, 
-  Sparkles, 
-  Send, 
-  Key, 
-  Terminal, 
-  Loader2
+import React, { useState, useMemo } from "react";
+import {
+  X,
+  Sparkles,
+  Send,
+  Key,
+  Terminal,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
+import type { AiMarketContext } from "@/app/api/ai/analyze/route";
+import { formatPersen, formatRupiah } from "@/lib/format";
 
 interface GeminiAiModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialQuery?: string;
+  context?: AiMarketContext;
 }
 
 export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
   isOpen,
   onClose,
   initialQuery = "",
+  context,
 }) => {
   const [apiKey, setApiKey] = useState<string>("");
   const [query, setQuery] = useState<string>(initialQuery);
   const [response, setResponse] = useState<string | null>(null);
+  const [responseSource, setResponseSource] = useState<"gemini" | "builtin" | null>(null);
+  const [responseModel, setResponseModel] = useState<string | null>(null);
+  const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
 
+  const presetQueries = useMemo(() => {
+    const items: string[] = [];
+    if (context?.stock) {
+      items.push(
+        `Evaluasi valuasi & risiko ${context.stock.ticker} pada harga ${formatRupiah(context.stock.price)} saat ini.`
+      );
+      items.push(
+        `Bagaimana pengaruh posisi IHSG & kurs USD/IDR terkini terhadap kinerja ${context.stock.ticker}?`
+      );
+    }
+    if (context?.article) {
+      items.push(
+        `Jelaskan mekanisme transmisi dan sektor pemenang dari berita: "${context.article.title}"`
+      );
+    }
+    items.push(
+      "Apa dampak kenaikan PPN terhadap saham ritel (ACES, MAPI) vs perbankan (BBCA, BBRI)?",
+      "Analisis transmisi lonjakan harga minyak mentah dunia (Brent) ke emiten energi (MEDC) dan konsumer (ICBP)."
+    );
+    return items.slice(0, 4);
+  }, [context]);
+
   if (!isOpen) return null;
 
-  const presetQueries = [
-    "Apa dampak kenaikan PPN 12% terhadap saham ritel (ACES, MAPI) vs perbankan (BBCA, BBRI)?",
-    "Analisis transmisi kenaikan harga minyak mentah dunia ke emiten energi (MEDC, ENRG) dan konsumer (ICBP)",
-    "Jika The Fed menurunkan suku bunga 50 bps, sektor mana di IHSG yang paling diuntungkan?",
-    "Mengapa emiten batubara (ADRO, PTBA) tetap membagikan dividen yield tinggi saat harga komoditas melandai?"
-  ];
-
   const handleAsk = async (userPrompt: string) => {
-    if (!userPrompt.trim()) return;
+    const trimmed = userPrompt.trim();
+    if (!trimmed) return;
+
     setIsLoading(true);
     setResponse(null);
+    setWarningMsg(null);
 
-    // If user provided a real Gemini API Key, we can call Google Gemini API directly
-    if (apiKey.trim()) {
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: `Kamu adalah Senior Macro & Equity Analyst untuk Pasar Modal Indonesia (IHSG). Analisis pertanyaan berikut dengan fokus pada:
-1. Sebab (Katalis Makro / Kebijakan Politik)
-2. Mekanisme Transmisi Finansial ke Ekonomi Indonesia
-3. Dampak Sektor & Saham IDX Terdampak (sebutkan kode ticker seperti BBCA, BBRI, ASII, ADRO, dsb)
-4. Rekomendasi Sikap Investor (Defensif / Agresif / Selective Accumulation).
+    try {
+      const res = await fetch("/api/ai/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: trimmed,
+          customApiKey: apiKey.trim() || undefined,
+          context,
+        }),
+      });
 
-Pertanyaan: ${userPrompt}`
-                    }
-                  ]
-                }
-              ]
-            })
-          }
-        );
+      const data = (await res.json()) as {
+        reply?: string;
+        source?: "gemini" | "builtin";
+        model?: string;
+        warning?: string;
+        error?: string;
+      };
 
-        if (!res.ok) {
-          throw new Error(`Gemini API Error: ${res.statusText}`);
-        }
-
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        setResponse(text || "Tidak ada respons dari Gemini API.");
-      } catch (err: unknown) {
-        console.error(err);
-        const errMsg = err instanceof Error ? err.message : String(err);
-        setResponse(`Gagal menghubungi Gemini API: ${errMsg}. Beralih ke analisis kecerdasan buatan terpasang.`);
-      } finally {
-        setIsLoading(false);
-      }
-      return;
-    }
-
-    // Built-in Financial Intelligence Synthesis Engine (Zero-configuration fallback)
-    setTimeout(() => {
-      let mockReply = "";
-      const q = userPrompt.toLowerCase();
-
-      if (q.includes("ppn") || q.includes("ritel") || q.includes("pajak")) {
-        mockReply = `### 📊 Analisis Transmisi Kebijakan PPN Terhadap Saham IDX:
-
-1. **Mekanisme Transmisi Ekonomi:**
-Kenaikan tarif PPN (Pajak Pertambahan Nilai) memiliki elastisitas tinggi terhadap daya beli konsumen kelas menengah (*middle-class purchasing power*), karena kelompok ini tidak menerima bantalan bantuan sosial langsung namun paling sensitif terhadap kenaikan harga barang akhir.
-
-2. **Dampak Spesifik ke Sektor & Saham Terdampak:**
-* **🔴 Sektor Ritel Modern (ACES, MAPI, ERAA) - Sentimen Bearish Jangka Pendek:** 
-  Potensi penurunan Same Store Sales Growth (SSSG) karena konsumen menahan pembelian produk sekunder & gaya hidup.
-* **🟢 Sektor Konsumer Primer / FMCG (ICBP, INDF, AMRT) - Sentimen Netral Defensif:** 
-  Kebutuhan pokok dan jaringan minimarket berdaya tahan tinggi karena elastisitas permintaan rendah.
-* **🔵 Sektor Perbankan (BBCA, BBRI, BMRI) - Dampak Terkelola:** 
-  Potensi perlambatan minor pada kredit konsumer, namun dana murah (CASA) dan segmen korporasi tetap menjadi penopang utama.
-
-3. **Sikap Investor:**
-Gunakan strategi rotasi sektor defensif (Staples & High Dividend) dan lakukan akumulasi bertahap pada saham ritel hanya jika valuasi telah menyentuh batas deviasi diskon (-1.5 SD historis).`;
-      } else if (q.includes("minyak") || q.includes("energi") || q.includes("geopolitik") || q.includes("brent")) {
-        mockReply = `### 🛢️ Analisis Lonjakan Harga Minyak Dunia (Brent) Terhadap IHSG:
-
-1. **Mekanisme Transmisi:**
-Kenaikan harga minyak mentah global akibat tensi geopolitik mengerek harga jual rata-rata (ASP) komoditas energi, namun memperlebar defisit neraca berjalan (migas) Indonesia dan memperberat beban subsidi energi APBN.
-
-2. **Dampak Sektor & Ticker Terdampak:**
-* **🟢 Eksplorasi Migas Hulu (MEDC, ENRG, ELSA) - Direct Beneficiary:** 
-  Setiap kenaikan $5/barel minyak Brent mengerek EBITDA operasional emiten hulu secara langsung.
-* **🔴 Manufaktur & Konsumsi (ICBP, MYOR) - Margin Squeeze:** 
-  Lonjakan biaya kemasan berbasis resin petrokimia dan ongkos distribusi armada logistik.
-* **🟡 Kurs Rupiah vs Dolar:** 
-  Kebutuhan impor minyak menaikkan permintaan USD, menekan stabilitas Rupiah.
-
-3. **Sikap Investor:**
-Manfaatkan momentum *tactical swing trade* pada emiten energi (MEDC) sambil tetap mematok trailing stop yang disiplin.`;
-      } else {
-        mockReply = `### 📈 Sintesis Intelijen Makro & Saham Terpilih:
-
-1. **Arah Kebijakan & Likuiditas:**
-Pasar saham Indonesia (IHSG) berada di fase akumulasi selektif (*cautious accumulation*). Stabilitas likuiditas perbankan domestik dan surplus neraca perdagangan komoditas menjadi jangkar utama penahan guncangan eksternal.
-
-2. **Sektor Unggulan yang Menarik:**
-* **Big Banks (BBCA, BMRI, BBRI):** Menikmati NIM tinggi dan menjadi target utama *foreign inflow* saat pembalikan sentimen terjadi.
-* **Dividend Aristocrats (ADRO, ASII, PTBA):** Memberikan *yield* dividen 7-14% yang berfungsi sebagai bantalan penahan penurunan nilai modal saat volatilitas global meningkat.
-
-3. **Rekomendasi Eksekusi:**
-Disiplin menerapkan strategi Dollar Cost Averaging (DCA) di zona valuasi P/E -1 SD dan hindari mengejar harga saham yang sudah berada di atas batas +1.5 SD historis.`;
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
       }
 
-      setResponse(mockReply);
+      setResponse(data.reply || "Tidak ada respons yang dihasilkan.");
+      setResponseSource(data.source || "builtin");
+      setResponseModel(data.model || null);
+      setWarningMsg(data.warning || null);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setWarningMsg(`Gagal menghubungi layanan AI: ${errMsg}`);
+    } finally {
       setIsLoading(false);
-    }, 600);
+    }
   };
 
   return (
@@ -155,24 +115,26 @@ Disiplin menerapkan strategi Dollar Cost Averaging (DCA) di zona valuasi P/E -1 
               <h3 className="text-sm font-bold text-white font-mono flex items-center space-x-2">
                 <span>StocksSense AI Assistant</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-sans">
-                  Powered by Gemini
+                  Server-Side Gemini
                 </span>
               </h3>
               <p className="text-[11px] text-slate-400">
-                Analisis transmisi makroekonomi, kebijakan politik, dan valuasi emiten saham Indonesia
+                Analisis transmisi makroekonomi, sentimen berita, dan valuasi saham aktif
               </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
             <button
+              type="button"
               onClick={() => setShowKeyInput(!showKeyInput)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition"
-              title="Atur API Key Gemini Sendiri (Opsional)"
+              title="Gunakan API Key Gemini Sendiri (Opsional)"
             >
               <Key className="w-4 h-4" />
             </button>
             <button
+              type="button"
               onClick={onClose}
               className="p-1.5 rounded-lg text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition"
             >
@@ -181,25 +143,43 @@ Disiplin menerapkan strategi Dollar Cost Averaging (DCA) di zona valuasi P/E -1 
           </div>
         </div>
 
-        {/* Optional Gemini API Key Drawer */}
+        {/* Konteks Pasar yang Sedang Dibuka */}
+        {(context?.stock || context?.article) && (
+          <div className="px-4 py-2 bg-[#0E1622] border-b border-slate-800/80 flex flex-wrap items-center gap-2 text-[11px] text-slate-300 font-sans">
+            <span className="text-slate-400">Konteks aktif:</span>
+            {context?.stock && (
+              <span className="px-2 py-0.5 rounded bg-[#1E7B85]/20 border border-[#1E7B85]/40 text-[#2DD4BF] font-mono tnum">
+                {context.stock.ticker} &bull; {formatRupiah(context.stock.price)} ({formatPersen(context.stock.changePercent, 1, true)})
+              </span>
+            )}
+            {context?.article && (
+              <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 truncate max-w-xs">
+                Artikel: {context.article.title}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Optional Custom Gemini API Key Drawer */}
         {showKeyInput && (
           <div className="p-3 bg-slate-900 border-b border-slate-800 text-xs">
             <label className="block text-slate-400 mb-1 font-mono text-[11px]">
-              Google Gemini API Key (Opsional — default memakai built-in analyst):
+              Google Gemini API Key Pribadi (Opsional — bila server sudah memiliki GEMINI_API_KEY, biarkan kosong):
             </label>
             <div className="flex space-x-2">
               <input
                 type="password"
-                placeholder="Masukkan API Key dari Google AI Studio..."
+                placeholder="Masukkan API Key dari Google AI Studio (opsional)..."
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
               />
               <button
+                type="button"
                 onClick={() => setShowKeyInput(false)}
                 className="px-3 py-1.5 bg-emerald-500 text-slate-950 rounded-lg font-bold text-xs"
               >
-                Simpan
+                Tutup
               </button>
             </div>
           </div>
@@ -210,12 +190,13 @@ Disiplin menerapkan strategi Dollar Cost Averaging (DCA) di zona valuasi P/E -1 
           {/* Preset Prompts */}
           <div>
             <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider block mb-2">
-              Rekomendasi Analisis Skenario Pasar:
+              Rekomendasi Pertanyaan Kontekstual:
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {presetQueries.map((p, i) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => {
                     setQuery(p);
                     handleAsk(p);
@@ -228,21 +209,35 @@ Disiplin menerapkan strategi Dollar Cost Averaging (DCA) di zona valuasi P/E -1 
             </div>
           </div>
 
+          {warningMsg && (
+            <div className="p-3 rounded-xl bg-amber-950/50 border border-amber-700/50 text-amber-200 flex items-start space-x-2 text-[11px]">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>{warningMsg}</span>
+            </div>
+          )}
+
           {/* AI Response Output */}
           {isLoading && (
             <div className="p-6 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-center space-x-3 text-slate-300">
               <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
-              <span className="font-mono text-xs">Menganalisis transmisi dampak makro & sektor saham...</span>
+              <span className="font-mono text-xs">Menganalisis konteks pasar & transmisi saham...</span>
             </div>
           )}
 
           {response && (
             <div className="p-4 md:p-5 rounded-xl bg-[#0c1322] border border-emerald-900/40 text-slate-200 leading-relaxed font-sans shadow-inner space-y-2 whitespace-pre-line">
-              <div className="flex items-center space-x-1.5 text-emerald-400 font-mono text-xs font-semibold mb-2">
-                <Terminal className="w-3.5 h-3.5" />
-                <span>Analisis Intelijen Pasar:</span>
+              <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-800/80">
+                <div className="flex items-center space-x-1.5 text-emerald-400 font-mono text-xs font-semibold">
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Analisis Intelijen Pasar:</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                  {responseSource === "gemini"
+                    ? `Gemini (${responseModel || "flash"})`
+                    : "Analis Kontekstual Bawaan"}
+                </span>
               </div>
-              <div className="text-xs text-slate-300 space-y-2">
+              <div className="text-xs text-slate-300 space-y-2 pt-1">
                 {response}
               </div>
             </div>
@@ -278,4 +273,3 @@ Disiplin menerapkan strategi Dollar Cost Averaging (DCA) di zona valuasi P/E -1 
     </div>
   );
 };
-

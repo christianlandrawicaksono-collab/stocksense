@@ -4,7 +4,7 @@
  */
 
 import YahooFinance from "yahoo-finance2";
-import { STOCKS_DATA, HISTORICAL_SERIES } from "@/data/stocksData";
+import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus } from "./market-hours";
 import { formatDesimal, formatNumber } from "./format";
@@ -133,7 +133,7 @@ export function getIllustrativeHistory(
   ticker: string,
   range: string = "Semua"
 ): ServerHistoryPoint[] {
-  const quarterly = HISTORICAL_SERIES[ticker] || [];
+  const quarterly = ticker === "IHSG" ? IHSG_HISTORICAL : HISTORICAL_SERIES[ticker] || [];
   let sliced = quarterly;
   if (range === "1Th") sliced = quarterly.slice(-5);
   else if (range === "3Th") sliced = quarterly.slice(-13);
@@ -468,12 +468,13 @@ export async function getHistoryServer(
   const period1 = startDate.toISOString().split("T")[0];
 
   try {
-    const symbol = `${ticker}.JK`;
-    const chartResult = await yf.chart(symbol, {
-      period1,
-      interval,
-      events: "div",
-    });
+    const symbol = ticker === "IHSG" ? "^JKSE" : `${ticker}.JK`;
+    const chartResult = await yf.chart(
+      symbol,
+      ticker === "IHSG"
+        ? { period1, interval }
+        : { period1, interval, events: "div" }
+    );
 
     if (!chartResult || !chartResult.quotes || chartResult.quotes.length === 0) {
       throw new Error(`No chart data returned for ${symbol}`);
