@@ -204,7 +204,10 @@ export async function POST(request: NextRequest) {
     const customApiKey = typeof body.customApiKey === "string" ? body.customApiKey.trim() : "";
     const serverApiKey = process.env.GEMINI_API_KEY?.trim() || "";
     const activeApiKey = customApiKey || serverApiKey;
-    const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.8-flash";
+    const configuredModel = process.env.GEMINI_MODEL?.trim() || "gemini-3-flash-preview";
+    const candidateModels = Array.from(
+      new Set([configuredModel, "gemini-3-flash-preview", "gemini-3.1-flash-lite"])
+    );
 
     const contextBlock = buildContextSummary(body.context);
 
@@ -217,55 +220,65 @@ ${contextBlock || "(Tidak ada konteks saham spesifik yang dibuka saat ini.)"}
 
 Pertanyaan pengguna: ${prompt}`;
 
-      try {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-goog-api-key": activeApiKey,
-            },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: fullPrompt }] }],
-            }),
-          }
-        );
+      let lastErrMsg = "Gemini API error";
 
-        if (!res.ok) {
-          throw new Error(`Gemini API HTTP ${res.status}`);
-        }
-
-        const data = (await res.json()) as {
-          candidates?: { content?: { parts?: { text?: string }[] } }[];
-        };
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (text && text.trim()) {
-          return NextResponse.json(
+      for (const model of candidateModels) {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
             {
-              reply: text.trim(),
-              source: "gemini",
-              model,
-            },
-            { headers: { "Cache-Control": "no-store" } }
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-goog-api-key": activeApiKey,
+              },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: fullPrompt }] }],
+              }),
+            }
           );
-        }
 
-        throw new Error("Respons kosong dari Gemini API");
-      } catch (apiErr: unknown) {
-        const msg = apiErr instanceof Error ? apiErr.message : String(apiErr);
-        console.warn("[API /api/ai/analyze] Gemini API failed, using built-in synthesis:", msg);
-        const fallbackReply = buildBuiltinSynthesis(prompt, body.context);
-        return NextResponse.json(
-          {
-            reply: fallbackReply,
-            source: "builtin",
-            warning: `Koneksi Gemini API (${msg}) gagal; menampilkan analisis kontekstual bawaan.`,
-          },
-          { headers: { "Cache-Control": "no-store" } }
-        );
+          if (!res.ok) {
+            lastErrMsg = `Gemini API (${model}) HTTP ${res.status}`;
+            // Jangan coba model lain jika kesalahan otentikasi atau payload
+            if (res.status === 400 || res.status === 401 || res.status === 403) {
+              break;
+            }
+            continue;
+          }
+
+          const data = (await res.json()) as {
+            candidates?: { content?: { parts?: { text?: string }[] } }[];
+          };
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+          if (text && text.trim()) {
+            return NextResponse.json(
+              {
+                reply: text.trim(),
+                source: "gemini",
+                model,
+              },
+              { headers: { "Cache-Control": "no-store" } }
+            );
+          }
+
+          lastErrMsg = `Respons kosong dari model ${model}`;
+        } catch (apiErr: unknown) {
+          lastErrMsg = apiErr instanceof Error ? apiErr.message : String(apiErr);
+        }
       }
+
+      console.warn("[API /api/ai/analyze] Gemini API failed, using built-in synthesis:", lastErrMsg);
+      const fallbackReply = buildBuiltinSynthesis(prompt, body.context);
+      return NextResponse.json(
+        {
+          reply: fallbackReply,
+          source: "builtin",
+          warning: `Koneksi Gemini API (${lastErrMsg}) gagal; menampilkan analisis kontekstual bawaan.`,
+        },
+        { headers: { "Cache-Control": "no-store" } }
+      );
     }
 
     // Mode zero-config built-in contextual synthesis (tidak ada GEMINI_API_KEY di server/modal)
