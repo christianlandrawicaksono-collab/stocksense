@@ -159,7 +159,21 @@ export async function getHistory(
     const data: HistoryResponse = await res.json();
     return data;
   } catch (error) {
-    console.warn(`[market-data] getHistory(${ticker}) failed, fallback to illustrative:`, error);
+    console.warn(`[market-data] getHistory(${ticker}) failed:`, error);
+    const isYahooMode = process.env.NEXT_PUBLIC_MARKET_DATA_PROVIDER === "yahoo";
+
+    if (isYahooMode) {
+      return {
+        provider: "yahoo",
+        ticker,
+        range,
+        points: [],
+        isFallback: true,
+        marketStatus: getIdxMarketStatus(),
+        timestamp: new Date().toISOString(),
+      };
+    }
+
     return {
       provider: "illustrative",
       ticker,
