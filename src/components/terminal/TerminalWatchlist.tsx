@@ -3,7 +3,11 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { STOCKS_DATA } from "@/data/stocksData";
 import { formatNumber, formatMultiple, formatPersen } from "@/lib/format";
-import { MAX_CUSTOM_WATCHLIST } from "@/lib/watchlist";
+import {
+  MAX_CUSTOM_WATCHLIST,
+  matchesWatchlistFilterPreset,
+  type WatchlistFilterPreset,
+} from "@/lib/watchlist";
 import { Search, ArrowUpDown, Plus, Loader2, Star, Bookmark } from "lucide-react";
 import {
   MarketQuote,
@@ -24,7 +28,6 @@ interface TerminalWatchlistProps {
 }
 
 type WatchlistTab = "watchlist" | "curated";
-type FilterPreset = "ALL" | "DIVIDEND" | "UNDERVALUED" | "PROFITABLE" | "LOW_DEBT";
 type SortField = "ticker" | "currentPrice" | "change1D" | "peRatio" | "dividendYield";
 
 interface WatchlistRowItem {
@@ -36,8 +39,8 @@ interface WatchlistRowItem {
   peRatio: number;
   pbvRatio: number;
   dividendYield: number;
-  roe: number;
-  der: number;
+  roe?: number;
+  der?: number;
   isLive: boolean;
   isCurated: boolean;
   hasQuoteData: boolean;
@@ -80,14 +83,14 @@ function buildWatchlistRow(
   return {
     ticker,
     name: hasCustomQuote && q?.name ? q.name : "Saham BEI",
-    sector: "Saham Kustom BEI",
+    sector: hasCustomQuote && q?.sector ? q.sector : "Saham BEI",
     currentPrice: hasCustomQuote && q ? q.price : 0,
     change1D: hasCustomQuote && q ? q.changePercent : 0,
     peRatio: hasCustomQuote && q?.peRatio ? q.peRatio : 0,
     pbvRatio: hasCustomQuote && q?.pbvRatio ? q.pbvRatio : 0,
     dividendYield: hasCustomQuote && q?.dividendYield ? q.dividendYield : 0,
-    roe: -1,
-    der: 99,
+    roe: hasCustomQuote ? q?.roe : undefined,
+    der: hasCustomQuote ? q?.der : undefined,
     isLive: hasCustomQuote,
     isCurated: false,
     hasQuoteData: hasCustomQuote,
@@ -106,7 +109,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
 }) => {
   const [listTabPref, setListTabPref] = useState<WatchlistTab | null>(null);
   const [search, setSearch] = useState<string>("");
-  const [filterPreset, setFilterPreset] = useState<FilterPreset>("ALL");
+  const [filterPreset, setFilterPreset] = useState<WatchlistFilterPreset>("ALL");
   const [sortField, setSortField] = useState<SortField>("ticker");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [remoteState, setRemoteState] = useState<{
@@ -170,11 +173,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           if (!match) return false;
         }
 
-        if (filterPreset === "DIVIDEND") return s.dividendYield >= 5.0;
-        if (filterPreset === "UNDERVALUED") return s.peRatio > 0 && s.peRatio <= 12.0;
-        if (filterPreset === "PROFITABLE") return s.isCurated && s.roe >= 18.0;
-        if (filterPreset === "LOW_DEBT") return s.isCurated && s.der <= 1.0;
-        return true;
+        return matchesWatchlistFilterPreset(s, filterPreset);
       })
       .sort((a, b) => {
         const valA = a[sortField];
@@ -337,7 +336,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           ].map((preset) => (
             <button
               key={preset.id}
-              onClick={() => setFilterPreset(preset.id as FilterPreset)}
+              onClick={() => setFilterPreset(preset.id as WatchlistFilterPreset)}
               className={`px-2.5 py-1 rounded text-xs transition ${
                 filterPreset === preset.id
                   ? "bg-[#1E7B85] text-white font-medium shadow-sm"
@@ -466,6 +465,9 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                   <span className="text-[11px] text-slate-400 truncate">
                     {stock.name}
                   </span>
+                  <span className="text-[10px] text-slate-500 truncate">
+                    {stock.sector}
+                  </span>
                 </div>
               </div>
 
@@ -509,7 +511,15 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                     : "-"}
                 </span>
                 <span className="text-[11px] text-slate-400 font-mono tnum">
-                  {stock.hasQuoteData && stock.dividendYield > 0
+                  {filterPreset === "PROFITABLE"
+                    ? stock.roe !== undefined
+                      ? `ROE ${formatPersen(stock.roe, 1)}`
+                      : "ROE -"
+                    : filterPreset === "LOW_DEBT"
+                    ? stock.der !== undefined
+                      ? `DER ${formatMultiple(stock.der, 2)}`
+                      : "DER -"
+                    : stock.hasQuoteData && stock.dividendYield > 0
                     ? `Div ${formatPersen(stock.dividendYield, 1)}`
                     : "Div -"}
                 </span>
@@ -614,13 +624,15 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
             <span>
               {isWatchlistFull
                 ? "Batas maksimal tercapai"
+                : provider === "yahoo"
+                ? "Sektor, ROE & DER: Yahoo Finance"
                 : "Juga memprioritaskan feed Berita"}
             </span>
           </>
         ) : provider === "yahoo" ? (
           <>
             <span>Harga, P/E, PBV, Div: Yahoo (~10 mnt)</span>
-            <span>*Filter ROE &amp; DER: profil ilustrasi</span>
+            <span>Filter ROE &amp; DER: kurasi + Yahoo</span>
           </>
         ) : (
           <>
