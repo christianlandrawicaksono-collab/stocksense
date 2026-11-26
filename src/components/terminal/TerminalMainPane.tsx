@@ -1,7 +1,15 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from "react";
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
+import {
+  getChartPrefsServerSnapshot,
+  parseChartPreferencesJson,
+  readChartPrefsStorageSnapshot,
+  resolveEffectiveTimeframe,
+  subscribeChartPrefsStorage,
+  updateChartPreferencesStorage,
+} from "@/lib/chart-prefs";
 import {
   formatNumber,
   formatDesimal,
@@ -17,6 +25,7 @@ import {
   runQuarterlyDcaSimulation,
 } from "@/lib/dca-simulator";
 import { filterNewsByTicker } from "@/lib/news-brief";
+import { computeHistoricalPeBands } from "@/lib/valuation-bands";
 import {
   Layers,
   Calculator,
@@ -39,11 +48,19 @@ import {
   MarketHistoryPoint,
   MarketQuote,
   MarketProvider,
-  HistoryRange,
   StockProfileData,
 } from "@/lib/market-data";
 import { MarketStatus } from "@/lib/market-hours";
 import type { LiveMarketNewsItem, SentimentType } from "@/types/market";
+
+export interface CustomStockAiMetrics {
+  ticker: string;
+  sector?: string;
+  roe?: number;
+  der?: number;
+  historicalPeMean?: number;
+  targetMeanPrice?: number;
+}
 
 interface TerminalMainPaneProps {
   selectedTicker: string;
@@ -54,6 +71,7 @@ interface TerminalMainPaneProps {
   onCloseOriginPanel?: () => void;
   onAskAiStock?: (ticker: string) => void;
   onAskAiTerminalNews?: (item: LiveMarketNewsItem) => void;
+  onCustomAiMetrics?: (metrics: CustomStockAiMetrics | null) => void;
   isInWatchlist?: boolean;
   isWatchlistFull?: boolean;
   onToggleWatchlist?: (ticker: string) => void;
@@ -97,6 +115,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   onCloseOriginPanel,
   onAskAiStock,
   onAskAiTerminalNews,
+  onCustomAiMetrics,
   isInWatchlist = false,
   isWatchlistFull = false,
   onToggleWatchlist,
@@ -105,10 +124,19 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   marketStatus,
 }) => {
   const [activeTab, setActiveTab] = useState<TerminalTab>("valuation");
-  const [chartTf, setChartTf] = useState<HistoryRange>("Semua");
+  const chartPrefsJson = useSyncExternalStore(
+    subscribeChartPrefsStorage,
+    readChartPrefsStorageSnapshot,
+    getChartPrefsServerSnapshot
+  );
+  const chartPrefs = useMemo(
+    () => parseChartPreferencesJson(chartPrefsJson),
+    [chartPrefsJson]
+  );
+  const chartTf = resolveEffectiveTimeframe(chartPrefs, provider);
 
   const [historyPoints, setHistoryPoints] = useState<MarketHistoryPoint[]>(() =>
-    provider === "yahoo" ? [] : getIllustrativeHistoryPoints(selectedTicker, "Semua")
+    provider === "yahoo" ? [] : getIllustrativeHistoryPoints(selectedTicker, chartTf)
   );
   const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(provider === "yahoo");
   const [isHistoryFallback, setIsHistoryFallback] = useState<boolean>(provider === "illustrative");
@@ -284,36 +312,66 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     return STOCKS_DATA.find((s) => s.ticker === selectedTicker) || null;
   }, [selectedTicker]);
 
-  const [customProfileState, setCustomProfileState] = useState<{
+  const [customAnalysisState, setCustomAnalysisState] = useState<{
     ticker: string;
     profile: StockProfileData | null;
-  }>({ ticker: "", profile: null });
+    bandPoints: MarketHistoryPoint[];
+  }>({ ticker: "", profile: null, bandPoints: [] });
 
   useEffect(() => {
     if (curatedStock || provider !== "yahoo") return;
     let cancelled = false;
 
-    getStockProfile(selectedTicker)
-      .then((profile) => {
-        if (!cancelled) {
-          setCustomProfileState({ ticker: selectedTicker, profile });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCustomProfileState({ ticker: selectedTicker, profile: null });
-        }
+    Promise.allSettled([
+      getStockProfile(selectedTicker),
+      getHistory(selectedTicker, "5Th"),
+    ]).then(([profileRes, histRes]) => {
+      if (cancelled) return;
+      const profile = profileRes.status === "fulfilled" ? profileRes.value : null;
+      const bandPoints =
+        histRes.status === "fulfilled" && !histRes.value.isFallback
+          ? histRes.value.points
+          : [];
+
+      setCustomAnalysisState({
+        ticker: selectedTicker,
+        profile,
+        bandPoints,
       });
+
+      const resolvedEps =
+        (quote?.eps && quote.eps > 0 ? quote.eps : undefined) ??
+        (profile?.eps && profile.eps > 0 ? profile.eps : undefined) ??
+        0;
+      const bands = computeHistoricalPeBands(bandPoints, resolvedEps);
+
+      onCustomAiMetrics?.({
+        ticker: selectedTicker,
+        sector: profile?.sector,
+        roe: profile?.roe,
+        der: profile?.der,
+        historicalPeMean: bands?.historicalPeMean,
+        targetMeanPrice: bands?.targetMeanPrice,
+      });
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [curatedStock, provider, selectedTicker]);
+  }, [curatedStock, provider, selectedTicker, quote?.eps, onCustomAiMetrics]);
 
   const customProfile =
-    !curatedStock && customProfileState.ticker === selectedTicker
-      ? customProfileState.profile
+    !curatedStock && customAnalysisState.ticker === selectedTicker
+      ? customAnalysisState.profile
       : null;
+
+  const customBandPoints = useMemo(
+    () =>
+      !curatedStock && customAnalysisState.ticker === selectedTicker
+        ? customAnalysisState.bandPoints
+        : [],
+    [curatedStock, customAnalysisState, selectedTicker]
+  );
 
   const hasCuratedBands = Boolean(curatedStock);
 
@@ -395,11 +453,42 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     (customProfile?.dividendYield !== undefined ? customProfile.dividendYield : undefined) ??
     stock.dividendYield;
 
-  const targetMeanPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.historicalPeMean) : 0;
-  const targetSd1MinusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd1Minus) : 0;
-  const targetSd2MinusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd2Minus) : 0;
-  const targetSd1PlusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd1Plus) : 0;
-  const targetSd2PlusPrice = hasCuratedBands && activeEps > 0 ? Math.round(activeEps * stock.peSd2Plus) : 0;
+  const dynamicPeBands = useMemo(() => {
+    if (curatedStock) return null;
+    return computeHistoricalPeBands(customBandPoints, activeEps);
+  }, [curatedStock, customBandPoints, activeEps]);
+
+  const effectiveBands = useMemo(() => {
+    if (curatedStock && curatedStock.historicalPeMean > 0 && activeEps > 0) {
+      return {
+        kind: "curated" as const,
+        historicalPeMean: curatedStock.historicalPeMean,
+        peSd1Plus: curatedStock.peSd1Plus,
+        peSd1Minus: curatedStock.peSd1Minus,
+        peSd2Plus: curatedStock.peSd2Plus,
+        peSd2Minus: curatedStock.peSd2Minus,
+        targetMeanPrice: Math.round(activeEps * curatedStock.historicalPeMean),
+        targetSd1PlusPrice: Math.round(activeEps * curatedStock.peSd1Plus),
+        targetSd1MinusPrice: Math.round(activeEps * curatedStock.peSd1Minus),
+        targetSd2PlusPrice: Math.round(activeEps * curatedStock.peSd2Plus),
+        targetSd2MinusPrice: Math.round(activeEps * curatedStock.peSd2Minus),
+        sampleCount: 0,
+      };
+    }
+    if (!curatedStock && dynamicPeBands) {
+      return {
+        kind: "dynamic" as const,
+        ...dynamicPeBands,
+      };
+    }
+    return null;
+  }, [curatedStock, activeEps, dynamicPeBands]);
+
+  const targetMeanPrice = effectiveBands?.targetMeanPrice ?? 0;
+  const targetSd1MinusPrice = effectiveBands?.targetSd1MinusPrice ?? 0;
+  const targetSd2MinusPrice = effectiveBands?.targetSd2MinusPrice ?? 0;
+  const targetSd1PlusPrice = effectiveBands?.targetSd1PlusPrice ?? 0;
+  const targetSd2PlusPrice = effectiveBands?.targetSd2PlusPrice ?? 0;
 
   const grahamNumber =
     activeEps > 0 && activeBvps > 0
@@ -410,28 +499,30 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       ? ((grahamNumber - activePrice) / activePrice) * 100
       : 0;
   const meanUpside =
-    hasCuratedBands && targetMeanPrice > 0 && activePrice > 0
+    effectiveBands && targetMeanPrice > 0 && activePrice > 0
       ? ((targetMeanPrice - activePrice) / activePrice) * 100
       : 0;
 
-  // Valuation Diagnosis: Computed dynamically from active P/E position vs historical bands (for curated stocks)
+  // Valuation Diagnosis: Computed dynamically from active P/E position vs curated or 5Y estimated bands
   const valuationDiagnosis = useMemo(() => {
-    if (!hasCuratedBands || stock.historicalPeMean <= 0) {
+    if (!effectiveBands || activePe <= 0) {
       return {
         label: activePe > 0 ? `P/E Live ${formatMultiple(activePe, 1)}` : "Emiten Kustom BEI",
         color: "text-[#2DD4BF] bg-[#115E59]/40 border-[#14B8A6]/60 font-medium",
         verdict: activePe > 0
-          ? `Emiten kustom ${stock.ticker} diperdagangkan pada rasio P/E TTM ${formatMultiple(activePe, 1)} dan PBV ${activePbv > 0 ? formatMultiple(activePbv, 2) : "-"} (Yahoo Finance). Pita deviasi 5 tahun tersedia khusus pada 9 emiten kurasi.`
+          ? `Emiten kustom ${stock.ticker} diperdagangkan pada rasio P/E TTM ${formatMultiple(activePe, 1)} dan PBV ${activePbv > 0 ? formatMultiple(activePbv, 2) : "-"} (Yahoo Finance). Data riwayat 5 tahun atau EPS belum cukup untuk membentuk pita deviasi.`
           : `Data rasio P/E untuk emiten kustom ${stock.ticker} tidak tersedia atau negatif pada periode TTM terakhir.`,
       };
     }
 
     const pe = activePe;
-    const mean = stock.historicalPeMean;
-    const sd1Minus = stock.peSd1Minus;
-    const sd2Minus = stock.peSd2Minus;
-    const sd1Plus = stock.peSd1Plus;
+    const mean = effectiveBands.historicalPeMean;
+    const sd1Minus = effectiveBands.peSd1Minus;
+    const sd2Minus = effectiveBands.peSd2Minus;
+    const sd1Plus = effectiveBands.peSd1Plus;
     const priceSourceLabel = isLiveValuation ? "harga Yahoo Finance" : "harga acuan ilustrasi";
+    const bandLabel =
+      effectiveBands.kind === "dynamic" ? "estimasi rerata 5Th" : "rerata historis";
 
     const diffPercent = ((pe - mean) / mean) * 100;
     const absDiff = Math.abs(diffPercent);
@@ -440,34 +531,34 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       return {
         label: "Diskon ekstrim (di bawah -2 SD)",
         color: "text-[#34D399] bg-[#064E3B] border-[#059669] font-medium",
-        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada di bawah batas -2 SD (${formatMultiple(sd2Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata historis (${formatMultiple(mean, 1)}). Area deviasi terendah secara komparatif.`
+        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada di bawah batas -2 SD (${formatMultiple(sd2Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah ${bandLabel} (${formatMultiple(mean, 1)}). Area deviasi terendah secara komparatif.`
       };
     } else if (pe <= sd1Minus) {
       return {
         label: "Undervalued (antara -2 SD dan -1 SD)",
         color: "text-[#34D399] bg-[#064E3B] border-[#059669] font-medium",
-        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada pada rentang deviasi rendah (${formatMultiple(sd2Minus, 1)} – ${formatMultiple(sd1Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah rerata historis (${formatMultiple(mean, 1)}).`
+        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada pada rentang deviasi rendah (${formatMultiple(sd2Minus, 1)} – ${formatMultiple(sd1Minus, 1)}), ${formatPersen(absDiff, 1)} di bawah ${bandLabel} (${formatMultiple(mean, 1)}).`
       };
     } else if (pe <= mean) {
       return {
         label: "Valuasi wajar (antara -1 SD dan rerata)",
         color: "text-[#2DD4BF] bg-[#115E59]/50 border-[#14B8A6] font-medium",
-        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada mendekati rerata historis (${formatMultiple(mean, 1)}), ${formatPersen(absDiff, 1)} di bawah titik tengah.`
+        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada mendekati ${bandLabel} (${formatMultiple(mean, 1)}), ${formatPersen(absDiff, 1)} di bawah titik tengah.`
       };
     } else if (pe <= sd1Plus) {
       return {
         label: "Cukup premium (antara rerata dan +1 SD)",
         color: "text-[#FDE047] bg-[#78350F] border-[#D97706] font-medium",
-        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada ${formatPersen(absDiff, 1)} di atas rerata historis (${formatMultiple(mean, 1)}), berada di bawah batas atas +1 SD (${formatMultiple(sd1Plus, 1)}).`
+        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) berada ${formatPersen(absDiff, 1)} di atas ${bandLabel} (${formatMultiple(mean, 1)}), berada di bawah batas atas +1 SD (${formatMultiple(sd1Plus, 1)}).`
       };
     } else {
       return {
         label: "Overvalued (di atas +1 SD)",
         color: "text-[#F87171] bg-[#7F1D1D] border-[#DC2626] font-medium",
-        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) melampaui batas deviasi atas +1 SD (${formatMultiple(sd1Plus, 1)}), ${formatPersen(absDiff, 1)} di atas rerata historis (${formatMultiple(mean, 1)}).`
+        verdict: `Rasio P/E pada ${priceSourceLabel} (${formatMultiple(pe, 1)} pada ${formatRupiah(activePrice)}) melampaui batas deviasi atas +1 SD (${formatMultiple(sd1Plus, 1)}), ${formatPersen(absDiff, 1)} di atas ${bandLabel} (${formatMultiple(mean, 1)}).`
       };
     }
-  }, [hasCuratedBands, stock, activePe, activePbv, activePrice, isLiveValuation]);
+  }, [effectiveBands, stock.ticker, activePe, activePbv, activePrice, isLiveValuation]);
 
   // Handle Money Inputs with Thousand Separator
   const handleDcaChange = (valStr: string) => {
@@ -833,7 +924,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           ticker={selectedTicker}
           points={historyPoints}
           timeframe={chartTf}
-          onTimeframeChange={(tf) => setChartTf(tf)}
+          onTimeframeChange={(tf) => updateChartPreferencesStorage({ timeframe: tf })}
           provider={provider}
           isFallback={isHistoryFallback}
           isLoading={isHistoryLoading}
@@ -937,34 +1028,43 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               </div>
             </div>
 
-            {/* P/E Deviation Band Table (9 Saham Kurasi) atau Ringkasan Live (Emiten Kustom) + Fair Value */}
+            {/* P/E Deviation Band Table (Kurasi atau Estimasi 5Th Otomatis) + Fair Value */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Left */}
-              {hasCuratedBands ? (
+              {effectiveBands ? (
                 <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
                   <span className="text-xs text-slate-400 block mb-1">
-                    Pita deviasi P/E (berdasarkan EPS {isLiveValuation ? "TTM Yahoo" : "acuan"}: {formatRupiah(activeEps)})
+                    {effectiveBands.kind === "dynamic"
+                      ? `Pita estimasi P/E 5Th (EPS TTM: ${formatRupiah(activeEps)}, ${effectiveBands.sampleCount} mgg)`
+                      : `Pita deviasi P/E (berdasarkan EPS ${isLiveValuation ? "TTM Yahoo" : "acuan"}: ${formatRupiah(activeEps)})`}
                   </span>
                   <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                    <span>+2 SD (Mahal ekstrim - {formatMultiple(stock.peSd2Plus, 1)})</span>
+                    <span>+2 SD (Mahal ekstrim - {formatMultiple(effectiveBands.peSd2Plus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2PlusPrice)}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                    <span>+1 SD (Di atas rerata - {formatMultiple(stock.peSd1Plus, 1)})</span>
+                    <span>+1 SD (Di atas rerata - {formatMultiple(effectiveBands.peSd1Plus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1PlusPrice)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-[#1E7B85]/30 bg-[#1E7B85]/10 px-1 rounded text-slate-100 font-medium">
-                    <span>Mean (Harga wajar acuan - {formatMultiple(stock.historicalPeMean, 1)})</span>
+                    <span>Mean (Harga wajar acuan - {formatMultiple(effectiveBands.historicalPeMean, 1)})</span>
                     <span className="font-mono tnum">{formatRupiah(targetMeanPrice)}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
-                    <span>-1 SD (Area undervalued - {formatMultiple(stock.peSd1Minus, 1)})</span>
+                    <span>-1 SD (Area undervalued - {formatMultiple(effectiveBands.peSd1Minus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1MinusPrice)}</span>
                   </div>
                   <div className="flex justify-between py-1 text-slate-400">
-                    <span>-2 SD (Diskon ekstrim - {formatMultiple(stock.peSd2Minus, 1)})</span>
+                    <span>-2 SD (Diskon ekstrim - {formatMultiple(effectiveBands.peSd2Minus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2MinusPrice)}</span>
                   </div>
+                  {effectiveBands.kind === "dynamic" && (
+                    <div className="pt-2 mt-1 border-t border-slate-900 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 font-mono tnum">
+                      <span>BVPS: {activeBvps > 0 ? formatRupiah(activeBvps) : "-"}</span>
+                      <span>PBV: {activePbv > 0 ? formatMultiple(activePbv, 2) : "-"}</span>
+                      <span>Div: {activeDivYield > 0 ? formatPersen(activeDivYield, 1) : "-"}</span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
@@ -996,10 +1096,12 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
               {/* Right: Fair Value Target Cards */}
               <div className="space-y-3">
-                {hasCuratedBands && (
+                {effectiveBands && (
                   <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736]">
                     <span className="text-xs text-slate-400 block mb-0.5">
-                      Target harga wajar (mean acuan):
+                      {effectiveBands.kind === "dynamic"
+                        ? "Target harga wajar (estimasi 5Th):"
+                        : "Target harga wajar (mean acuan):"}
                     </span>
                     <span className="text-lg font-bold font-mono text-slate-100 tnum">
                       {formatRupiah(targetMeanPrice)}

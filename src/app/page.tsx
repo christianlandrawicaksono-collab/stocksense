@@ -5,7 +5,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Navbar, AppMode } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
-import { TerminalMainPane } from "@/components/terminal/TerminalMainPane";
+import { TerminalMainPane, type CustomStockAiMetrics } from "@/components/terminal/TerminalMainPane";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 import { useMarketData } from "@/hooks/useMarketData";
@@ -61,6 +61,7 @@ function HomeContent() {
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
   const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
+  const [customAiMetrics, setCustomAiMetrics] = useState<CustomStockAiMetrics | null>(null);
 
   const watchlistJson = useSyncExternalStore(
     subscribeWatchlistStorage,
@@ -111,6 +112,8 @@ function HomeContent() {
 
   const activeAiContext: AiMarketContext = useMemo(() => {
     const curatedMeta = STOCKS_DATA.find((s) => s.ticker === selectedTicker) || null;
+    const customMetrics =
+      !curatedMeta && customAiMetrics?.ticker === selectedTicker ? customAiMetrics : null;
     const activeQuote = quotes[selectedTicker];
     const isLive = Boolean(provider === "yahoo" && activeQuote && !activeQuote.isFallback);
     const activePrice = activeQuote?.price ?? curatedMeta?.currentPrice ?? 0;
@@ -122,7 +125,11 @@ function HomeContent() {
         ? curatedMeta.currentPrice / curatedMeta.peRatio
         : 0;
     const targetMeanPrice =
-      curatedMeta && activeEps > 0 ? Math.round(activeEps * curatedMeta.historicalPeMean) : undefined;
+      curatedMeta && activeEps > 0
+        ? Math.round(activeEps * curatedMeta.historicalPeMean)
+        : customMetrics?.targetMeanPrice;
+    const historicalPeMean =
+      curatedMeta?.historicalPeMean ?? customMetrics?.historicalPeMean ?? 0;
     const activePe =
       isLive && activeQuote?.peRatio && activeQuote.peRatio > 0
         ? activeQuote.peRatio
@@ -136,23 +143,38 @@ function HomeContent() {
         ? activeQuote.dividendYield
         : curatedMeta?.dividendYield ?? 0;
 
-    const watchlistPeers = STOCKS_DATA.map((s) => {
-      const q = quotes[s.ticker];
-      const peerLive = Boolean(provider === "yahoo" && q && !q.isFallback);
-      return {
-        ticker: s.ticker,
-        sector: s.sector,
-        price: q?.price ?? s.currentPrice,
-        changePercent: q?.changePercent ?? s.change1D,
-        peRatio: peerLive && q?.peRatio && q.peRatio > 0 ? q.peRatio : s.peRatio,
-        pbvRatio: peerLive && q?.pbvRatio && q.pbvRatio > 0 ? q.pbvRatio : s.pbvRatio,
-        dividendYield:
-          peerLive && q?.dividendYield !== undefined && q.dividendYield >= 0
-            ? q.dividendYield
-            : s.dividendYield,
-        isLive: peerLive,
-      };
-    });
+    const curatedByTicker = new Map(STOCKS_DATA.map((s) => [s.ticker, s]));
+    const customSet = new Set(customWatchlist);
+    const peerTickers = Array.from(
+      new Set([...customWatchlist, ...STOCKS_DATA.map((s) => s.ticker)])
+    );
+
+    const watchlistPeers = peerTickers
+      .map((ticker) => {
+        const s = curatedByTicker.get(ticker);
+        const q = quotes[ticker];
+        const peerLive = Boolean(provider === "yahoo" && q && !q.isFallback);
+        const price = q?.price ?? s?.currentPrice ?? 0;
+        if (price <= 0) return null;
+        return {
+          ticker,
+          sector:
+            s?.sector ||
+            (customAiMetrics?.ticker === ticker && customAiMetrics.sector) ||
+            "Saham BEI",
+          price,
+          changePercent: q?.changePercent ?? s?.change1D ?? 0,
+          peRatio: peerLive && q?.peRatio && q.peRatio > 0 ? q.peRatio : s?.peRatio ?? 0,
+          pbvRatio: peerLive && q?.pbvRatio && q.pbvRatio > 0 ? q.pbvRatio : s?.pbvRatio ?? 0,
+          dividendYield:
+            peerLive && q?.dividendYield !== undefined && q.dividendYield >= 0
+              ? q.dividendYield
+              : s?.dividendYield ?? 0,
+          isLive: peerLive,
+          isInCustomWatchlist: customSet.has(ticker),
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
 
     const articleContext =
       currentMode === "berita" && activeLiveNewsForAi
@@ -164,22 +186,24 @@ function HomeContent() {
     return {
       mode: currentMode,
       provider,
+      customWatchlist,
       stock:
         currentMode === "terminal" && activePrice > 0
           ? {
               ticker: curatedMeta?.ticker || selectedTicker,
               name: curatedMeta?.name || activeQuote?.name || selectedTicker,
-              sector: curatedMeta?.sector || "Bursa Efek Indonesia",
+              sector: curatedMeta?.sector || customMetrics?.sector || "Bursa Efek Indonesia",
               price: activePrice,
               changePercent: activeQuote?.changePercent ?? curatedMeta?.change1D ?? 0,
               peRatio: activePe,
-              historicalPeMean: curatedMeta?.historicalPeMean ?? 0,
+              historicalPeMean,
               targetMeanPrice,
               pbvRatio: activePbv,
               dividendYield: activeDiv,
-              roe: curatedMeta?.roe ?? 0,
-              der: curatedMeta?.der ?? 0,
+              roe: curatedMeta?.roe ?? customMetrics?.roe,
+              der: curatedMeta?.der ?? customMetrics?.der,
               isLive,
+              isCurated: Boolean(curatedMeta),
               strengths: curatedMeta?.strengths ?? [],
               risks: curatedMeta?.risks ?? [],
             }
@@ -197,6 +221,8 @@ function HomeContent() {
     provider,
     selectedTicker,
     quotes,
+    customWatchlist,
+    customAiMetrics,
     originLiveNews,
     macroTickers,
     activeLiveNewsForAi,
@@ -390,6 +416,7 @@ function HomeContent() {
                     buildLiveNewsArticleContext(item)
                   );
                 }}
+                onCustomAiMetrics={setCustomAiMetrics}
                 isInWatchlist={customWatchlist.includes(selectedTicker)}
                 isWatchlistFull={isWatchlistFull}
                 onToggleWatchlist={handleToggleWatchlist}

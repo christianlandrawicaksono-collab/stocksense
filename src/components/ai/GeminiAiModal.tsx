@@ -75,10 +75,17 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
 
   const presetQueries = useMemo(() => {
     const items: string[] = [];
+    const customPeers = (context?.watchlistPeers || []).filter(
+      (p) => p.isInCustomWatchlist && p.price > 0
+    );
+
     if (context?.stock) {
-      const sameSectorPeer = context.watchlistPeers?.find(
-        (p) => p.sector === context.stock?.sector && p.ticker !== context.stock?.ticker
-      );
+      const otherCustomPeer = customPeers.find((p) => p.ticker !== context.stock?.ticker);
+      const sameSectorPeer =
+        otherCustomPeer ||
+        context.watchlistPeers?.find(
+          (p) => p.sector === context.stock?.sector && p.ticker !== context.stock?.ticker
+        );
       items.push(
         `Evaluasi valuasi & risiko ${context.stock.ticker} pada harga ${formatRupiah(context.stock.price)} saat ini.`
       );
@@ -91,6 +98,9 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
           `Bagaimana pengaruh posisi IHSG & kurs USD/IDR terkini terhadap kinerja ${context.stock.ticker}?`
         );
       }
+    }
+    if (customPeers.length >= 2) {
+      items.push("Bandingkan valuasi dan potensi saham di Watchlist Saya saat ini.");
     }
     if (context?.article) {
       items.push(
@@ -107,16 +117,21 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
   }, [context]);
 
   const followUpChips = useMemo(() => {
+    const customPeers = (context?.watchlistPeers || []).filter(
+      (p) => p.isInCustomWatchlist && p.price > 0
+    );
     if (context?.stock) {
-      const sameSectorPeer = context.watchlistPeers?.find(
-        (p) => p.sector === context.stock?.sector && p.ticker !== context.stock?.ticker
-      );
+      const peerCandidate =
+        customPeers.find((p) => p.ticker !== context.stock?.ticker) ||
+        context.watchlistPeers?.find(
+          (p) => p.sector === context.stock?.sector && p.ticker !== context.stock?.ticker
+        );
       const chips = [
         `Risiko utama ${context.stock.ticker} saat ini?`,
         `Pengaruh makro & kurs ke ${context.stock.ticker}?`,
       ];
-      if (sameSectorPeer) {
-        chips.unshift(`Bandingkan dengan ${sameSectorPeer.ticker}`);
+      if (peerCandidate) {
+        chips.unshift(`Bandingkan dengan ${peerCandidate.ticker}`);
       }
       return chips.slice(0, 3);
     }

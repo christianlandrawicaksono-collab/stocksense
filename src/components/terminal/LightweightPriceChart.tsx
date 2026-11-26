@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useSyncExternalStore } from "react";
 import {
   createChart,
   LineSeries,
@@ -15,7 +15,14 @@ import {
   Time,
   SeriesMarker,
 } from "lightweight-charts";
-import { MarketHistoryPoint, HistoryRange, MarketProvider } from "@/lib/market-data";
+import { MarketHistoryPoint, HistoryRange, HISTORY_RANGES, MarketProvider } from "@/lib/market-data";
+import {
+  getChartPrefsServerSnapshot,
+  parseChartPreferencesJson,
+  readChartPrefsStorageSnapshot,
+  subscribeChartPrefsStorage,
+  updateChartPreferencesStorage,
+} from "@/lib/chart-prefs";
 import { formatNumber, formatDesimal, formatRupiah, formatPersen } from "@/lib/format";
 import { TrendingUp, BarChart2, AlertCircle, AlertTriangle, RotateCcw } from "lucide-react";
 
@@ -34,8 +41,6 @@ interface LightweightPriceChartProps {
   error?: string | null;
   onRetry?: () => void;
 }
-
-type ChartType = "line" | "candle";
 
 function computeSMA(points: MarketHistoryPoint[], period: number): { time: Time; value: number }[] {
   if (points.length < period) return [];
@@ -81,11 +86,17 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
-  const [chartType, setChartType] = useState<ChartType>("candle");
-  const [showVolume, setShowVolume] = useState<boolean>(true);
-  const [showMa20, setShowMa20] = useState<boolean>(false);
-  const [showMa50, setShowMa50] = useState<boolean>(false);
-  const [showFairValue, setShowFairValue] = useState<boolean>(false);
+  const chartPrefsJson = useSyncExternalStore(
+    subscribeChartPrefsStorage,
+    readChartPrefsStorageSnapshot,
+    getChartPrefsServerSnapshot
+  );
+  const chartPrefs = useMemo(
+    () => parseChartPreferencesJson(chartPrefsJson),
+    [chartPrefsJson]
+  );
+  const { chartType, showVolume, showMa20, showMa50, showFairValue } = chartPrefs;
+  const isWeeklyTimeframe = timeframe === "5Th" || timeframe === "Semua";
   const [hoverData, setHoverData] = useState<{
     time: string;
     close: number;
@@ -414,7 +425,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
             <div className="flex items-center bg-[#080B10] p-0.5 rounded border border-[#1E2736]">
               <button
                 type="button"
-                onClick={() => setChartType("line")}
+                onClick={() => updateChartPreferencesStorage({ chartType: "line" })}
                 className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition ${
                   chartType === "line"
                     ? "bg-[#1E7B85] text-white font-medium"
@@ -427,7 +438,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setChartType("candle")}
+                onClick={() => updateChartPreferencesStorage({ chartType: "candle" })}
                 className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition ${
                   chartType === "candle"
                     ? "bg-[#1E7B85] text-white font-medium"
@@ -446,7 +457,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
             {hasValidVolume && (
               <button
                 type="button"
-                onClick={() => setShowVolume((v) => !v)}
+                onClick={() => updateChartPreferencesStorage({ showVolume: !showVolume })}
                 className={`px-2 py-1 rounded text-[11px] font-mono border transition ${
                   showVolume
                     ? "bg-[#1E7B85]/20 border-[#1E7B85] text-slate-100"
@@ -459,32 +470,32 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
             )}
             <button
               type="button"
-              onClick={() => setShowMa20((v) => !v)}
+              onClick={() => updateChartPreferencesStorage({ showMa20: !showMa20 })}
               className={`px-2 py-1 rounded text-[11px] font-mono border transition flex items-center space-x-1 ${
                 showMa20
                   ? "bg-[#F59E0B]/15 border-[#F59E0B]/60 text-[#FCD34D]"
                   : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
               }`}
-              title={`Moving Average 20 bar (${timeframe === "1Th" || timeframe === "3Th" ? "20 hari" : "20 minggu"})`}
+              title={`Moving Average 20 bar (${isWeeklyTimeframe ? "20 minggu" : "20 hari"})`}
             >
               <span>MA20</span>
             </button>
             <button
               type="button"
-              onClick={() => setShowMa50((v) => !v)}
+              onClick={() => updateChartPreferencesStorage({ showMa50: !showMa50 })}
               className={`px-2 py-1 rounded text-[11px] font-mono border transition flex items-center space-x-1 ${
                 showMa50
                   ? "bg-[#A855F7]/15 border-[#A855F7]/60 text-[#D8B4FE]"
                   : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
               }`}
-              title={`Moving Average 50 bar (${timeframe === "1Th" || timeframe === "3Th" ? "50 hari" : "50 minggu"})`}
+              title={`Moving Average 50 bar (${isWeeklyTimeframe ? "50 minggu" : "50 hari"})`}
             >
               <span>MA50</span>
             </button>
             {fairValuePrice && fairValuePrice > 0 && (
               <button
                 type="button"
-                onClick={() => setShowFairValue((v) => !v)}
+                onClick={() => updateChartPreferencesStorage({ showFairValue: !showFairValue })}
                 className={`px-2 py-1 rounded text-[11px] font-sans border transition ${
                   showFairValue
                     ? "bg-[#2DD4BF]/15 border-[#2DD4BF]/60 text-[#2DD4BF]"
@@ -503,14 +514,14 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
           </div>
         </div>
 
-        {/* Kanan: Timeframe selector (1Th, 3Th, 5Th, Semua) */}
-        <div className="flex items-center space-x-1 bg-[#080B10] p-1 rounded-lg border border-[#1E2736]">
-          {(["1Th", "3Th", "5Th", "Semua"] as HistoryRange[]).map((tf) => (
+        {/* Kanan: Timeframe selector (1Bl, 3Bl, 6Bl, 1Th, 3Th, 5Th, Semua) */}
+        <div className="flex flex-wrap items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#1E2736]">
+          {HISTORY_RANGES.map((tf) => (
             <button
               key={tf}
               type="button"
               onClick={() => onTimeframeChange(tf)}
-              className={`px-2.5 py-1 rounded text-xs font-sans transition ${
+              className={`px-2 py-1 rounded text-[11px] sm:text-xs font-sans transition ${
                 timeframe === tf
                   ? "bg-[#1E7B85] text-white font-medium shadow-sm"
                   : "text-slate-400 hover:text-slate-200"

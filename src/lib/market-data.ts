@@ -15,7 +15,26 @@ import { getIdxMarketStatus, MarketStatus } from "./market-hours";
 import { MAX_NEWS_WATCHLIST_ENRICHMENT, sanitizeWatchlistTickers } from "./watchlist";
 
 export type MarketProvider = "illustrative" | "yahoo";
-export type HistoryRange = "1Th" | "3Th" | "5Th" | "Semua";
+export const HISTORY_RANGES = ["1Bl", "3Bl", "6Bl", "1Th", "3Th", "5Th", "Semua"] as const;
+export type HistoryRange = (typeof HISTORY_RANGES)[number];
+
+export function normalizeHistoryRange(
+  raw: string | null | undefined,
+  fallback: HistoryRange = "Semua"
+): HistoryRange {
+  if (!raw) return fallback;
+  return (HISTORY_RANGES as readonly string[]).includes(raw)
+    ? (raw as HistoryRange)
+    : fallback;
+}
+
+export function sliceIllustrativeSeries<T>(raw: T[], range: HistoryRange): T[] {
+  if (range === "1Bl" || range === "3Bl" || range === "6Bl") return raw.slice(-4);
+  if (range === "1Th") return raw.slice(-5);
+  if (range === "3Th") return raw.slice(-13);
+  if (range === "5Th") return raw.slice(-21);
+  return raw;
+}
 
 export interface MarketQuote {
   ticker: string;
@@ -157,10 +176,7 @@ export function getIllustrativeHistoryPoints(
   range: HistoryRange = "Semua"
 ): MarketHistoryPoint[] {
   const raw = ticker === "IHSG" ? IHSG_HISTORICAL : HISTORICAL_SERIES[ticker] || [];
-  let sliced = raw;
-  if (range === "1Th") sliced = raw.slice(-5);
-  else if (range === "3Th") sliced = raw.slice(-13);
-  else if (range === "5Th") sliced = raw.slice(-21);
+  const sliced = sliceIllustrativeSeries(raw, range);
 
   return sliced.map((item) => ({
     time: `${item.date}-01`,
