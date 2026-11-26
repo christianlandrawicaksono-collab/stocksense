@@ -15,6 +15,71 @@ interface MarketTickerProps {
   embedded?: boolean;
 }
 
+interface TickerGroupProps {
+  tickers: MarketTickerItem[];
+  isLight: boolean;
+  isYahooLive: boolean;
+  cloneIndex?: number;
+}
+
+const TickerGroup: React.FC<TickerGroupProps> = ({
+  tickers,
+  isLight,
+  isYahooLive,
+  cloneIndex = 0,
+}) => {
+  const isClone = cloneIndex > 0;
+  return (
+    <div
+      className={`flex items-center shrink-0 gap-5 pr-5 ${isClone ? "market-marquee-clone" : ""}`}
+      aria-hidden={isClone || undefined}
+    >
+      {tickers.map((ticker) => {
+        const isUp = ticker.change > 0;
+        const isZero = Math.abs(ticker.change) < 0.005;
+
+        const deltaBadgeClass = isLight
+          ? isZero
+            ? "text-[#5A6068] bg-[#E5E5DC]/70"
+            : isUp
+            ? "text-[#0D6343] bg-[#0D6343]/10"
+            : "text-[#B91C1C] bg-[#B91C1C]/10"
+          : isZero
+          ? "text-slate-400 bg-slate-800/40"
+          : isUp
+          ? "text-[#2EB886] bg-[#2EB886]/10"
+          : "text-[#DC525F] bg-[#DC525F]/10";
+
+        return (
+          <div
+            key={`${cloneIndex}-${ticker.symbol}`}
+            className="flex items-center space-x-1.5 whitespace-nowrap"
+            title={`${ticker.name}${isYahooLive ? " (Yahoo Finance)" : " (Data Ilustrasi)"}`}
+          >
+            <span
+              className={`font-mono text-xs font-semibold ${
+                isLight ? "text-[#1A1C1E]" : "text-slate-300"
+              }`}
+            >
+              {ticker.symbol}
+            </span>
+            <span
+              className={`font-mono text-xs tnum ${
+                isLight ? "text-[#2A2E33]" : "text-slate-100"
+              }`}
+            >
+              {ticker.value}
+            </span>
+            <span className={`text-[11px] font-mono tnum px-1 py-0.5 rounded ${deltaBadgeClass}`}>
+              {isZero ? "0,00%" : formatPersen(ticker.change, 2, true)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 export const MarketTicker: React.FC<MarketTickerProps> = ({
   provider = "illustrative",
   tickers,
@@ -42,85 +107,60 @@ export const MarketTicker: React.FC<MarketTickerProps> = ({
 
   return (
     <div className={wrapperClass}>
-      <div className={embedded ? "flex items-center justify-between" : "max-w-7xl mx-auto flex items-center justify-between"}>
-        {/* Ticker list horizontal scrollable satu baris */}
-        <div className="flex items-center space-x-4 overflow-x-auto terminal-scroll py-0.5 w-full">
-          <div
-            className={`flex items-center space-x-1.5 font-sans text-xs whitespace-nowrap ${
-              isLight ? "text-[#5A6068]" : "text-slate-400"
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                isYahooLive
-                  ? "bg-[#2EB886]"
-                  : provider === "yahoo"
-                  ? "bg-amber-400"
-                  : "bg-[#1E7B85]"
-              }`}
-            ></span>
-            <span>
-              {isYahooLive
-                ? "Indikator pasar (Yahoo):"
+      <div
+        className={
+          embedded
+            ? "flex items-center gap-3 min-w-0"
+            : "max-w-7xl mx-auto flex items-center gap-3 min-w-0"
+        }
+      >
+        {/* Label sumber indikator tetap statis di kiri */}
+        <div
+          className={`flex items-center space-x-1.5 font-sans text-xs whitespace-nowrap shrink-0 pr-3 border-r ${
+            isLight ? "text-[#5A6068] border-[#D8D8CF]" : "text-slate-400 border-[#1E2736]"
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              isYahooLive
+                ? "bg-[#2EB886]"
                 : provider === "yahoo"
-                ? "Indikator pasar:"
-                : "Indikator acuan (ilustrasi):"}
-            </span>
-          </div>
-
-          {provider === "yahoo" && displayTickers.length === 0 ? (
-            <span className={`text-[11px] font-sans ${isLight ? "text-[#5A6068]" : "text-slate-400"}`}>
-              {isLoading
-                ? "Memuat indikator pasar global & IHSG..."
-                : "Indikator pasar global tidak tersedia saat ini."}
-            </span>
-          ) : (
-            <div className="flex items-center space-x-5 min-w-max">
-              {displayTickers.map((ticker) => {
-                const isUp = ticker.change > 0;
-                const isZero = Math.abs(ticker.change) < 0.005;
-
-                const deltaBadgeClass = isLight
-                  ? isZero
-                    ? "text-[#5A6068] bg-[#E5E5DC]/70"
-                    : isUp
-                    ? "text-[#0D6343] bg-[#0D6343]/10"
-                    : "text-[#B91C1C] bg-[#B91C1C]/10"
-                  : isZero
-                  ? "text-slate-400 bg-slate-800/40"
-                  : isUp
-                  ? "text-[#2EB886] bg-[#2EB886]/10"
-                  : "text-[#DC525F] bg-[#DC525F]/10";
-
-                return (
-                  <div
-                    key={ticker.symbol}
-                    className="flex items-center space-x-1.5"
-                    title={`${ticker.name}${isYahooLive ? " (Yahoo Finance)" : " (Data Ilustrasi)"}`}
-                  >
-                    <span
-                      className={`font-mono text-xs font-semibold ${
-                        isLight ? "text-[#1A1C1E]" : "text-slate-300"
-                      }`}
-                    >
-                      {ticker.symbol}
-                    </span>
-                    <span
-                      className={`font-mono text-xs tnum ${
-                        isLight ? "text-[#2A2E33]" : "text-slate-100"
-                      }`}
-                    >
-                      {ticker.value}
-                    </span>
-                    <span className={`text-[11px] font-mono tnum px-1 py-0.5 rounded ${deltaBadgeClass}`}>
-                      {isZero ? "0,00%" : formatPersen(ticker.change, 2, true)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                ? "bg-amber-400"
+                : "bg-[#1E7B85]"
+            }`}
+          ></span>
+          <span className="hidden sm:inline">
+            {isYahooLive
+              ? "Indikator pasar (Yahoo)"
+              : provider === "yahoo"
+              ? "Indikator pasar"
+              : "Indikator acuan (ilustrasi)"}
+          </span>
+          <span className="sm:hidden">Pasar</span>
         </div>
+
+        {/* Area ticker berjalan otomatis (pause saat hover/focus) */}
+        {provider === "yahoo" && displayTickers.length === 0 ? (
+          <span className={`text-[11px] font-sans truncate ${isLight ? "text-[#5A6068]" : "text-slate-400"}`}>
+            {isLoading
+              ? "Memuat indikator pasar global & IHSG..."
+              : "Indikator pasar global tidak tersedia saat ini."}
+          </span>
+        ) : (
+          <div className="market-marquee-wrapper flex-1 min-w-0 py-0.5">
+            <div className="animate-market-marquee">
+              {[0, 1, 2, 3].map((cloneIndex) => (
+                <TickerGroup
+                  key={cloneIndex}
+                  tickers={displayTickers}
+                  isLight={isLight}
+                  isYahooLive={isYahooLive}
+                  cloneIndex={cloneIndex}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

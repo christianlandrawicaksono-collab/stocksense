@@ -12,6 +12,10 @@ const RSS_FEEDS = [
     defaultPublisher: "CNBC Indonesia",
   },
   {
+    url: "https://www.antaranews.com/rss/ekonomi-bursa.xml",
+    defaultPublisher: "ANTARA Ekonomi",
+  },
+  {
     url: "https://news.google.com/rss/search?q=IHSG+OR+saham+BEI+when:7d&hl=id&gl=ID&ceid=ID:id",
     defaultPublisher: "Google News IDX",
   },
@@ -285,6 +289,60 @@ function readXmlTag(block: string, tag: string): string {
   return match ? match[1] : "";
 }
 
+function normalizeImageUrl(rawUrl: string): string | undefined {
+  if (!rawUrl) return undefined;
+  const decoded = rawUrl.replace(/&amp;/g, "&").trim();
+  if (!decoded.startsWith("https://")) return undefined;
+  if (/googleusercontent\.com|gstatic\.com|1x1|pixel/i.test(decoded)) return undefined;
+  return decoded;
+}
+
+export function extractImageUrlFromRssItem(rawItem: string, rawDescTag: string): string | undefined {
+  // 1. Cek <enclosure url="..." type="image/...">
+  const enclosureMatch = rawItem.match(/<enclosure\b([^>]*)>/i);
+  if (enclosureMatch) {
+    const attrs = enclosureMatch[1];
+    const urlMatch = attrs.match(/\burl=["']([^"']+)["']/i);
+    const typeMatch = attrs.match(/\btype=["']([^"']+)["']/i);
+    if (urlMatch && (!typeMatch || /^image\//i.test(typeMatch[1]))) {
+      const normalized = normalizeImageUrl(urlMatch[1]);
+      if (normalized) return normalized;
+    }
+  }
+
+  // 2. Cek <media:content url="..."> atau <media:thumbnail url="...">
+  const mediaMatch = rawItem.match(
+    /<media:(?:content|thumbnail)\b[^>]*\burl=["']([^"']+)["'][^>]*>/i
+  );
+  if (mediaMatch) {
+    const normalized = normalizeImageUrl(mediaMatch[1]);
+    if (normalized) return normalized;
+  }
+
+  // 3. Cek tag <img src="..."> pada deskripsi atau content:encoded
+  const contentEncoded = readXmlTag(rawItem, "content:encoded");
+  const imgSource = `${rawDescTag} ${contentEncoded}`;
+  const imgMatch = imgSource.match(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i);
+  if (imgMatch) {
+    const normalized = normalizeImageUrl(imgMatch[1]);
+    if (normalized) return normalized;
+  }
+
+  return undefined;
+}
+
+function extractSourceDomain(rawItem: string, link: string): string | undefined {
+  const sourceAttrMatch = rawItem.match(/<source\b[^>]*\burl=["']([^"']+)["'][^>]*>/i);
+  const candidateUrl = sourceAttrMatch ? sourceAttrMatch[1].trim() : link;
+  try {
+    const host = new URL(candidateUrl).hostname.replace(/^www\./, "");
+    if (!host || host === "news.google.com") return undefined;
+    return host;
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseRssItems(xml: string, defaultPublisher: string): LiveMarketNewsItem[] {
   const items: LiveMarketNewsItem[] = [];
   const itemMatches = xml.match(/<item\b[^>]*>[\s\S]*?<\/item>/gi) || [];
@@ -318,12 +376,16 @@ export function parseRssItems(xml: string, defaultPublisher: string): LiveMarket
     const tickers = extractIdxTickersFromText(analysisText);
     const category = categorizeNewsItem(title, summary);
     const sentiment = analyzeNewsSentiment(title, summary);
+    const imageUrl = extractImageUrlFromRssItem(rawItem, rawDescTag);
+    const sourceDomain = extractSourceDomain(rawItem, link);
 
     items.push({
       id: `rss-${Buffer.from(link).toString("base64url").slice(0, 16)}-${i}`,
       title,
       link,
       publisher,
+      sourceDomain,
+      imageUrl,
       publishedAt: validDate.toISOString(),
       publishedWib: formatWibDateTime(validDate),
       summary,
@@ -368,7 +430,7 @@ export async function getLiveMarketNewsServer(): Promise<LiveMarketNewsItem[]> {
     if (!norm || seenTitles.has(norm)) continue;
     seenTitles.add(norm);
     deduped.push(item);
-    if (deduped.length >= 18) break;
+    if (deduped.length >= 20) break;
   }
 
   return deduped;

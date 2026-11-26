@@ -90,6 +90,7 @@ describe("news-server RSS helpers", () => {
           <link>https://news.google.com/rss/articles/abc123</link>
           <pubDate>Wed, 25 Nov 2026 07:00:00 GMT</pubDate>
           <description><![CDATA[<ol><li><a href="https://news.google.com/rss/articles/abc123">IHSG Melemah ke 7.200 Akibat Tekanan Jual</a> <font>Kontan</font></li></ol>]]></description>
+          <source url="https://investasi.kontan.co.id">Kontan</source>
         </item>
       </channel></rss>
     `;
@@ -97,5 +98,37 @@ describe("news-server RSS helpers", () => {
     expect(items).toHaveLength(1);
     expect(items[0].summary).toBe("");
     expect(items[0].sentiment).toBe("BEARISH");
+    expect(items[0].imageUrl).toBeUndefined();
+    expect(items[0].sourceDomain).toBe("investasi.kontan.co.id");
+  });
+
+  it("extracts imageUrl from enclosure and description img tags while decoding &amp; and deriving sourceDomain", () => {
+    const cnbcAndAntaraXml = `
+      <rss version="2.0"><channel>
+        <item>
+          <title><![CDATA[Rights Issue, BSI (BRIS) Mau Terbitkan 6,8 Miliar Saham]]></title>
+          <link>https://www.cnbcindonesia.com/market/20261126-bris</link>
+          <pubDate>Thu, 26 Nov 2026 10:05:37 +0700</pubDate>
+          <enclosure length="25000" type="image/jpeg" url="https://awsimages.detik.net.id/visual/2026/10/27/bsi.jpeg?w=1200&amp;q=90"/>
+          <description><![CDATA[BRIS akan melakukan rights issue dengan menerbitkan saham baru.]]></description>
+        </item>
+        <item>
+          <title>IHSG menguat ikuti bursa Asia</title>
+          <link>https://www.antaranews.com/berita/5879347/ihsg-menguat</link>
+          <pubDate>Thu, 26 Nov 2026 10:13:47 +0700</pubDate>
+          <description><![CDATA[<img src="https://img.antaranews.com/cache/800x533/ihsg.jpg" align="left" border="0" />IHSG bergerak menguat mengikuti bursa Asia hari ini.]]></description>
+        </item>
+      </channel></rss>
+    `;
+
+    const cnbcItems = parseRssItems(cnbcAndAntaraXml, "CNBC Indonesia");
+    expect(cnbcItems).toHaveLength(2);
+    expect(cnbcItems[0].imageUrl).toBe(
+      "https://awsimages.detik.net.id/visual/2026/10/27/bsi.jpeg?w=1200&q=90"
+    );
+    expect(cnbcItems[0].sourceDomain).toBe("cnbcindonesia.com");
+    expect(cnbcItems[1].imageUrl).toBe("https://img.antaranews.com/cache/800x533/ihsg.jpg");
+    expect(cnbcItems[1].sourceDomain).toBe("antaranews.com");
+    expect(cnbcItems[1].summary).toBe("IHSG bergerak menguat mengikuti bursa Asia hari ini.");
   });
 });
