@@ -36,7 +36,6 @@ import {
   Sparkles,
   ExternalLink,
   Newspaper,
-  Loader2,
   Star,
   Target,
   GitCompareArrows,
@@ -1765,9 +1764,24 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             {provider === "yahoo" && (
               <>
                 {needsTickerNewsFetch && combinedTickerLiveNews.length === 0 ? (
-                  <div className="py-8 flex items-center justify-center space-x-2 text-slate-400">
-                    <Loader2 className="w-4 h-4 animate-spin text-[#2DD4BF]" />
-                    <span>Mencari berita terkini untuk {selectedTicker}...</span>
+                  <div className="space-y-2.5" aria-label={`Memuat berita terkait ${selectedTicker}`}>
+                    {[0, 1, 2].map((idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-xl bg-[#0C1017] border border-[#1E2736] space-y-2.5 animate-pulse"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="h-3 w-36 rounded bg-[#1A2230]" />
+                          <div className="h-3 w-16 rounded bg-[#1A2230]" />
+                        </div>
+                        <div className="h-4 w-11/12 rounded bg-[#1E2736]" />
+                        <div className="h-3 w-3/4 rounded bg-[#171F2C]" />
+                        <div className="flex items-center justify-between pt-1">
+                          <div className="h-4 w-14 rounded bg-[#1A2230]" />
+                          <div className="h-3 w-24 rounded bg-[#1A2230]" />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : combinedTickerLiveNews.length === 0 ? (
                   <div className="p-5 rounded-xl bg-[#0C1017] border border-[#1E2736] text-center text-slate-400">
