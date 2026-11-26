@@ -46,6 +46,7 @@ export function evaluateTargetBuyStatus(
 
 export type WatchlistFilterPreset =
   | "ALL"
+  | "TARGET_BUY"
   | "DIVIDEND"
   | "UNDERVALUED"
   | "PROFITABLE"
@@ -57,9 +58,13 @@ export function matchesWatchlistFilterPreset(
     peRatio: number;
     roe?: number;
     der?: number;
+    targetStatus?: TargetBuyStatusKind;
   },
   preset: WatchlistFilterPreset
 ): boolean {
+  if (preset === "TARGET_BUY") {
+    return stock.targetStatus === "hit" || stock.targetStatus === "near";
+  }
   if (preset === "DIVIDEND") return stock.dividendYield >= 5.0;
   if (preset === "UNDERVALUED") return stock.peRatio > 0 && stock.peRatio <= 12.0;
   if (preset === "PROFITABLE") return stock.roe !== undefined && stock.roe >= 18.0;

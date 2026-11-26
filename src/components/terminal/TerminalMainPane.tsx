@@ -893,10 +893,11 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
       {/* 1. TOP SECTION: PRICE CHART DENGAN LIGHTWEIGHT-CHARTS & STATUS PASAR */}
       <div className="bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg">
-        {/* Header Bar: Ticker info, Current Live Price, Market Status & Timestamps */}
-        <div className="p-4 border-b border-[#1E2736] flex flex-wrap items-center justify-between gap-3 bg-[#0E131C]">
-          <div className="flex flex-wrap items-center gap-4">
-            <div>
+        {/* Header Bar: Baris 1 (Identitas & Harga) + Baris 2 (Aksi & Status Pasar) */}
+        <div className="p-4 border-b border-[#1E2736] bg-[#0E131C] space-y-3">
+          {/* Baris 1: Identitas Emiten (Kiri) & Harga Terkini (Kanan) */}
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xl font-bold text-white tnum">
                   {stock.ticker}
@@ -904,55 +905,6 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 <span className="px-2 py-0.5 rounded text-xs font-sans bg-[#1E7B85]/20 text-slate-200 border border-[#1E7B85]/40">
                   {stock.sector}
                 </span>
-                {onToggleWatchlist && (
-                  <button
-                    type="button"
-                    onClick={() => onToggleWatchlist(selectedTicker)}
-                    disabled={!isInWatchlist && isWatchlistFull}
-                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-sans border transition disabled:opacity-50 ${
-                      isInWatchlist
-                        ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
-                        : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-amber-300 hover:border-amber-500/40"
-                    }`}
-                    title={
-                      isInWatchlist
-                        ? `Hapus ${selectedTicker} dari Watchlist Saya`
-                        : isWatchlistFull
-                        ? "Watchlist Saya penuh (maks. 15 saham)"
-                        : `Simpan ${selectedTicker} ke Watchlist Saya`
-                    }
-                  >
-                    <Star className={`w-3 h-3 ${isInWatchlist ? "fill-amber-400 text-amber-400" : ""}`} />
-                    <span>{isInWatchlist ? "Di Watchlist" : "+ Watchlist"}</span>
-                  </button>
-                )}
-                {onSaveWatchlistMeta && (
-                  <button
-                    type="button"
-                    onClick={handleToggleTargetEditor}
-                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-sans border transition ${
-                      targetBuyEval.status === "hit"
-                        ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
-                        : targetBuyEval.status === "near"
-                        ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
-                        : activeEntryMeta?.targetBuyPrice || activeEntryMeta?.note || isTargetEditorOpen
-                        ? "bg-[#1E7B85]/20 border-[#1E7B85]/50 text-[#2DD4BF]"
-                        : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-[#2DD4BF] hover:border-[#1E7B85]/50"
-                    }`}
-                    title="Atur target harga beli & catatan pribadi untuk saham ini"
-                  >
-                    <Target className="w-3 h-3" />
-                    <span>
-                      {activeEntryMeta?.targetBuyPrice
-                        ? targetBuyEval.status === "hit"
-                          ? `Area Beli ≤${formatNumber(activeEntryMeta.targetBuyPrice)}`
-                          : `Target ${formatNumber(activeEntryMeta.targetBuyPrice)}`
-                        : activeEntryMeta?.note
-                        ? "Catatan"
-                        : "Target Beli"}
-                    </span>
-                  </button>
-                )}
               </div>
               <span className="text-xs text-slate-400 block mt-0.5 font-sans">
                 {isMissingYahooTicker
@@ -961,12 +913,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               </span>
             </div>
 
-            <div className="h-7 w-px bg-[#1E2736] hidden sm:block"></div>
-
-            <div>
+            <div className="sm:text-right shrink-0">
               {activePrice > 0 ? (
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-lg font-bold text-slate-100 font-mono tnum">
+                <div className="flex items-baseline sm:justify-end space-x-2">
+                  <span className="text-xl sm:text-2xl font-bold text-slate-100 font-mono tnum">
                     {formatRupiah(quote?.price ?? stock.currentPrice)}
                   </span>
                   <span
@@ -980,25 +930,92 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-lg font-bold text-slate-400 font-mono tnum">-</span>
+                <div className="flex items-baseline sm:justify-end space-x-2">
+                  <span className="text-xl font-bold text-slate-400 font-mono tnum">-</span>
                 </div>
               )}
-              <span className="text-[11px] text-slate-400 font-sans block">
+              <span className="text-[11px] text-slate-400 font-sans block mt-0.5">
                 {provider === "yahoo" && quote && !quote.isFallback && quote.price > 0
                   ? "Harga terakhir Yahoo Finance"
                   : provider === "yahoo"
                   ? "Data harga tidak tersedia"
                   : "Harga acuan data ilustrasi"}
+                {(provider === "yahoo" && !quote?.isFallback ? quote?.lastUpdated : null) ||
+                marketStatus?.formattedTime
+                  ? ` • ${(provider === "yahoo" && !quote?.isFallback ? quote?.lastUpdated : null) || marketStatus?.formattedTime}`
+                  : ""}
               </span>
             </div>
           </div>
 
-          {/* Market Status, Data Delay Badge & Contextual AI */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <div className="flex items-center gap-2">
+          {/* Baris 2: Tombol Aksi Saham & Status Bursa */}
+          <div className="pt-2.5 border-t border-[#1A2230] flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {onToggleWatchlist && (
+                <button
+                  type="button"
+                  onClick={() => onToggleWatchlist(selectedTicker)}
+                  disabled={!isInWatchlist && isWatchlistFull}
+                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans border transition disabled:opacity-50 ${
+                    isInWatchlist
+                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                      : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-amber-300 hover:border-amber-500/40"
+                  }`}
+                  title={
+                    isInWatchlist
+                      ? `Hapus ${selectedTicker} dari Watchlist Saya`
+                      : isWatchlistFull
+                      ? "Watchlist Saya penuh (maks. 15 saham)"
+                      : `Simpan ${selectedTicker} ke Watchlist Saya`
+                  }
+                >
+                  <Star className={`w-3 h-3 ${isInWatchlist ? "fill-amber-400 text-amber-400" : ""}`} />
+                  <span>{isInWatchlist ? "Di Watchlist" : "+ Watchlist"}</span>
+                </button>
+              )}
+              {onSaveWatchlistMeta && (
+                <button
+                  type="button"
+                  onClick={handleToggleTargetEditor}
+                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans border transition ${
+                    targetBuyEval.status === "hit"
+                      ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
+                      : targetBuyEval.status === "near"
+                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                      : activeEntryMeta?.targetBuyPrice || activeEntryMeta?.note || isTargetEditorOpen
+                      ? "bg-[#1E7B85]/20 border-[#1E7B85]/50 text-[#2DD4BF]"
+                      : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-[#2DD4BF] hover:border-[#1E7B85]/50"
+                  }`}
+                  title="Atur target harga beli & catatan pribadi untuk saham ini"
+                >
+                  <Target className="w-3 h-3" />
+                  <span>
+                    {activeEntryMeta?.targetBuyPrice
+                      ? targetBuyEval.status === "hit"
+                        ? `Area Beli ≤${formatNumber(activeEntryMeta.targetBuyPrice)}`
+                        : `Target ${formatNumber(activeEntryMeta.targetBuyPrice)}`
+                      : activeEntryMeta?.note
+                      ? "Catatan"
+                      : "Target Beli"}
+                  </span>
+                </button>
+              )}
+              {onAskAiStock && (
+                <button
+                  type="button"
+                  onClick={() => onAskAiStock(selectedTicker)}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans bg-[#1E7B85]/15 hover:bg-[#1E7B85]/30 text-[#2DD4BF] border border-[#1E7B85]/40 transition"
+                  title={`Analisis AI kontekstual untuk ${selectedTicker}`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Tanya AI</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
               <div
-                className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-sans border ${
+                className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-sans border ${
                   marketStatus?.isOpen
                     ? "bg-[#2EB886]/10 border-[#2EB886]/30 text-[#2EB886]"
                     : "bg-[#1E2736]/60 border-[#283548] text-slate-400"
@@ -1017,27 +1034,9 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 </span>
               </div>
 
-              {onAskAiStock && (
-                <button
-                  type="button"
-                  onClick={() => onAskAiStock(selectedTicker)}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-sans bg-[#1E7B85]/15 hover:bg-[#1E7B85]/30 text-[#2DD4BF] border border-[#1E7B85]/40 transition"
-                  title={`Analisis AI kontekstual untuk ${selectedTicker}`}
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Tanya AI</span>
-                </button>
-              )}
-            </div>
-
-            <div className="text-[11px] text-slate-400 font-sans text-right sm:text-left">
-              {provider === "yahoo" && !quote?.isFallback ? (
-                <span>
-                  Tertunda ~10 menit &bull; {quote?.lastUpdated || marketStatus?.formattedTime}
-                </span>
-              ) : (
-                <span>
-                  {marketStatus?.formattedTime}
+              {provider === "yahoo" && !quote?.isFallback && (
+                <span className="hidden xl:inline text-[11px] text-slate-400">
+                  &bull; Tertunda ~10 menit
                 </span>
               )}
             </div>
@@ -1154,11 +1153,13 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
       {/* 2. BOTTOM SECTION: TABBED MULTI-PANEL (VALUATION, SIMULATOR, FUNDAMENTAL) */}
       <div className="bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg flex-1 flex flex-col">
-        {/* Navigation Tabs Header (Responsive Short Labels on Mobile) */}
+        {/* Navigation Tabs Header (Ringkas agar muat tanpa scroll di desktop) */}
         <div className="flex items-center overflow-x-auto terminal-scroll border-b border-[#1E2736] bg-[#0E131C] px-3">
           <button
+            type="button"
             onClick={() => setActiveTab("valuation")}
-            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+            title="Valuasi dan P/E Band"
+            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "valuation"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"
@@ -1166,12 +1167,14 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           >
             <Layers className="w-3.5 h-3.5" />
             <span className="sm:hidden">Valuasi</span>
-            <span className="hidden sm:inline">Valuasi dan P/E band</span>
+            <span className="hidden sm:inline">Valuasi &amp; P/E</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab("simulator")}
-            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+            title="Simulasi Strategi DCA"
+            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "simulator"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"
@@ -1179,33 +1182,35 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           >
             <Calculator className="w-3.5 h-3.5" />
             <span className="sm:hidden">Simulasi</span>
-            <span className="hidden sm:inline">Simulasi strategi DCA</span>
+            <span className="hidden sm:inline">Simulasi DCA</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab("fundamental")}
-            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+            title="Profil Fundamental"
+            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "fundamental"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
             <Info className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Profil</span>
-            <span className="hidden sm:inline">Profil fundamental</span>
+            <span>Profil</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab("news")}
-            className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+            title="Berita Terkait Emiten"
+            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "news"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
             <Newspaper className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Berita</span>
-            <span className="hidden sm:inline">Berita terkait</span>
+            <span>Berita</span>
             {relatedNewsBadgeCount > 0 && (
               <span className="px-1.5 py-0.2 rounded-full bg-[#1E7B85]/25 text-[#2DD4BF] font-mono text-[10px] tnum">
                 {relatedNewsBadgeCount}
@@ -1214,8 +1219,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab("compare")}
-            className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+            title="Bandingkan Saham Head-to-Head"
+            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "compare"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"

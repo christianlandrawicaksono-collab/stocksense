@@ -10,7 +10,7 @@ import {
   type WatchlistEntryMeta,
   type WatchlistFilterPreset,
 } from "@/lib/watchlist";
-import { Search, ArrowUpDown, Plus, Loader2, Star, Bookmark, Target, StickyNote } from "lucide-react";
+import { Search, ArrowUpDown, Plus, Loader2, Star, Bookmark, Target, StickyNote, X } from "lucide-react";
 import {
   MarketQuote,
   MarketProvider,
@@ -114,6 +114,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
   const [listTabPref, setListTabPref] = useState<WatchlistTab | null>(null);
   const [search, setSearch] = useState<string>("");
   const [filterPreset, setFilterPreset] = useState<WatchlistFilterPreset>("ALL");
+  const [selectedSector, setSelectedSector] = useState<string>("ALL");
   const [sortField, setSortField] = useState<SortField>("ticker");
   const [sortAsc, setSortAsc] = useState<boolean>(true);
   const [remoteState, setRemoteState] = useState<{
@@ -165,8 +166,46 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
     [activeTickers, quotes, provider]
   );
 
+  const enrichedRows = useMemo(() => {
+    return activeRows.map((row) => {
+      const entryMeta = watchlistNotes[row.ticker];
+      const targetEval = evaluateTargetBuyStatus(
+        row.hasQuoteData ? row.currentPrice : 0,
+        entryMeta?.targetBuyPrice
+      );
+      return {
+        ...row,
+        entryMeta,
+        targetEval,
+      };
+    });
+  }, [activeRows, watchlistNotes]);
+
+  const availableSectors = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of activeRows) {
+      if (row.sector && row.sector !== "Saham BEI") {
+        set.add(row.sector);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [activeRows]);
+
+  const effectiveSector =
+    selectedSector !== "ALL" && availableSectors.includes(selectedSector)
+      ? selectedSector
+      : "ALL";
+
+  const targetOpportunityCount = useMemo(
+    () =>
+      enrichedRows.filter(
+        (r) => r.targetEval.status === "hit" || r.targetEval.status === "near"
+      ).length,
+    [enrichedRows]
+  );
+
   const filteredAndSortedStocks = useMemo(() => {
-    return activeRows
+    return enrichedRows
       .filter((s) => {
         if (trimmedSearch) {
           const q = trimmedSearch.toLowerCase();
@@ -177,7 +216,14 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           if (!match) return false;
         }
 
-        return matchesWatchlistFilterPreset(s, filterPreset);
+        if (effectiveSector !== "ALL" && s.sector !== effectiveSector) {
+          return false;
+        }
+
+        return matchesWatchlistFilterPreset(
+          { ...s, targetStatus: s.targetEval.status },
+          filterPreset
+        );
       })
       .sort((a, b) => {
         const valA = a[sortField];
@@ -187,7 +233,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         }
         return sortAsc ? Number(valA) - Number(valB) : Number(valB) - Number(valA);
       });
-  }, [activeRows, trimmedSearch, filterPreset, sortField, sortAsc]);
+  }, [enrichedRows, trimmedSearch, effectiveSector, filterPreset, sortField, sortAsc]);
 
   // Hasil pencarian Yahoo eksternal yang belum ada di tab aktif saat ini
   const externalSearchResults = useMemo(() => {
@@ -313,65 +359,112 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           </div>
         )}
 
-        {/* Search input */}
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            type="text"
-            placeholder={
-              provider === "yahoo"
-                ? "Cari & tambah kode BEI ke Watchlist (mis. ACES, NSSS)..."
-                : "Cari kode saham, emiten, atau sektor..."
-            }
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#1E7B85]"
-          />
+        {/* Search input & Sector Dropdown */}
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              placeholder={
+                provider === "yahoo"
+                  ? "Cari / tambah BEI (mis. ACES)..."
+                  : "Cari kode, emiten, atau sektor..."
+              }
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-8 pr-7 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#1E7B85]"
+            />
+            {search.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Bersihkan pencarian"
+                title="Bersihkan pencarian"
+                className="p-1 absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 transition rounded"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          {availableSectors.length > 1 && (
+            <select
+              value={effectiveSector}
+              onChange={(e) => setSelectedSector(e.target.value)}
+              aria-label="Filter sektor saham"
+              title="Filter berdasarkan sektor"
+              className="max-w-[132px] px-2 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-xs text-slate-200 focus:outline-none focus:border-[#1E7B85] truncate"
+            >
+              <option value="ALL">Semua Sektor</option>
+              {availableSectors.map((sector) => (
+                <option key={sector} value={sector}>
+                  {sector}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Filter Presets Chips */}
         <div className="flex flex-wrap gap-1.5 pt-0.5">
           {[
             { id: "ALL", label: "Semua" },
+            {
+              id: "TARGET_BUY",
+              label:
+                targetOpportunityCount > 0
+                  ? `Area Beli (${targetOpportunityCount})`
+                  : "Area Beli",
+            },
             { id: "DIVIDEND", label: "Dividen > 5%" },
             { id: "UNDERVALUED", label: "P/E < 12x" },
             { id: "PROFITABLE", label: "ROE > 18%" },
             { id: "LOW_DEBT", label: "DER < 1,0x" },
-          ].map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => setFilterPreset(preset.id as WatchlistFilterPreset)}
-              className={`px-2.5 py-1 rounded text-xs transition ${
-                filterPreset === preset.id
-                  ? "bg-[#1E7B85] text-white font-medium shadow-sm"
-                  : "bg-[#171F2C] text-slate-400 hover:text-slate-200 border border-[#232F42]"
-              }`}
-            >
-              {preset.label}
-            </button>
-          ))}
+          ].map((preset) => {
+            const isTargetChip = preset.id === "TARGET_BUY";
+            const isActive = filterPreset === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => setFilterPreset(preset.id as WatchlistFilterPreset)}
+                className={`px-2 py-1 rounded text-[11px] transition inline-flex items-center gap-1 ${
+                  isActive
+                    ? isTargetChip
+                      ? "bg-[#2EB886] text-[#08120E] font-semibold shadow-sm"
+                      : "bg-[#1E7B85] text-white font-medium shadow-sm"
+                    : isTargetChip && targetOpportunityCount > 0
+                    ? "bg-[#2EB886]/15 text-[#2EB886] hover:bg-[#2EB886]/25 border border-[#2EB886]/40"
+                    : "bg-[#171F2C] text-slate-400 hover:text-slate-200 border border-[#232F42]"
+                }`}
+              >
+                {isTargetChip && <Target className="w-3 h-3 shrink-0" />}
+                <span>{preset.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Table Column Headers */}
-      <div className="grid grid-cols-12 gap-1 px-3 py-2 bg-[#0C1017] border-b border-[#1E2736] text-[11px] text-slate-400 select-none">
+      <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,0.85fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] gap-1 px-3 py-2 bg-[#0C1017] border-b border-[#1E2736] text-[11px] text-slate-400 select-none">
         <button
           onClick={() => handleSort("ticker")}
-          className="col-span-4 flex items-center space-x-1 text-left hover:text-slate-200"
+          className="flex items-center space-x-1 text-left hover:text-slate-200"
         >
           <span>Emiten</span>
           <ArrowUpDown className="w-2.5 h-2.5" />
         </button>
         <button
           onClick={() => handleSort("currentPrice")}
-          className="col-span-3 text-right flex items-center justify-end space-x-1 hover:text-slate-200"
+          className="text-right flex items-center justify-end space-x-1 hover:text-slate-200"
         >
           <span>Harga</span>
           <ArrowUpDown className="w-2.5 h-2.5" />
         </button>
         <button
           onClick={() => handleSort("change1D")}
-          className="col-span-2 text-right flex items-center justify-end space-x-0.5 hover:text-slate-200"
+          className="text-right flex items-center justify-end space-x-0.5 hover:text-slate-200"
           title={
             provider === "yahoo"
               ? "Perubahan harga hari ini (Yahoo Finance, tertunda ~10 menit)"
@@ -383,7 +476,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         </button>
         <button
           onClick={() => handleSort("peRatio")}
-          className="col-span-3 text-right flex items-center justify-end space-x-1 hover:text-slate-200"
+          className="text-right flex items-center justify-end space-x-1 hover:text-slate-200"
           title={
             provider === "yahoo"
               ? "Rasio P/E (TTM) dan Dividen Yield (Yahoo Finance)"
@@ -400,11 +493,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         {filteredAndSortedStocks.map((stock) => {
           const isSelected = selectedTicker === stock.ticker;
           const inWatchlist = watchlistSet.has(stock.ticker);
-          const entryMeta = watchlistNotes[stock.ticker];
-          const targetEval = evaluateTargetBuyStatus(
-            stock.hasQuoteData ? stock.currentPrice : 0,
-            entryMeta?.targetBuyPrice
-          );
+          const { entryMeta, targetEval } = stock;
           const isUp = stock.change1D > 0;
           const isDown = stock.change1D < 0;
 
@@ -412,13 +501,17 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
             <div
               key={stock.ticker}
               onClick={() => onSelectTicker(stock.ticker)}
-              className={`grid grid-cols-12 gap-1 px-3 py-2.5 min-h-[48px] items-center cursor-pointer transition select-none text-xs ${
+              className={`grid grid-cols-[minmax(0,1.55fr)_minmax(0,0.85fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] gap-1 px-3 py-2 min-h-[46px] items-center cursor-pointer transition select-none text-xs ${
                 isSelected
                   ? "bg-[#1E7B85]/15 border-l-2 border-[#1E7B85]"
+                  : targetEval.status === "hit"
+                  ? "bg-[#2EB886]/[0.06] hover:bg-[#2EB886]/[0.12] border-l-2 border-[#2EB886]"
+                  : targetEval.status === "near"
+                  ? "bg-amber-500/[0.04] hover:bg-[#151C2A] border-l-2 border-amber-400/70"
                   : "hover:bg-[#151C2A] border-l-2 border-transparent"
               }`}
             >
-              <div className="col-span-4 flex items-center space-x-2 min-w-0 pr-1">
+              <div className="flex items-center space-x-2 min-w-0 pr-1">
                 {onToggleWatchlist && (
                   <button
                     type="button"
@@ -449,59 +542,54 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                 )}
 
                 <div className="flex flex-col justify-center min-w-0">
-                  <div className="flex items-center space-x-1.5">
+                  <div className="flex items-center space-x-1 min-w-0">
                     <span
-                      className={`font-mono font-bold text-xs ${
+                      className={`font-mono font-bold text-xs shrink-0 ${
                         isSelected ? "text-white" : "text-slate-200"
                       }`}
                     >
                       {stock.ticker}
                     </span>
                     {!stock.isCurated && (
-                      <span className="text-[9px] font-sans px-1 py-0.2 rounded bg-[#1E7B85]/20 text-[#2DD4BF] border border-[#1E7B85]/40">
+                      <span className="text-[9px] font-sans px-1 py-0.2 rounded bg-[#1E7B85]/20 text-[#2DD4BF] border border-[#1E7B85]/40 shrink-0">
                         BEI
                       </span>
                     )}
                     {provider === "yahoo" && stock.isCurated && !stock.isLive && (
                       <span
-                        className="text-[9px] font-sans px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                        className="text-[9px] font-sans px-1 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0"
                         title="Quote Yahoo gagal diambil; menggunakan data acuan ilustrasi sementara"
                       >
                         ilus
                       </span>
                     )}
-                  </div>
-                  <span className="text-[11px] text-slate-400 truncate">
-                    {stock.name}
-                  </span>
-                  <div className="flex items-center space-x-1.5 min-w-0">
-                    <span className="text-[10px] text-slate-500 truncate">
-                      {stock.sector}
+                    <span
+                      className="text-[10px] text-slate-500 truncate min-w-0"
+                      title={stock.sector}
+                    >
+                      &middot; {stock.sector}
                     </span>
                     {entryMeta?.note && (
-                      <span title={entryMeta.note} className="shrink-0 text-slate-400">
+                      <span title={entryMeta.note} className="shrink-0 text-[#2DD4BF]/80">
                         <StickyNote className="w-2.5 h-2.5" />
                       </span>
                     )}
                   </div>
+                  <span
+                    className="text-[11px] text-slate-400 truncate leading-tight"
+                    title={`${stock.name} (${stock.sector})`}
+                  >
+                    {stock.name}
+                  </span>
                   {entryMeta?.targetBuyPrice && (
-                    <div className="mt-0.5 flex items-center space-x-1 min-w-0">
-                      <Target
-                        className={`w-2.5 h-2.5 shrink-0 ${
-                          targetEval.status === "hit"
-                            ? "text-[#2EB886]"
-                            : targetEval.status === "near"
-                            ? "text-amber-400"
-                            : "text-slate-500"
-                        }`}
-                      />
+                    <div className="mt-0.5 flex items-center min-w-0">
                       <span
-                        className={`text-[10px] font-mono tnum truncate ${
+                        className={`inline-flex items-center space-x-1 text-[10px] font-mono tnum px-1.5 py-0.2 rounded truncate ${
                           targetEval.status === "hit"
-                            ? "text-[#2EB886] font-semibold"
+                            ? "bg-[#2EB886]/20 text-[#2EB886] border border-[#2EB886]/35 font-semibold"
                             : targetEval.status === "near"
-                            ? "text-amber-400 font-medium"
-                            : "text-slate-400"
+                            ? "bg-amber-500/15 text-amber-300 border border-amber-500/30 font-medium"
+                            : "bg-[#171F2C] text-slate-400 border border-[#232F42]"
                         }`}
                         title={
                           targetEval.status === "hit"
@@ -511,18 +599,21 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                             : `Target beli: ${formatRupiah(entryMeta.targetBuyPrice)}`
                         }
                       >
-                        {targetEval.status === "hit"
-                          ? `Area Beli ≤${formatNumber(entryMeta.targetBuyPrice)}`
-                          : targetEval.status === "near"
-                          ? `Dekat ${formatNumber(entryMeta.targetBuyPrice)}`
-                          : `Beli ${formatNumber(entryMeta.targetBuyPrice)}`}
+                        <Target className="w-2.5 h-2.5 shrink-0" />
+                        <span className="truncate">
+                          {targetEval.status === "hit"
+                            ? `Area Beli ≤${formatNumber(entryMeta.targetBuyPrice)}`
+                            : targetEval.status === "near"
+                            ? `Dekat ${formatNumber(entryMeta.targetBuyPrice)}`
+                            : `Beli ${formatNumber(entryMeta.targetBuyPrice)}`}
+                        </span>
                       </span>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="col-span-3 text-right flex flex-col justify-center">
+              <div className="text-right flex flex-col justify-center">
                 <span className="font-mono font-semibold text-slate-100 text-xs tnum">
                   {stock.hasQuoteData && stock.currentPrice > 0
                     ? formatNumber(stock.currentPrice)
@@ -537,7 +628,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                 </span>
               </div>
 
-              <div className="col-span-2 text-right flex items-center justify-end">
+              <div className="text-right flex items-center justify-end">
                 {stock.hasQuoteData ? (
                   <span
                     className={`text-[11px] font-mono tnum px-1 py-0.5 rounded ${
@@ -555,7 +646,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                 )}
               </div>
 
-              <div className="col-span-3 text-right flex flex-col justify-center">
+              <div className="text-right flex flex-col justify-center">
                 <span className="font-mono text-xs text-slate-200 tnum">
                   {stock.hasQuoteData && stock.peRatio > 0
                     ? formatMultiple(stock.peRatio, 1)
@@ -659,8 +750,25 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         {filteredAndSortedStocks.length === 0 &&
           !(activeTab === "watchlist" && customWatchlist.length === 0 && !trimmedSearch) &&
           !(provider === "yahoo" && trimmedSearch.length >= 2) && (
-            <div className="p-8 text-center text-xs text-slate-500">
-              Tidak ada emiten yang sesuai kriteria filter.
+            <div className="p-8 text-center text-xs text-slate-500 space-y-2.5">
+              <p>
+                {filterPreset === "TARGET_BUY"
+                  ? "Belum ada emiten di Area Beli atau mendekati Target Beli (+5%)."
+                  : "Tidak ada emiten yang sesuai kriteria filter."}
+              </p>
+              {(filterPreset !== "ALL" || effectiveSector !== "ALL" || trimmedSearch.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterPreset("ALL");
+                    setSelectedSector("ALL");
+                    setSearch("");
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[#171F2C] hover:bg-[#1E2736] text-slate-200 border border-[#232F42] text-[11px] font-medium transition"
+                >
+                  Reset Filter
+                </button>
+              )}
             </div>
           )}
       </div>
