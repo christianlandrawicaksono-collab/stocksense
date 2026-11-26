@@ -15,12 +15,18 @@ import { STOCKS_DATA } from "@/data/stocksData";
 import {
   MAX_CUSTOM_WATCHLIST,
   addTickerToWatchlist,
+  getWatchlistNotesServerSnapshot,
   getWatchlistServerSnapshot,
   parseWatchlistJson,
+  parseWatchlistNotesJson,
+  readWatchlistNotesStorageSnapshot,
   readWatchlistStorageSnapshot,
+  saveWatchlistEntryMetaStorage,
+  subscribeWatchlistNotesStorage,
   subscribeWatchlistStorage,
   toggleTickerInWatchlist,
   writeCustomWatchlistStorage,
+  type WatchlistEntryMeta,
 } from "@/lib/watchlist";
 import type { AiArticleContext, AiMarketContext } from "@/app/api/ai/analyze/route";
 import type { LiveMarketNewsItem } from "@/types/market";
@@ -68,12 +74,21 @@ function HomeContent() {
     readWatchlistStorageSnapshot,
     getWatchlistServerSnapshot
   );
+  const watchlistNotesJson = useSyncExternalStore(
+    subscribeWatchlistNotesStorage,
+    readWatchlistNotesStorageSnapshot,
+    getWatchlistNotesServerSnapshot
+  );
   const isHydrated = useSyncExternalStore(
     emptySubscribe,
     () => true,
     () => false
   );
   const customWatchlist = useMemo(() => parseWatchlistJson(watchlistJson), [watchlistJson]);
+  const watchlistNotes = useMemo(
+    () => parseWatchlistNotesJson(watchlistNotesJson),
+    [watchlistNotesJson]
+  );
   const isWatchlistFull = customWatchlist.length >= MAX_CUSTOM_WATCHLIST;
 
   const {
@@ -107,6 +122,16 @@ function HomeContent() {
     const updated = toggleTickerInWatchlist(customWatchlist, ticker);
     if (updated !== customWatchlist) {
       writeCustomWatchlistStorage(updated);
+    }
+  };
+
+  const handleSaveWatchlistMeta = (ticker: string, meta: WatchlistEntryMeta | null) => {
+    saveWatchlistEntryMetaStorage(ticker, meta);
+    if (meta && (meta.targetBuyPrice || meta.note) && !customWatchlist.includes(ticker)) {
+      const updated = addTickerToWatchlist(customWatchlist, ticker);
+      if (updated !== customWatchlist) {
+        writeCustomWatchlistStorage(updated);
+      }
     }
   };
 
@@ -375,6 +400,7 @@ function HomeContent() {
                 quotes={quotes}
                 provider={provider}
                 customWatchlist={customWatchlist}
+                watchlistNotes={watchlistNotes}
                 onToggleWatchlist={handleToggleWatchlist}
                 onAddToWatchlist={handleAddToWatchlist}
                 maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
@@ -421,11 +447,21 @@ function HomeContent() {
                     buildLiveNewsArticleContext(item)
                   );
                 }}
+                onAskAiCompare={(tickers) => {
+                  setActiveLiveNewsForAi(null);
+                  runAiAnalysis(
+                    `Bandingkan saham ${tickers.join(" vs ")} dari sisi valuasi P/E, PBV, Dividend Yield, ROE, DER, dan prospek risikonya.`
+                  );
+                }}
                 onCustomAiMetrics={setCustomAiMetrics}
                 isInWatchlist={customWatchlist.includes(selectedTicker)}
                 isWatchlistFull={isWatchlistFull}
                 onToggleWatchlist={handleToggleWatchlist}
                 quote={quotes[selectedTicker]}
+                allQuotes={quotes}
+                customWatchlist={customWatchlist}
+                watchlistNotes={watchlistNotes}
+                onSaveWatchlistMeta={handleSaveWatchlistMeta}
                 provider={provider}
                 marketStatus={marketStatus}
               />

@@ -38,6 +38,7 @@ describe("chart-prefs & history range helpers", () => {
       showMa20: true,
       showMa50: "bad",
       showFairValue: true,
+      showTargetBuy: false,
       timeframe: "6Bl",
     });
 
@@ -47,6 +48,7 @@ describe("chart-prefs & history range helpers", () => {
       showMa20: true,
       showMa50: false,
       showFairValue: true,
+      showTargetBuy: false,
       timeframe: "6Bl",
     });
 

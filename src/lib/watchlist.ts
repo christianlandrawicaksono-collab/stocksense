@@ -1,6 +1,48 @@
 export const CUSTOM_WATCHLIST_STORAGE_KEY = "stocksense:custom-watchlist:v1";
+export const WATCHLIST_NOTES_STORAGE_KEY = "stocksense:watchlist-notes:v1";
 export const MAX_CUSTOM_WATCHLIST = 15;
 export const MAX_NEWS_WATCHLIST_ENRICHMENT = 5;
+export const MAX_WATCHLIST_NOTE_LENGTH = 120;
+
+export interface WatchlistEntryMeta {
+  targetBuyPrice?: number;
+  note?: string;
+}
+
+export type TargetBuyStatusKind = "hit" | "near" | "above" | "none";
+
+export interface TargetBuyEvaluation {
+  status: TargetBuyStatusKind;
+  diffPercent: number;
+}
+
+/**
+ * Evaluates current market price against user-defined target buy price.
+ * "hit" when currentPrice <= targetBuyPrice; "near" within +5% above target.
+ */
+export function evaluateTargetBuyStatus(
+  currentPrice: number,
+  targetBuyPrice?: number
+): TargetBuyEvaluation {
+  if (
+    !Number.isFinite(currentPrice) ||
+    currentPrice <= 0 ||
+    !targetBuyPrice ||
+    !Number.isFinite(targetBuyPrice) ||
+    targetBuyPrice <= 0
+  ) {
+    return { status: "none", diffPercent: 0 };
+  }
+
+  const diffPercent = ((currentPrice - targetBuyPrice) / targetBuyPrice) * 100;
+  if (currentPrice <= targetBuyPrice) {
+    return { status: "hit", diffPercent };
+  }
+  if (currentPrice <= targetBuyPrice * 1.05) {
+    return { status: "near", diffPercent };
+  }
+  return { status: "above", diffPercent };
+}
 
 export type WatchlistFilterPreset =
   | "ALL"
@@ -144,4 +186,112 @@ export function writeCustomWatchlistStorage(tickers: string[]): string[] {
   }
   notifyWatchlistListeners();
   return sanitized;
+}
+
+// --- Client-side localStorage store for Watchlist Target Buy Price & Notes ---
+export function sanitizeWatchlistNotes(raw: unknown): Record<string, WatchlistEntryMeta> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result: Record<string, WatchlistEntryMeta> = {};
+
+  for (const [rawKey, rawVal] of Object.entries(raw as Record<string, unknown>)) {
+    const ticker = normalizeIdxTicker(rawKey);
+    if (!ticker || !rawVal || typeof rawVal !== "object" || Array.isArray(rawVal)) continue;
+
+    const entry = rawVal as Record<string, unknown>;
+    const rawPrice = entry.targetBuyPrice;
+    const targetBuyPrice =
+      typeof rawPrice === "number" && Number.isFinite(rawPrice) && rawPrice > 0
+        ? Math.round(rawPrice)
+        : undefined;
+    const rawNote = typeof entry.note === "string" ? entry.note.trim().slice(0, MAX_WATCHLIST_NOTE_LENGTH) : "";
+    const note = rawNote.length > 0 ? rawNote : undefined;
+
+    if (targetBuyPrice !== undefined || note !== undefined) {
+      result[ticker] = {
+        ...(targetBuyPrice !== undefined ? { targetBuyPrice } : {}),
+        ...(note !== undefined ? { note } : {}),
+      };
+    }
+  }
+
+  return result;
+}
+
+export function parseWatchlistNotesJson(
+  rawJson: string | null | undefined
+): Record<string, WatchlistEntryMeta> {
+  if (!rawJson) return {};
+  try {
+    return sanitizeWatchlistNotes(JSON.parse(rawJson));
+  } catch {
+    return {};
+  }
+}
+
+const notesListeners = new Set<() => void>();
+
+function notifyNotesListeners() {
+  for (const listener of notesListeners) {
+    listener();
+  }
+}
+
+export function readWatchlistNotesStorageSnapshot(): string {
+  if (typeof window === "undefined") return "{}";
+  try {
+    return window.localStorage.getItem(WATCHLIST_NOTES_STORAGE_KEY) || "{}";
+  } catch {
+    return "{}";
+  }
+}
+
+export function getWatchlistNotesServerSnapshot(): string {
+  return "{}";
+}
+
+export function subscribeWatchlistNotesStorage(listener: () => void): () => void {
+  notesListeners.add(listener);
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === WATCHLIST_NOTES_STORAGE_KEY) {
+      listener();
+    }
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", handleStorage);
+  }
+
+  return () => {
+    notesListeners.delete(listener);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("storage", handleStorage);
+    }
+  };
+}
+
+export function saveWatchlistEntryMetaStorage(
+  rawTicker: string,
+  meta: WatchlistEntryMeta | null
+): Record<string, WatchlistEntryMeta> {
+  const ticker = normalizeIdxTicker(rawTicker);
+  const current = parseWatchlistNotesJson(readWatchlistNotesStorageSnapshot());
+  if (!ticker) return current;
+
+  const cleaned = meta ? sanitizeWatchlistNotes({ [ticker]: meta })[ticker] : undefined;
+  const next = { ...current };
+  if (cleaned) {
+    next[ticker] = cleaned;
+  } else {
+    delete next[ticker];
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(WATCHLIST_NOTES_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+  notifyNotesListeners();
+  return next;
 }

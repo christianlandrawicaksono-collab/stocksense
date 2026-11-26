@@ -38,6 +38,7 @@ interface LightweightPriceChartProps {
   changePercent?: number;
   lastUpdated?: string;
   fairValuePrice?: number;
+  targetBuyPrice?: number;
   error?: string | null;
   onRetry?: () => void;
 }
@@ -80,6 +81,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   currentPrice,
   lastUpdated,
   fairValuePrice,
+  targetBuyPrice,
   error,
   onRetry,
 }) => {
@@ -95,7 +97,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     () => parseChartPreferencesJson(chartPrefsJson),
     [chartPrefsJson]
   );
-  const { chartType, showVolume, showMa20, showMa50, showFairValue } = chartPrefs;
+  const { chartType, showVolume, showMa20, showMa50, showFairValue, showTargetBuy } = chartPrefs;
   const isWeeklyTimeframe = timeframe === "5Th" || timeframe === "Semua";
   const [hoverData, setHoverData] = useState<{
     time: string;
@@ -319,6 +321,18 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       });
     }
 
+    // Garis horizontal Target Harga Beli Pribadi (Watchlist)
+    if (showTargetBuy && targetBuyPrice && targetBuyPrice > 0) {
+      series.createPriceLine({
+        price: targetBuyPrice,
+        color: "#2EB886",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "Target Beli",
+      });
+    }
+
     // Pasang penanda dividen (markers) titik oranye tanpa teks di atas grafik
     const dividendMarkers: SeriesMarker<Time>[] = [];
     for (const p of sortedPoints) {
@@ -395,7 +409,9 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     showMa20,
     showMa50,
     showFairValue,
+    showTargetBuy,
     fairValuePrice,
+    targetBuyPrice,
     priceConsistency.isConsistent,
   ]);
 
@@ -504,6 +520,20 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
                 title={`Garis target harga wajar P/E Mean (${formatRupiah(fairValuePrice)})`}
               >
                 Wajar
+              </button>
+            )}
+            {targetBuyPrice && targetBuyPrice > 0 && (
+              <button
+                type="button"
+                onClick={() => updateChartPreferencesStorage({ showTargetBuy: !showTargetBuy })}
+                className={`px-2 py-1 rounded text-[11px] font-sans border transition ${
+                  showTargetBuy
+                    ? "bg-[#2EB886]/15 border-[#2EB886]/60 text-[#2EB886]"
+                    : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
+                }`}
+                title={`Garis Target Harga Beli pribadi (${formatRupiah(targetBuyPrice)})`}
+              >
+                Target
               </button>
             )}
           </div>
