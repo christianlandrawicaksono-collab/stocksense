@@ -35,6 +35,32 @@
   background: #2E3B52;
 }
 
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .news-tabs-fade {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black 0%,
+      black calc(100% - 22px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      black 0%,
+      black calc(100% - 22px),
+      transparent 100%
+    );
+  }
+}
+
 /* Focus styles for accessibility */
 :focus-visible {
   outline: 2px solid #1E7B85;

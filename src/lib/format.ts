@@ -212,3 +212,47 @@ export function formatNewsCategoryLabel(category: string): string {
       return "Makroekonomi";
   }
 }
+
+/**
+ * Mengembalikan kunci tanggal kalender YYYY-MM-DD pada zona waktu Asia/Jakarta.
+ */
+export function getJakartaDateKey(date: Date): string {
+  if (isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(date);
+}
+
+/**
+ * Memformat stempel waktu berita agar lebih ringkas untuk berita hari ini di WIB.
+ */
+export function formatNewsTimestamp(
+  publishedAt: string,
+  publishedWib: string,
+  todayWibKey?: string,
+  compact: boolean = false
+): string {
+  if (!publishedAt) return publishedWib;
+  const parsed = new Date(publishedAt);
+  if (isNaN(parsed.getTime())) return publishedWib;
+
+  if (todayWibKey && getJakartaDateKey(parsed) === todayWibKey) {
+    const timePart = new Intl.DateTimeFormat("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Jakarta",
+    })
+      .format(parsed)
+      .replace(":", ".");
+    return compact ? `${timePart} WIB` : `Hari ini, ${timePart} WIB`;
+  }
+
+  if (compact && publishedWib) {
+    return publishedWib.replace(/\s+\d{4},/, ",");
+  }
+  return publishedWib;
+}

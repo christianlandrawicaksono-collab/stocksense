@@ -370,8 +370,8 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
               aria-label="Cari kode saham atau emiten"
               placeholder={
                 provider === "yahoo"
-                  ? "Cari / tambah BEI (mis. ACES)..."
-                  : "Cari kode, emiten, atau sektor..."
+                  ? "Cari kode BEI..."
+                  : "Cari saham / sektor..."
               }
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -413,18 +413,19 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         {/* Filter Presets Chips */}
         <div className="flex flex-wrap gap-1.5 pt-0.5">
           {[
-            { id: "ALL", label: "Semua" },
+            { id: "ALL", label: "Semua", title: "Tampilkan semua saham" },
             {
               id: "TARGET_BUY",
               label:
                 targetOpportunityCount > 0
                   ? `Area Beli (${targetOpportunityCount})`
                   : "Area Beli",
+              title: "Saham di Area Beli atau mendekati Target Beli (+5%)",
             },
-            { id: "DIVIDEND", label: "Dividen > 5%" },
-            { id: "UNDERVALUED", label: "P/E < 12x" },
-            { id: "PROFITABLE", label: "ROE > 18%" },
-            { id: "LOW_DEBT", label: "DER < 1,0x" },
+            { id: "DIVIDEND", label: "Div > 5%", title: "Dividen Yield ≥ 5%" },
+            { id: "UNDERVALUED", label: "P/E < 12", title: "Rasio P/E ≤ 12x" },
+            { id: "PROFITABLE", label: "ROE > 18%", title: "Return on Equity ≥ 18%" },
+            { id: "LOW_DEBT", label: "DER < 1", title: "Debt to Equity Ratio ≤ 1,0x" },
           ].map((preset) => {
             const isTargetChip = preset.id === "TARGET_BUY";
             const isActive = filterPreset === preset.id;
@@ -432,6 +433,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
               <button
                 key={preset.id}
                 type="button"
+                title={preset.title}
                 onClick={() => setFilterPreset(preset.id as WatchlistFilterPreset)}
                 className={`px-2 py-1 rounded text-[11px] transition inline-flex items-center gap-1 ${
                   isActive
