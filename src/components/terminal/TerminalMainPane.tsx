@@ -623,6 +623,19 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   const relatedNewsBadgeCount =
     provider === "yahoo" ? combinedTickerLiveNews.length : matchedScenarioNews.length;
 
+  const isMissingYahooTicker = Boolean(
+    provider === "yahoo" &&
+      !hasCuratedBands &&
+      !isHistoryLoading &&
+      (!quote || quote.isFallback || quote.price <= 0) &&
+      activePrice <= 0 &&
+      Boolean(historyError)
+  );
+
+  const effectiveHistoryError = isMissingYahooTicker
+    ? `Kode "${selectedTicker}" tidak ditemukan di Bursa Efek Indonesia / Yahoo Finance.`
+    : historyError;
+
   return (
     <div className="flex flex-col space-y-4 font-sans">
       {/* Origin News Banner (if navigated from curated scenario or live RSS news) */}
@@ -715,30 +728,40 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 </span>
               </div>
               <span className="text-xs text-slate-400 block mt-0.5 font-sans">
-                {stock.name}
+                {isMissingYahooTicker
+                  ? "Emiten tidak terdaftar di BEI / Yahoo Finance"
+                  : stock.name}
               </span>
             </div>
 
             <div className="h-7 w-px bg-[#1E2736] hidden sm:block"></div>
 
             <div>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-lg font-bold text-slate-100 font-mono tnum">
-                  {formatRupiah(quote?.price ?? stock.currentPrice)}
-                </span>
-                <span
-                  className={`text-xs font-medium px-1.5 py-0.5 rounded font-mono tnum ${
-                    (quote?.changePercent ?? stock.change1D) >= 0
-                      ? "text-[#2EB886] bg-[#2EB886]/10"
-                      : "text-[#DC525F] bg-[#DC525F]/10"
-                  }`}
-                >
-                  {formatPersen(quote?.changePercent ?? stock.change1D, 1, true)}
-                </span>
-              </div>
+              {activePrice > 0 ? (
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-lg font-bold text-slate-100 font-mono tnum">
+                    {formatRupiah(quote?.price ?? stock.currentPrice)}
+                  </span>
+                  <span
+                    className={`text-xs font-medium px-1.5 py-0.5 rounded font-mono tnum ${
+                      (quote?.changePercent ?? stock.change1D) >= 0
+                        ? "text-[#2EB886] bg-[#2EB886]/10"
+                        : "text-[#DC525F] bg-[#DC525F]/10"
+                    }`}
+                  >
+                    {formatPersen(quote?.changePercent ?? stock.change1D, 1, true)}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-lg font-bold text-slate-400 font-mono tnum">-</span>
+                </div>
+              )}
               <span className="text-[11px] text-slate-400 font-sans block">
-                {provider === "yahoo" && !quote?.isFallback
+                {provider === "yahoo" && quote && !quote.isFallback && quote.price > 0
                   ? "Harga terakhir Yahoo Finance"
+                  : provider === "yahoo"
+                  ? "Data harga tidak tersedia"
                   : "Harga acuan data ilustrasi"}
               </span>
             </div>
@@ -807,7 +830,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           changePercent={quote?.changePercent ?? stock.change1D}
           lastUpdated={quote?.lastUpdated || marketStatus?.formattedTime}
           fairValuePrice={targetMeanPrice}
-          error={historyError}
+          error={effectiveHistoryError}
           onRetry={handleRetry}
         />
       </div>

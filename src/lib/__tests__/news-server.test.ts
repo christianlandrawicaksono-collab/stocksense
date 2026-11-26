@@ -34,6 +34,14 @@ describe("news-server RSS helpers", () => {
       "Unilever, Bank Jago, dan Amman Mineral menopang rotasi sektor dengan Vale Indonesia";
     const companyTickers = extractIdxTickersFromText(companyText);
     expect(companyTickers).toEqual(expect.arrayContaining(["UNVR", "ARTO", "AMMN", "INCO"]));
+
+    const acronymText =
+      "Rencana Kerja dan Anggaran Perusahaan (RKAP) BUMN bahas penyertaan modal (PMN) serta standar (PSAK) dan PT Nusantara Sawit Sejahtera Tbk (NSSS)";
+    const acronymTickers = extractIdxTickersFromText(acronymText);
+    expect(acronymTickers).toEqual(["NSSS"]);
+    expect(acronymTickers).not.toContain("RKAP");
+    expect(acronymTickers).not.toContain("PMN");
+    expect(acronymTickers).not.toContain("PSAK");
   });
 
   it("categorizes macroeconomic, regulatory, and commodity news accurately", () => {

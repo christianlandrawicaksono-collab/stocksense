@@ -96,14 +96,18 @@ const COMPANY_NAME_TICKERS: [RegExp, string][] = [
 ];
 
 const NON_TICKER_CAPS = new Set([
-  "IHSG", "BEI", "IDX", "OJK", "BI", "BUMN", "APBN", "APBD", "DPR", "DPRD", "RI",
+  "IHSG", "BEI", "IDX", "OJK", "BI", "BUMN", "BUMD", "APBN", "APBD", "DPR", "DPRD", "RI",
   "USD", "IDR", "EUR", "JPY", "SGD", "CNY", "THE", "FED", "DPK", "KPR",
-  "KUR", "PPN", "PPH", "IPO", "RUPS", "LPSK", "KPK", "BPJS", "PLN", "IKN",
-  "CEO", "CFO", "ETF", "RDN", "TBK", "PT", "CV", "TMT", "HUT", "YOY", "QOQ",
-  "EBITDA", "CPO", "LNG", "LPG", "BBM", "PLTU", "ESDM", "KSEI", "KPEI",
+  "KUR", "PPN", "PPH", "IPO", "RUPS", "RKAP", "PMN", "PSAK", "IFRS", "SOFR",
+  "TKDN", "KLHK", "KPPU", "LPDP", "LPSK", "KPK", "BPJS", "BPKH", "LPS", "PLN", "IKN",
+  "CEO", "CFO", "ETF", "RDN", "TBK", "PT", "CV", "TMT", "HUT", "YOY", "QOQ", "YTD", "MTD", "QTQ",
+  "EBITDA", "CPO", "LNG", "LPG", "BBM", "PLTU", "PLTS", "PLTB", "PSEL", "SPBU",
+  "ESDM", "KSEI", "KPEI", "DMO", "KBLI", "BAPP",
   "LQ45", "IDX30", "MSCI", "FTSE", "FOMC", "GDP", "PDB", "PMK", "UU",
   "WIB", "WITA", "UMKM", "BRIN", "BPOM", "BMKG", "BNPB", "OPEC", "NATO", "APEC", "OECD",
+  "LRT", "MRT", "KRL", "PDAM", "PNS", "ASN", "TNI", "KPI", "SOP", "MOU", "NDA",
   "HSBC", "OCBC", "CIMB", "LIVE", "NEWS", "INFO", "FOTO", "DATA",
+  "NPL", "NIM", "ROA", "ROE", "PER", "PBV", "EPS", "NAV", "AUM",
   "BANK", "DANA", "LABA", "RUGI", "CASA", "CAGR", "ATAS", "BARU", "DARI", "YANG",
   "AKAN", "BISA", "JADI", "UNTUK", "SAAT", "LAGI", "TURUN", "NAIK", "JUAL", "BELI",
   "RIBU", "JUTA", "RP", "HARI", "KINI", "SAMA", "LAIN", "MANA", "PADA", "OLEH",
@@ -148,11 +152,22 @@ export function extractIdxTickersFromText(text: string): string[] {
     }
   }
 
-  // Tangkap pola eksplisit "saham XXXX" / "emiten XXXX" / "(XXXX)" dengan kandidat wajib KAPITAL
-  const explicitPattern =
-    /(?:[sS][aA][hH][aA][mM]|[eE][mM][iI][tT][eE][nN]|\()\s*([A-Z]{4})(?:\.JK)?(?=\s|\)|,|;|\.|$)/g;
+  // Tangkap pola eksplisit "saham XXXX" / "emiten XXXX" dengan kandidat wajib KAPITAL
+  const explicitKeywordPattern =
+    /(?:[sS][aA][hH][aA][mM]|[eE][mM][iI][tT][eE][nN])\s+([A-Z]{4})(?:\.JK)?(?=\s|\)|,|;|\.|$)/g;
   let match: RegExpExecArray | null;
-  while ((match = explicitPattern.exec(text)) !== null) {
+  while ((match = explicitKeywordPattern.exec(text)) !== null) {
+    const candidate = match[1];
+    if (/^[A-Z]{4}$/.test(candidate) && !NON_TICKER_CAPS.has(candidate)) {
+      found.add(candidate);
+    }
+  }
+
+  // Tangkap pola kurung berkonteks perusahaan: "PT ... (XXXX)" atau "... Tbk (XXXX)"
+  // Mencegah singkatan umum dalam kurung seperti "(RKAP)", "(PMN)", "(TKDN)" terbaca sebagai ticker
+  const corporateParenPattern =
+    /(?:PT\s+[^()\n]{2,50}|Tbk\.?)\s*\(([A-Z]{4})(?:\.JK)?\)/g;
+  while ((match = corporateParenPattern.exec(text)) !== null) {
     const candidate = match[1];
     if (/^[A-Z]{4}$/.test(candidate) && !NON_TICKER_CAPS.has(candidate)) {
       found.add(candidate);
