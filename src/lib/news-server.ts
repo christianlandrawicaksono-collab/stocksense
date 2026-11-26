@@ -4,6 +4,7 @@
  */
 
 import { LiveMarketNewsItem, LiveNewsCategory, SentimentType } from "@/types/market";
+import { filterNewsByTicker } from "./news-brief";
 import { fetchRssTextCached } from "./yahoo-cache";
 
 const RSS_FEEDS = [
@@ -398,6 +399,19 @@ export function parseRssItems(xml: string, defaultPublisher: string): LiveMarket
   return items;
 }
 
+function filterTickerRelevantServer(items: LiveMarketNewsItem[], ticker: string): LiveMarketNewsItem[] {
+  const baseMatched = new Set(filterNewsByTicker(items, ticker).map((i) => i.id));
+  const matchingCompanyPatterns = COMPANY_NAME_TICKERS.filter(([, code]) => code === ticker).map(
+    ([pattern]) => pattern
+  );
+
+  return items.filter((item) => {
+    if (baseMatched.has(item.id)) return true;
+    const text = `${item.title} ${item.summary}`;
+    return matchingCompanyPatterns.some((pattern) => pattern.test(text));
+  });
+}
+
 /**
  * Mengambil dan menggabungkan berita pasar modal Indonesia terkini dari RSS publik.
  */
@@ -431,6 +445,46 @@ export async function getLiveMarketNewsServer(): Promise<LiveMarketNewsItem[]> {
     seenTitles.add(norm);
     deduped.push(item);
     if (deduped.length >= 20) break;
+  }
+
+  return deduped;
+}
+
+/**
+ * Mengambil berita pasar modal spesifik untuk satu emiten IDX (menggabungkan feed utama & query Google News emiten).
+ */
+export async function getTickerNewsServer(rawTicker: string): Promise<LiveMarketNewsItem[]> {
+  const ticker = rawTicker.trim().toUpperCase();
+  if (!/^[A-Z]{4}$/.test(ticker)) return [];
+
+  const tickerFeedUrl = `https://news.google.com/rss/search?q=saham+${encodeURIComponent(
+    ticker
+  )}+BEI+when:30d&hl=id&gl=ID&ceid=ID:id`;
+
+  const [mainRes, tickerRes] = await Promise.allSettled([
+    getLiveMarketNewsServer(),
+    fetchRssTextCached(tickerFeedUrl).then((xml) => parseRssItems(xml, "Google News IDX")),
+  ]);
+
+  const fromMain =
+    mainRes.status === "fulfilled" ? filterTickerRelevantServer(mainRes.value, ticker) : [];
+  const fromQuery =
+    tickerRes.status === "fulfilled" ? filterTickerRelevantServer(tickerRes.value, ticker) : [];
+
+  const combined = [...fromMain, ...fromQuery];
+  combined.sort((a, b) => (a.publishedAt > b.publishedAt ? -1 : 1));
+
+  const deduped: LiveMarketNewsItem[] = [];
+  const seenTitles = new Set<string>();
+
+  for (const item of combined) {
+    const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 42);
+    if (!norm || seenTitles.has(norm)) continue;
+    seenTitles.add(norm);
+    deduped.push(
+      item.tickers.includes(ticker) ? item : { ...item, tickers: [ticker, ...item.tickers].slice(0, 5) }
+    );
+    if (deduped.length >= 10) break;
   }
 
   return deduped;

@@ -10,7 +10,9 @@ import {
   categorizeNewsItem,
   analyzeNewsSentiment,
   parseRssItems,
+  getTickerNewsServer,
 } from "@/lib/news-server";
+import { fetchRssTextCached } from "@/lib/yahoo-cache";
 
 describe("news-server RSS helpers", () => {
   it("decodes HTML entities and strips CDATA/HTML tags cleanly", () => {
@@ -130,5 +132,38 @@ describe("news-server RSS helpers", () => {
     expect(cnbcItems[1].imageUrl).toBe("https://img.antaranews.com/cache/800x533/ihsg.jpg");
     expect(cnbcItems[1].sourceDomain).toBe("antaranews.com");
     expect(cnbcItems[1].summary).toBe("IHSG bergerak menguat mengikuti bursa Asia hari ini.");
+  });
+
+  it("merges main feed matches and ticker-specific RSS items in getTickerNewsServer", async () => {
+    const mockedFetch = vi.mocked(fetchRssTextCached);
+    mockedFetch.mockImplementation(async (url: string) => {
+      if (url.includes("saham+UNVR")) {
+        return `
+          <rss version="2.0"><channel>
+            <item>
+              <title>Unilever Indonesia Bagikan Dividen Interim - Kontan</title>
+              <link>https://news.google.com/rss/articles/unvr-div</link>
+              <pubDate>Thu, 26 Nov 2026 04:00:00 GMT</pubDate>
+              <description><![CDATA[Emiten barang konsumsi UNVR membagikan dividen.]]></description>
+            </item>
+          </channel></rss>
+        `;
+      }
+      return `
+        <rss version="2.0"><channel>
+          <item>
+            <title>IHSG Menguat Tipis Jelang Penutupan</title>
+            <link>https://www.cnbcindonesia.com/market/ihsg-tipis</link>
+            <pubDate>Thu, 26 Nov 2026 05:00:00 GMT</pubDate>
+            <description><![CDATA[Indeks bergerak di zona hijau.]]></description>
+          </item>
+        </channel></rss>
+      `;
+    });
+
+    const results = await getTickerNewsServer("UNVR");
+    expect(results).toHaveLength(1);
+    expect(results[0].title).toBe("Unilever Indonesia Bagikan Dividen Interim");
+    expect(results[0].tickers).toContain("UNVR");
   });
 });

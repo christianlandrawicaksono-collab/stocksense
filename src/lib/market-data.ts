@@ -325,15 +325,20 @@ export async function getStockProfile(ticker: string): Promise<StockProfileData 
 }
 
 /**
- * Mengambil berita pasar modal Indonesia terkini (RSS CNBC Indonesia & Google News IDX)
+ * Mengambil berita pasar modal Indonesia terkini (RSS CNBC Indonesia, ANTARA Ekonomi & Google News IDX)
+ * atau berita spesifik per emiten apabila parameter ticker diberikan.
  */
-export async function getLiveMarketNews(): Promise<{
+export async function getLiveMarketNews(ticker?: string): Promise<{
   provider: MarketProvider;
   items: LiveMarketNewsItem[];
   isFallback: boolean;
 }> {
   try {
-    const res = await fetch("/api/news", {
+    const cleanTicker = ticker?.trim().toUpperCase() || "";
+    const url = cleanTicker
+      ? `/api/news?ticker=${encodeURIComponent(cleanTicker)}`
+      : "/api/news";
+    const res = await fetch(url, {
       method: "GET",
       cache: "no-store",
     });
@@ -356,5 +361,43 @@ export async function getLiveMarketNews(): Promise<{
       items: [],
       isFallback: true,
     };
+  }
+}
+
+export interface LiveMarketBriefResponse {
+  brief: {
+    headline: string;
+    summary: string;
+    sentimentCounts: { bullish: number; bearish: number; neutral: number };
+    dominantCategory: string;
+    topTickers: string[];
+    source: "deterministic" | "gemini";
+    model?: string | null;
+  } | null;
+  warning?: string;
+}
+
+export async function getLiveMarketBriefAi(
+  items: LiveMarketNewsItem[],
+  macroTickers: MarketTickerItem[],
+  customApiKey?: string
+): Promise<LiveMarketBriefResponse> {
+  try {
+    const res = await fetch("/api/news/brief", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: items.slice(0, 12),
+        macroTickers,
+        customApiKey: customApiKey?.trim() || undefined,
+      }),
+    });
+    if (!res.ok) {
+      return { brief: null, warning: `HTTP ${res.status}` };
+    }
+    return (await res.json()) as LiveMarketBriefResponse;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { brief: null, warning: msg };
   }
 }

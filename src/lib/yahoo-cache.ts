@@ -6,6 +6,8 @@
 
 import { cacheLife } from "next/cache";
 import YahooFinance from "yahoo-finance2";
+import { generateWithGeminiFallback } from "./gemini-client";
+import { buildMarketBriefPrompt } from "./news-brief";
 
 const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
@@ -163,4 +165,30 @@ export async function fetchRssTextCached(url: string): Promise<string> {
     throw new Error(`Empty RSS body for ${url}`);
   }
   return text;
+}
+
+export async function fetchGeminiMarketBriefCached(
+  headlinesDigest: string,
+  macroDigest: string
+): Promise<{ summary: string; model: string }> {
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 1800 });
+
+  const serverApiKey = process.env.GEMINI_API_KEY?.trim() || "";
+  if (!serverApiKey) {
+    throw new Error("GEMINI_API_KEY is not configured");
+  }
+
+  const prompt = buildMarketBriefPrompt(headlinesDigest, macroDigest);
+
+  const result = await generateWithGeminiFallback(
+    [{ role: "user", parts: [{ text: prompt }] }],
+    serverApiKey
+  );
+
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+
+  return { summary: result.text, model: result.model };
 }

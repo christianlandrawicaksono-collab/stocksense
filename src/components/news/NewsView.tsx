@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { MACRO_NEWS_DATA, MACRO_MARKET_SUMMARY } from "@/data/macroData";
 import {
   LiveMarketNewsItem,
@@ -9,10 +9,11 @@ import {
   MarketTickerItem,
   SentimentType,
 } from "@/types/market";
-import { getLiveMarketNews, MarketProvider } from "@/lib/market-data";
+import { MarketProvider } from "@/lib/market-data";
 import { formatNewsCategoryLabel } from "@/lib/format";
+import { buildLiveMarketBrief, type LiveMarketBrief } from "@/lib/news-brief";
 import { MarketTicker } from "@/components/layout/MarketTicker";
-import { Search, Sparkles, ExternalLink, RotateCcw } from "lucide-react";
+import { Search, Sparkles, ExternalLink, RotateCcw, Bookmark } from "lucide-react";
 
 // 9 Saham yang memiliki data kurasi lengkap di mode ilustrasi
 export const SUPPORTED_TERMINAL_TICKERS = new Set([
@@ -22,17 +23,6 @@ export const SUPPORTED_TERMINAL_TICKERS = new Set([
 type NewsSourceTab = "live" | "scenario";
 type NewsFilterCategory = MacroCategory | "CORPORATE";
 type NewsFilterSentiment = "ALL" | SentimentType;
-
-function formatCurrentWibClock(): string {
-  const clock = new Intl.DateTimeFormat("id-ID", {
-    timeZone: "Asia/Jakarta",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    hourCycle: "h23",
-  }).format(new Date());
-  return `${clock} WIB`;
-}
 
 function renderSentimentText(sentiment: SentimentType) {
   switch (sentiment) {
@@ -295,6 +285,15 @@ interface NewsViewProps {
   macroTickers?: MarketTickerItem[];
   isMacroFallback?: boolean;
   isMacroLoading?: boolean;
+  liveNewsItems?: LiveMarketNewsItem[];
+  isLiveNewsLoading?: boolean;
+  liveNewsUpdatedAtWib?: string;
+  onRefreshLiveNews?: () => void;
+  watchlistTickers?: string[];
+  aiMarketBrief?: LiveMarketBrief | null;
+  aiBriefNotice?: string | null;
+  isAiBriefLoading?: boolean;
+  onRequestAiBrief?: (items: LiveMarketNewsItem[], macroTickers: MarketTickerItem[]) => void;
 }
 
 export const NewsView: React.FC<NewsViewProps> = ({
@@ -304,9 +303,18 @@ export const NewsView: React.FC<NewsViewProps> = ({
   onAskAiArticle,
   onAskAiLiveNews,
   provider = "illustrative",
-  macroTickers,
+  macroTickers = [],
   isMacroFallback = false,
   isMacroLoading = false,
+  liveNewsItems = [],
+  isLiveNewsLoading = false,
+  liveNewsUpdatedAtWib = "",
+  onRefreshLiveNews,
+  watchlistTickers = [],
+  aiMarketBrief = null,
+  aiBriefNotice = null,
+  isAiBriefLoading = false,
+  onRequestAiBrief,
 }) => {
   const [sourceTabPref, setSourceTabPref] = useState<NewsSourceTab | null>(null);
   const activeSourceTab: NewsSourceTab =
@@ -315,63 +323,24 @@ export const NewsView: React.FC<NewsViewProps> = ({
   const [selectedPeriod, setSelectedPeriod] = useState<"1W" | "1M">("1W");
   const [selectedCategory, setSelectedCategory] = useState<NewsFilterCategory>("ALL");
   const [selectedSentiment, setSelectedSentiment] = useState<NewsFilterSentiment>("ALL");
+  const [onlyWatchlist, setOnlyWatchlist] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [localArticleId, setLocalArticleId] = useState<string | null>(propArticleId);
   const [isMarketSummaryExpanded, setIsMarketSummaryExpanded] = useState<boolean>(false);
   const [showAllLiveSidebar, setShowAllLiveSidebar] = useState<boolean>(false);
 
-  const [liveNewsState, setLiveNewsState] = useState<{
-    fetched: boolean;
-    items: LiveMarketNewsItem[];
-    updatedAtWib: string;
-  }>({ fetched: false, items: [], updatedAtWib: "" });
-  const [liveRetryCount, setLiveRetryCount] = useState<number>(0);
-
-  const isLiveNewsLoading =
-    provider === "yahoo" && activeSourceTab === "live" && !liveNewsState.fetched;
-
   const handleRetryLiveNews = useCallback(() => {
     setShowAllLiveSidebar(false);
-    setLiveNewsState((prev) => ({ ...prev, fetched: false }));
-    setLiveRetryCount((c) => c + 1);
-  }, []);
+    onRefreshLiveNews?.();
+  }, [onRefreshLiveNews]);
 
   const resetFilters = useCallback(() => {
     setSelectedCategory("ALL");
     setSelectedSentiment("ALL");
+    setOnlyWatchlist(false);
     setSearchQuery("");
     setShowAllLiveSidebar(false);
   }, []);
-
-  useEffect(() => {
-    if (provider !== "yahoo" || activeSourceTab !== "live") return;
-    if (liveNewsState.fetched) return;
-
-    let cancelled = false;
-    getLiveMarketNews()
-      .then((res) => {
-        if (!cancelled) {
-          setLiveNewsState({
-            fetched: true,
-            items: res.items,
-            updatedAtWib: formatCurrentWibClock(),
-          });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLiveNewsState((prev) => ({
-            fetched: true,
-            items: prev.items,
-            updatedAtWib: prev.updatedAtWib,
-          }));
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [provider, activeSourceTab, liveNewsState.fetched, liveRetryCount]);
 
   const activeArticleId = onOpenArticle ? propArticleId : localArticleId;
   const setActiveArticle = (id: string | null) => {
@@ -388,14 +357,42 @@ export const NewsView: React.FC<NewsViewProps> = ({
       : SUPPORTED_TERMINAL_TICKERS.has(ticker);
   };
 
+  const watchlistSet = useMemo(
+    () => new Set(watchlistTickers.map((t) => t.trim().toUpperCase()).filter(Boolean)),
+    [watchlistTickers]
+  );
+
   const hasActiveFilters =
-    selectedCategory !== "ALL" || selectedSentiment !== "ALL" || searchQuery.trim().length > 0;
+    selectedCategory !== "ALL" ||
+    selectedSentiment !== "ALL" ||
+    onlyWatchlist ||
+    searchQuery.trim().length > 0;
+
+  const liveWatchlistCount = useMemo(() => {
+    if (watchlistSet.size === 0) return 0;
+    return liveNewsItems.filter((item) => item.tickers.some((t) => watchlistSet.has(t))).length;
+  }, [liveNewsItems, watchlistSet]);
+
+  const scenarioWatchlistCount = useMemo(() => {
+    if (watchlistSet.size === 0) return 0;
+    return MACRO_NEWS_DATA.filter(
+      (item) =>
+        item.period === selectedPeriod &&
+        item.sectorImpacts.some((sec) => sec.tickers.some((t) => watchlistSet.has(t)))
+    ).length;
+  }, [selectedPeriod, watchlistSet]);
+
+  const activeWatchlistMatchCount =
+    activeSourceTab === "live" ? liveWatchlistCount : scenarioWatchlistCount;
 
   const filteredLiveNews = useMemo(() => {
-    return liveNewsState.items.filter((item) => {
+    return liveNewsItems.filter((item) => {
       if (selectedCategory !== "ALL" && item.category !== selectedCategory) return false;
       if (selectedSentiment !== "ALL" && (item.sentiment || "NEUTRAL") !== selectedSentiment) {
         return false;
+      }
+      if (onlyWatchlist && watchlistSet.size > 0) {
+        if (!item.tickers.some((t) => watchlistSet.has(t))) return false;
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -407,7 +404,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
       }
       return true;
     });
-  }, [liveNewsState.items, selectedCategory, selectedSentiment, searchQuery]);
+  }, [liveNewsItems, selectedCategory, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]);
 
   const filteredScenarioNews = useMemo(() => {
     return MACRO_NEWS_DATA.filter((item) => {
@@ -421,6 +418,12 @@ export const NewsView: React.FC<NewsViewProps> = ({
       }
       if (selectedSentiment !== "ALL" && item.marketSentiment !== selectedSentiment) {
         return false;
+      }
+      if (onlyWatchlist && watchlistSet.size > 0) {
+        const matchesWatchlist = item.sectorImpacts.some((sec) =>
+          sec.tickers.some((t) => watchlistSet.has(t))
+        );
+        if (!matchesWatchlist) return false;
       }
 
       if (searchQuery.trim()) {
@@ -436,7 +439,13 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
       return true;
     });
-  }, [selectedPeriod, selectedCategory, selectedSentiment, searchQuery]);
+  }, [selectedPeriod, selectedCategory, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]);
+
+  const deterministicBrief = useMemo(
+    () => buildLiveMarketBrief(liveNewsItems, macroTickers),
+    [liveNewsItems, macroTickers]
+  );
+  const activeBrief = aiMarketBrief || deterministicBrief;
 
   const activeArticle = useMemo(() => {
     if (!activeArticleId) return null;
@@ -738,6 +747,83 @@ export const NewsView: React.FC<NewsViewProps> = ({
             />
           )}
 
+          {activeSourceTab === "live" && liveNewsItems.length > 0 && (
+            <div className="rounded-lg border border-[#E5E5DC] bg-[#F3F3ED]/60 px-3.5 py-3 space-y-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar hari ini</span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
+                      activeBrief.source === "gemini"
+                        ? "bg-[#1E7B85]/10 text-[#1E7B85] border-[#1E7B85]/30"
+                        : "bg-[#EFEFEA] text-[#5A6068] border-[#D8D8CF]"
+                    }`}
+                  >
+                    {activeBrief.source === "gemini"
+                      ? `Ringkasan AI (${activeBrief.model || "flash"})`
+                      : "Sintesis otomatis"}
+                  </span>
+                  <span className="text-[11px] text-[#5A6068] tnum">
+                    {activeBrief.sentimentCounts.bullish} positif &bull;{" "}
+                    {activeBrief.sentimentCounts.bearish} negatif &bull;{" "}
+                    {activeBrief.sentimentCounts.neutral} netral
+                  </span>
+                </div>
+
+                {onRequestAiBrief && activeBrief.source !== "gemini" && (
+                  <button
+                    type="button"
+                    onClick={() => onRequestAiBrief(liveNewsItems, macroTickers)}
+                    disabled={isAiBriefLoading}
+                    className="min-h-[32px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1E7B85] border border-[#D8D8CF] font-medium transition disabled:opacity-60"
+                  >
+                    <Sparkles className={`w-3 h-3 ${isAiBriefLoading ? "animate-pulse" : ""}`} />
+                    <span>{isAiBriefLoading ? "Meringkas..." : "Ringkas dengan AI"}</span>
+                  </button>
+                )}
+              </div>
+
+              <div
+                className={`text-xs sm:text-sm text-[#3E4349] leading-relaxed ${
+                  !isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""
+                }`}
+              >
+                {activeBrief.summary}
+              </div>
+
+              {activeBrief.topTickers.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-[#5A6068]">
+                  <span>Banyak disorot:</span>
+                  <div className="flex flex-wrap items-center gap-1 font-mono tnum">
+                    {activeBrief.topTickers.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => onSelectStockFromNews(t, "", activeBrief.headline)}
+                        className="px-1.5 py-0.5 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D8D8CF] font-semibold transition"
+                        title={`Buka ${t} di Terminal`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {aiBriefNotice && (
+                <p className="text-[11px] text-[#7A8088]">{aiBriefNotice}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsMarketSummaryExpanded(!isMarketSummaryExpanded)}
+                className="sm:hidden text-xs text-[#1E7B85] hover:underline font-medium min-h-[36px] inline-flex items-center"
+              >
+                {isMarketSummaryExpanded ? "Tutup ringkasan" : "Selengkapnya"}
+              </button>
+            </div>
+          )}
+
           {activeSourceTab === "scenario" && (
             <div className="text-xs sm:text-sm text-[#3E4349] leading-relaxed border-b border-[#E5E5DC] pb-3">
               <div className={!isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""}>
@@ -787,7 +873,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                   <span className="w-2 h-2 rounded-full bg-[#2EB886] shrink-0"></span>
                   <span>
                     CNBC, ANTARA &amp; Google News BEI ({filteredLiveNews.length} berita)
-                    {liveNewsState.updatedAtWib ? ` • Diperbarui ${liveNewsState.updatedAtWib}` : ""}
+                    {liveNewsUpdatedAtWib ? ` • Diperbarui ${liveNewsUpdatedAtWib}` : ""}
                   </span>
                   <button
                     type="button"
@@ -849,47 +935,68 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 ))}
               </div>
 
-              <div className="flex items-center bg-[#EFEFEA] p-0.5 rounded-lg border border-[#D8D8CF] text-[11px]">
-                {[
-                  { id: "ALL", label: "Semua sentimen" },
-                  { id: "BULLISH", label: "Positif" },
-                  { id: "BEARISH", label: "Negatif" },
-                ].map((opt) => (
+              <div className="flex flex-wrap items-center gap-2">
+                {watchlistSet.size > 0 && (
                   <button
-                    key={opt.id}
                     type="button"
                     onClick={() => {
-                      setSelectedSentiment(opt.id as NewsFilterSentiment);
+                      setOnlyWatchlist((prev) => !prev);
                       setShowAllLiveSidebar(false);
                     }}
-                    className={`min-h-[32px] px-2.5 py-1 rounded-md font-medium transition ${
-                      selectedSentiment === opt.id
-                        ? "bg-[#1E7B85] text-white shadow-sm"
-                        : "text-[#5A6068] hover:text-[#1A1C1E]"
+                    className={`min-h-[34px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition ${
+                      onlyWatchlist
+                        ? "bg-[#1E7B85] text-white border-[#1E7B85] shadow-sm"
+                        : "bg-[#EFEFEA] text-[#5A6068] hover:text-[#1A1C1E] border-[#D8D8CF]"
                     }`}
+                    title="Saring berita yang menyebut saham di watchlist Terminal"
                   >
-                    {opt.label}
+                    <Bookmark className="w-3 h-3" />
+                    <span>Watchlist saya ({activeWatchlistMatchCount})</span>
                   </button>
-                ))}
+                )}
+
+                <div className="flex items-center bg-[#EFEFEA] p-0.5 rounded-lg border border-[#D8D8CF] text-[11px]">
+                  {[
+                    { id: "ALL", label: "Semua sentimen" },
+                    { id: "BULLISH", label: "Positif" },
+                    { id: "BEARISH", label: "Negatif" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSentiment(opt.id as NewsFilterSentiment);
+                        setShowAllLiveSidebar(false);
+                      }}
+                      className={`min-h-[32px] px-2.5 py-1 rounded-md font-medium transition ${
+                        selectedSentiment === opt.id
+                          ? "bg-[#1E7B85] text-white shadow-sm"
+                          : "text-[#5A6068] hover:text-[#1A1C1E]"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
           {/* KONTEN TAB 1: BERITA PASAR TERKINI (RSS NYATA) */}
           {activeSourceTab === "live" ? (
-            isLiveNewsLoading && liveNewsState.items.length === 0 ? (
+            isLiveNewsLoading && liveNewsItems.length === 0 ? (
               <div className="py-12 text-center text-xs text-[#5A6068] animate-pulse">
                 Mengambil berita pasar modal Indonesia terkini...
               </div>
             ) : filteredLiveNews.length === 0 ? (
               <div className="py-12 text-center space-y-3 text-xs text-[#5A6068]">
                 <p>
-                  {liveNewsState.items.length === 0
+                  {liveNewsItems.length === 0
                     ? "Berita pasar terkini belum dapat dimuat dari sumber RSS saat ini."
                     : "Tidak ada berita terkini yang cocok dengan filter pencarian Anda."}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
-                  {liveNewsState.items.length === 0 ? (
+                  {liveNewsItems.length === 0 ? (
                     <button
                       type="button"
                       onClick={handleRetryLiveNews}

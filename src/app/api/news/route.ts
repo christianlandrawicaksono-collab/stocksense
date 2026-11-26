@@ -1,9 +1,17 @@
-import { NextResponse, connection } from "next/server";
-import { getLiveMarketNewsServer } from "@/lib/news-server";
+import { NextRequest, NextResponse, connection } from "next/server";
+import { getLiveMarketNewsServer, getTickerNewsServer } from "@/lib/news-server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   await connection();
   const providerEnv = process.env.MARKET_DATA_PROVIDER || "illustrative";
+  const rawTicker = request.nextUrl.searchParams.get("ticker")?.trim().toUpperCase() || "";
+
+  if (rawTicker && !/^[A-Z]{4}$/.test(rawTicker)) {
+    return NextResponse.json(
+      { error: "Kode saham IDX harus terdiri dari 4 huruf kapital." },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   if (providerEnv !== "yahoo") {
     return NextResponse.json(
@@ -18,10 +26,13 @@ export async function GET() {
   }
 
   try {
-    const items = await getLiveMarketNewsServer();
+    const items = rawTicker
+      ? await getTickerNewsServer(rawTicker)
+      : await getLiveMarketNewsServer();
     return NextResponse.json(
       {
         provider: "yahoo",
+        ticker: rawTicker || undefined,
         items,
         isFallback: items.length === 0,
         timestamp: new Date().toISOString(),
