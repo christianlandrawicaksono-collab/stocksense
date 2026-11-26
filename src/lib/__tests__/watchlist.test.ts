@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CUSTOM_WATCHLIST,
   addTickerToWatchlist,
+  matchesWatchlistFilterPreset,
   normalizeIdxTicker,
   parseWatchlistJson,
   removeTickerFromWatchlist,
@@ -50,5 +51,24 @@ describe("watchlist helpers", () => {
       (_, i) => `AAA${String.fromCharCode(65 + i)}`
     );
     expect(addTickerToWatchlist(full, "BBCA")).toBe(full);
+  });
+
+  it("evaluates screener filter presets accurately including custom ROE and DER values", () => {
+    const customStrong = { dividendYield: 5.5, peRatio: 10.2, roe: 21.4, der: 0.45 };
+    const customMissingFundamentals = {
+      dividendYield: 2.0,
+      peRatio: 18.0,
+      roe: undefined,
+      der: undefined,
+    };
+
+    expect(matchesWatchlistFilterPreset(customStrong, "ALL")).toBe(true);
+    expect(matchesWatchlistFilterPreset(customStrong, "DIVIDEND")).toBe(true);
+    expect(matchesWatchlistFilterPreset(customStrong, "UNDERVALUED")).toBe(true);
+    expect(matchesWatchlistFilterPreset(customStrong, "PROFITABLE")).toBe(true);
+    expect(matchesWatchlistFilterPreset(customStrong, "LOW_DEBT")).toBe(true);
+
+    expect(matchesWatchlistFilterPreset(customMissingFundamentals, "PROFITABLE")).toBe(false);
+    expect(matchesWatchlistFilterPreset(customMissingFundamentals, "LOW_DEBT")).toBe(false);
   });
 });

@@ -2,6 +2,29 @@ export const CUSTOM_WATCHLIST_STORAGE_KEY = "stocksense:custom-watchlist:v1";
 export const MAX_CUSTOM_WATCHLIST = 15;
 export const MAX_NEWS_WATCHLIST_ENRICHMENT = 5;
 
+export type WatchlistFilterPreset =
+  | "ALL"
+  | "DIVIDEND"
+  | "UNDERVALUED"
+  | "PROFITABLE"
+  | "LOW_DEBT";
+
+export function matchesWatchlistFilterPreset(
+  stock: {
+    dividendYield: number;
+    peRatio: number;
+    roe?: number;
+    der?: number;
+  },
+  preset: WatchlistFilterPreset
+): boolean {
+  if (preset === "DIVIDEND") return stock.dividendYield >= 5.0;
+  if (preset === "UNDERVALUED") return stock.peRatio > 0 && stock.peRatio <= 12.0;
+  if (preset === "PROFITABLE") return stock.roe !== undefined && stock.roe >= 18.0;
+  if (preset === "LOW_DEBT") return stock.der !== undefined && stock.der >= 0 && stock.der <= 1.0;
+  return true;
+}
+
 const WATCHLIST_TICKER_RE = /^[A-Z]{4}$/;
 
 /**

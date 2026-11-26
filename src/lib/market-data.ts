@@ -53,6 +53,34 @@ export interface MarketQuote {
   dividendYield?: number;
   marketCapTrillion?: number;
   financialCurrency?: string;
+  sector?: string;
+  roe?: number;
+  der?: number;
+}
+
+const YAHOO_SECTOR_LABELS: Record<string, string> = {
+  "financial services": "Keuangan",
+  financials: "Keuangan",
+  "consumer defensive": "Konsumer Primer",
+  "consumer staples": "Konsumer Primer",
+  "consumer cyclical": "Konsumer Siklikal",
+  "consumer discretionary": "Konsumer Siklikal",
+  energy: "Energi",
+  "basic materials": "Bahan Baku & Tambang",
+  materials: "Bahan Baku & Tambang",
+  "communication services": "Telekomunikasi & Media",
+  industrials: "Industri",
+  healthcare: "Kesehatan",
+  "real estate": "Properti & Real Estat",
+  technology: "Teknologi",
+  utilities: "Utilitas",
+};
+
+export function localizeYahooSector(rawSector?: string | null): string | undefined {
+  if (!rawSector) return undefined;
+  const trimmed = rawSector.trim();
+  if (!trimmed) return undefined;
+  return YAHOO_SECTOR_LABELS[trimmed.toLowerCase()] || trimmed;
 }
 
 export interface MarketHistoryPoint {
@@ -166,6 +194,9 @@ export function getIllustrativeQuotesMap(tickers?: string[]): Record<string, Mar
       dividendYield: s.dividendYield,
       marketCapTrillion: s.marketCapTrillion,
       financialCurrency: "IDR",
+      sector: s.sector,
+      roe: s.roe,
+      der: s.der,
     };
   }
   return result;

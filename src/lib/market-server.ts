@@ -6,7 +6,7 @@
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus } from "./market-hours";
-import { normalizeHistoryRange, sliceIllustrativeSeries } from "./market-data";
+import { localizeYahooSector, normalizeHistoryRange, sliceIllustrativeSeries } from "./market-data";
 import { formatDesimal, formatNumber } from "./format";
 import {
   fetchYahooQuotesCached,
@@ -51,6 +51,9 @@ export interface ServerQuoteItem {
   dividendYield?: number;
   marketCapTrillion?: number;
   financialCurrency?: string;
+  sector?: string;
+  roe?: number;
+  der?: number;
 }
 
 export interface ServerHistoryPoint {
@@ -121,8 +124,16 @@ interface CacheEntry<T> {
 const QUOTE_CACHE_TTL_MS = 60 * 1000;
 const HISTORY_CACHE_TTL_MS = 60 * 1000;
 const MACRO_CACHE_TTL_MS = 60 * 1000;
+const PROFILE_SUMMARY_TTL_MS = 15 * 60 * 1000;
+
+interface ProfileSummaryMeta {
+  sector?: string;
+  roe?: number;
+  der?: number;
+}
 
 const quotesCache = new Map<string, CacheEntry<ServerQuoteItem>>();
+const profileSummaryCache = new Map<string, CacheEntry<ProfileSummaryMeta>>();
 const historyCache = new Map<string, CacheEntry<ServerHistoryPoint[]>>();
 let macroCache: CacheEntry<MarketTickerItem[]> | null = null;
 let usdIdrCache: CacheEntry<number> | null = null;
@@ -170,6 +181,9 @@ export function getIllustrativeQuote(ticker: string): ServerQuoteItem | null {
     dividendYield: stock.dividendYield,
     marketCapTrillion: stock.marketCapTrillion,
     financialCurrency: "IDR",
+    sector: stock.sector,
+    roe: stock.roe,
+    der: stock.der,
   };
 }
 
@@ -324,7 +338,7 @@ export async function getBatchQuotesServer(
         const rawMcap = readPositiveNum(qRec, "marketCap");
         const marketCapTrillion = rawMcap ? rawMcap / 1e12 : undefined;
 
-        const item: ServerQuoteItem = {
+          const item: ServerQuoteItem = {
           ticker: cleanTicker,
           name: readStr(qRec, "shortName") || readStr(qRec, "longName") || stockMeta?.name || cleanTicker,
           price,
@@ -341,10 +355,50 @@ export async function getBatchQuotesServer(
           dividendYield,
           marketCapTrillion,
           financialCurrency,
+          sector: stockMeta?.sector,
+          roe: stockMeta?.roe,
+          der: stockMeta?.der,
         };
         quotesCache.set(cleanTicker, { data: item, cachedAt: now });
         result[cleanTicker] = item;
       }
+    }
+
+    // Enrich non-curated custom tickers with sector, ROE, and DER (15m cache + Next cache)
+    const customToEnrich = Object.values(result)
+      .filter((item) => !STOCKS_DATA.some((s) => s.ticker === item.ticker))
+      .filter((item) => {
+        const cachedMeta = profileSummaryCache.get(item.ticker);
+        if (cachedMeta && now - cachedMeta.cachedAt < PROFILE_SUMMARY_TTL_MS) {
+          item.sector = cachedMeta.data.sector;
+          item.roe = cachedMeta.data.roe;
+          item.der = cachedMeta.data.der;
+          quotesCache.set(item.ticker, { data: item, cachedAt: now });
+          return false;
+        }
+        return true;
+      })
+      .slice(0, 10);
+
+    if (customToEnrich.length > 0) {
+      const profileResults = await Promise.allSettled(
+        customToEnrich.map((item) => fetchYahooProfileCached(`${item.ticker}.JK`))
+      );
+      profileResults.forEach((res, idx) => {
+        const target = customToEnrich[idx];
+        if (res.status === "fulfilled" && res.value) {
+          const meta: ProfileSummaryMeta = {
+            sector: localizeYahooSector(res.value.sector),
+            roe: res.value.roe,
+            der: res.value.der,
+          };
+          profileSummaryCache.set(target.ticker, { data: meta, cachedAt: now });
+          target.sector = meta.sector;
+          target.roe = meta.roe;
+          target.der = meta.der;
+          quotesCache.set(target.ticker, { data: target, cachedAt: now });
+        }
+      });
     }
   } catch (error) {
     console.error("[MarketServer] Failed to fetch quotes from Yahoo Finance:", error);
@@ -642,7 +696,7 @@ export async function searchIdxStocksServer(
         combined.push({
           ticker: item.symbol,
           name: item.name,
-          sector: item.sector,
+          sector: localizeYahooSector(item.sector),
           isDefaultWatchlist: false,
         });
       }
@@ -766,7 +820,7 @@ export async function getStockProfileServer(
   return {
     ticker: q.ticker,
     name: q.name,
-    sector: profileMeta.sector || "Bursa Efek Indonesia",
+    sector: localizeYahooSector(profileMeta.sector) || "Bursa Efek Indonesia",
     subsector: profileMeta.industry || "Saham Tercatat BEI",
     hasCuratedBands: false,
     isLive: true,

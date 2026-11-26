@@ -160,6 +160,7 @@ function HomeContent() {
           ticker,
           sector:
             s?.sector ||
+            q?.sector ||
             (customAiMetrics?.ticker === ticker && customAiMetrics.sector) ||
             "Saham BEI",
           price,
@@ -192,7 +193,11 @@ function HomeContent() {
           ? {
               ticker: curatedMeta?.ticker || selectedTicker,
               name: curatedMeta?.name || activeQuote?.name || selectedTicker,
-              sector: curatedMeta?.sector || customMetrics?.sector || "Bursa Efek Indonesia",
+              sector:
+                curatedMeta?.sector ||
+                activeQuote?.sector ||
+                customMetrics?.sector ||
+                "Bursa Efek Indonesia",
               price: activePrice,
               changePercent: activeQuote?.changePercent ?? curatedMeta?.change1D ?? 0,
               peRatio: activePe,
@@ -200,8 +205,8 @@ function HomeContent() {
               targetMeanPrice,
               pbvRatio: activePbv,
               dividendYield: activeDiv,
-              roe: curatedMeta?.roe ?? customMetrics?.roe,
-              der: curatedMeta?.der ?? customMetrics?.der,
+              roe: curatedMeta?.roe ?? activeQuote?.roe ?? customMetrics?.roe,
+              der: curatedMeta?.der ?? activeQuote?.der ?? customMetrics?.der,
               isLive,
               isCurated: Boolean(curatedMeta),
               strengths: curatedMeta?.strengths ?? [],
