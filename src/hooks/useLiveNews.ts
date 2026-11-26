@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   getLiveMarketBriefAi,
   getLiveMarketNews,
   MarketProvider,
 } from "@/lib/market-data";
+import { MAX_NEWS_WATCHLIST_ENRICHMENT, sanitizeWatchlistTickers } from "@/lib/watchlist";
 import type { LiveMarketBrief } from "@/lib/news-brief";
 import type { LiveMarketNewsItem, MarketTickerItem } from "@/types/market";
 
@@ -20,29 +21,43 @@ function formatCurrentWibClock(): string {
   return `${clock} WIB`;
 }
 
-export function useLiveNews(provider: MarketProvider) {
+export function useLiveNews(
+  provider: MarketProvider,
+  watchlistTickers: string[] = [],
+  isWatchlistReady: boolean = true
+) {
+  const enrichedWatchlist = useMemo(
+    () => sanitizeWatchlistTickers(watchlistTickers, MAX_NEWS_WATCHLIST_ENRICHMENT),
+    [watchlistTickers]
+  );
+  const watchlistKey = enrichedWatchlist.join(",");
+
   const [newsState, setNewsState] = useState<{
-    fetched: boolean;
+    fetchedKey: string | null;
     items: LiveMarketNewsItem[];
     updatedAtWib: string;
-  }>({ fetched: false, items: [], updatedAtWib: "" });
-  const [retryCount, setRetryCount] = useState<number>(0);
+  }>({ fetchedKey: null, items: [], updatedAtWib: "" });
+  const [refreshNonce, setRefreshNonce] = useState<number>(0);
 
   const [aiBrief, setAiBrief] = useState<LiveMarketBrief | null>(null);
   const [aiBriefNotice, setAiBriefNotice] = useState<string | null>(null);
   const [isAiBriefLoading, setIsAiBriefLoading] = useState<boolean>(false);
 
-  const isLoading = provider === "yahoo" && !newsState.fetched;
+  const requestKey = `${watchlistKey}#${refreshNonce}`;
+  const isLoading =
+    provider === "yahoo" && (!isWatchlistReady || newsState.fetchedKey !== requestKey);
 
   useEffect(() => {
-    if (provider !== "yahoo" || newsState.fetched) return;
+    if (provider !== "yahoo" || !isWatchlistReady || newsState.fetchedKey === requestKey) {
+      return;
+    }
 
     let cancelled = false;
-    getLiveMarketNews()
+    getLiveMarketNews(undefined, enrichedWatchlist)
       .then((res) => {
         if (!cancelled) {
           setNewsState({
-            fetched: true,
+            fetchedKey: requestKey,
             items: res.items,
             updatedAtWib: formatCurrentWibClock(),
           });
@@ -51,7 +66,7 @@ export function useLiveNews(provider: MarketProvider) {
       .catch(() => {
         if (!cancelled) {
           setNewsState((prev) => ({
-            fetched: true,
+            fetchedKey: requestKey,
             items: prev.items,
             updatedAtWib: prev.updatedAtWib,
           }));
@@ -61,13 +76,12 @@ export function useLiveNews(provider: MarketProvider) {
     return () => {
       cancelled = true;
     };
-  }, [provider, newsState.fetched, retryCount]);
+  }, [provider, isWatchlistReady, requestKey, newsState.fetchedKey, enrichedWatchlist]);
 
   const refresh = useCallback(() => {
-    setNewsState((prev) => ({ ...prev, fetched: false }));
     setAiBrief(null);
     setAiBriefNotice(null);
-    setRetryCount((c) => c + 1);
+    setRefreshNonce((c) => c + 1);
   }, []);
 
   const requestAiBrief = useCallback(
@@ -97,7 +111,7 @@ export function useLiveNews(provider: MarketProvider) {
 
   return {
     items: newsState.items,
-    fetched: newsState.fetched,
+    fetched: isWatchlistReady && newsState.fetchedKey === requestKey,
     isLoading,
     updatedAtWib: newsState.updatedAtWib,
     refresh,

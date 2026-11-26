@@ -81,7 +81,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
-  const [chartType, setChartType] = useState<ChartType>("line");
+  const [chartType, setChartType] = useState<ChartType>("candle");
   const [showVolume, setShowVolume] = useState<boolean>(true);
   const [showMa20, setShowMa20] = useState<boolean>(false);
   const [showMa50, setShowMa50] = useState<boolean>(false);

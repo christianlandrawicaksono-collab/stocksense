@@ -5,6 +5,7 @@
 
 import { LiveMarketNewsItem, LiveNewsCategory, SentimentType } from "@/types/market";
 import { filterNewsByTicker } from "./news-brief";
+import { MAX_NEWS_WATCHLIST_ENRICHMENT, sanitizeWatchlistTickers } from "./watchlist";
 import { fetchRssTextCached } from "./yahoo-cache";
 
 const RSS_FEEDS = [
@@ -427,6 +428,63 @@ function filterTickerRelevantServer(items: LiveMarketNewsItem[], ticker: string)
   });
 }
 
+function normalizeTitleDedupeKey(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 42);
+}
+
+/**
+ * Mengurutkan berita terbaru dan menggabungkan duplikat judul sambil menyatukan daftar ticker-nya.
+ */
+function dedupeAndSortNews(items: LiveMarketNewsItem[], maxItems?: number): LiveMarketNewsItem[] {
+  const sorted = [...items].sort((a, b) => (a.publishedAt > b.publishedAt ? -1 : 1));
+  const deduped: LiveMarketNewsItem[] = [];
+  const byKey = new Map<string, number>();
+
+  for (const item of sorted) {
+    const key = normalizeTitleDedupeKey(item.title);
+    if (!key) continue;
+
+    const existingIdx = byKey.get(key);
+    if (existingIdx !== undefined) {
+      const existing = deduped[existingIdx];
+      const mergedTickers = Array.from(new Set([...existing.tickers, ...item.tickers])).slice(0, 6);
+      deduped[existingIdx] = {
+        ...existing,
+        imageUrl: existing.imageUrl || item.imageUrl,
+        summary: existing.summary || item.summary,
+        tickers: mergedTickers,
+      };
+      continue;
+    }
+
+    if (maxItems !== undefined && deduped.length >= maxItems) continue;
+    byKey.set(key, deduped.length);
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
+/**
+ * Mengambil berita Google News RSS khusus untuk satu kode emiten IDX tanpa memicu ulang feed utama.
+ */
+async function fetchSingleTickerFeedServer(
+  ticker: string,
+  maxItems: number = 5
+): Promise<LiveMarketNewsItem[]> {
+  const tickerFeedUrl = `https://news.google.com/rss/search?q=saham+${encodeURIComponent(
+    ticker
+  )}+BEI+when:30d&hl=id&gl=ID&ceid=ID:id`;
+
+  const xml = await fetchRssTextCached(tickerFeedUrl);
+  const parsed = filterTickerRelevantServer(parseRssItems(xml, "Google News IDX"), ticker);
+  return dedupeAndSortNews(parsed, maxItems).map((item) =>
+    item.tickers.includes(ticker)
+      ? item
+      : { ...item, tickers: [ticker, ...item.tickers].slice(0, 6) }
+  );
+}
+
 /**
  * Mengambil dan menggabungkan berita pasar modal Indonesia terkini dari RSS publik.
  */
@@ -449,20 +507,43 @@ export async function getLiveMarketNewsServer(): Promise<LiveMarketNewsItem[]> {
     return [];
   }
 
-  // Urutkan terbaru terlebih dahulu, lalu deduplikasi berdasarkan awalan judul
-  combined.sort((a, b) => (a.publishedAt > b.publishedAt ? -1 : 1));
-  const deduped: LiveMarketNewsItem[] = [];
-  const seenTitles = new Set<string>();
+  return dedupeAndSortNews(combined, 20);
+}
 
-  for (const item of combined) {
-    const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 42);
-    if (!norm || seenTitles.has(norm)) continue;
-    seenTitles.add(norm);
-    deduped.push(item);
-    if (deduped.length >= 20) break;
+/**
+ * Menggabungkan 20 berita pasar utama dengan berita spesifik untuk daftar emiten watchlist (maks 5 ticker)
+ * sehingga berita watchlist selalu kaya tanpa menghilangkan berita pasar di luar watchlist.
+ */
+export async function getLiveMarketNewsWithWatchlistServer(
+  rawWatchlistTickers: string[] = []
+): Promise<LiveMarketNewsItem[]> {
+  const watchlist = sanitizeWatchlistTickers(rawWatchlistTickers, MAX_NEWS_WATCHLIST_ENRICHMENT);
+  if (watchlist.length === 0) {
+    return getLiveMarketNewsServer();
   }
 
-  return deduped;
+  const [mainRes, ...tickerResults] = await Promise.allSettled([
+    getLiveMarketNewsServer(),
+    ...watchlist.map((t) => fetchSingleTickerFeedServer(t, 4)),
+  ]);
+
+  const generalItems = mainRes.status === "fulfilled" ? mainRes.value : [];
+  const generalKeys = new Set(generalItems.map((item) => normalizeTitleDedupeKey(item.title)));
+
+  const extraWatchlistItems: LiveMarketNewsItem[] = [];
+  for (const res of tickerResults) {
+    if (res.status === "fulfilled") {
+      extraWatchlistItems.push(...res.value);
+    }
+  }
+
+  // Merge ticker tags onto general items if they overlap, and cap purely-extra items so general news stays intact
+  const extraOnly = dedupeAndSortNews(
+    extraWatchlistItems.filter((item) => !generalKeys.has(normalizeTitleDedupeKey(item.title))),
+    15
+  );
+
+  return dedupeAndSortNews([...generalItems, ...extraWatchlistItems.filter((item) => generalKeys.has(normalizeTitleDedupeKey(item.title))), ...extraOnly]);
 }
 
 /**
@@ -472,35 +553,16 @@ export async function getTickerNewsServer(rawTicker: string): Promise<LiveMarket
   const ticker = rawTicker.trim().toUpperCase();
   if (!/^[A-Z]{4}$/.test(ticker)) return [];
 
-  const tickerFeedUrl = `https://news.google.com/rss/search?q=saham+${encodeURIComponent(
-    ticker
-  )}+BEI+when:30d&hl=id&gl=ID&ceid=ID:id`;
-
   const [mainRes, tickerRes] = await Promise.allSettled([
     getLiveMarketNewsServer(),
-    fetchRssTextCached(tickerFeedUrl).then((xml) => parseRssItems(xml, "Google News IDX")),
+    fetchSingleTickerFeedServer(ticker, 10),
   ]);
 
   const fromMain =
     mainRes.status === "fulfilled" ? filterTickerRelevantServer(mainRes.value, ticker) : [];
-  const fromQuery =
-    tickerRes.status === "fulfilled" ? filterTickerRelevantServer(tickerRes.value, ticker) : [];
+  const fromQuery = tickerRes.status === "fulfilled" ? tickerRes.value : [];
 
-  const combined = [...fromMain, ...fromQuery];
-  combined.sort((a, b) => (a.publishedAt > b.publishedAt ? -1 : 1));
-
-  const deduped: LiveMarketNewsItem[] = [];
-  const seenTitles = new Set<string>();
-
-  for (const item of combined) {
-    const norm = item.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 42);
-    if (!norm || seenTitles.has(norm)) continue;
-    seenTitles.add(norm);
-    deduped.push(
-      item.tickers.includes(ticker) ? item : { ...item, tickers: [ticker, ...item.tickers].slice(0, 5) }
-    );
-    if (deduped.length >= 10) break;
-  }
-
-  return deduped;
+  return dedupeAndSortNews([...fromMain, ...fromQuery], 10).map((item) =>
+    item.tickers.includes(ticker) ? item : { ...item, tickers: [ticker, ...item.tickers].slice(0, 6) }
+  );
 }

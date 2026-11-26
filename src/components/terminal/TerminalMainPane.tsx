@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
-import { MACRO_NEWS_DATA } from "@/data/macroData";
 import {
   formatNumber,
   formatDesimal,
@@ -18,7 +17,19 @@ import {
   runQuarterlyDcaSimulation,
 } from "@/lib/dca-simulator";
 import { filterNewsByTicker } from "@/lib/news-brief";
-import { Layers, Calculator, Info, ArrowLeft, X, RotateCcw, Sparkles, ExternalLink, Newspaper, Loader2 } from "lucide-react";
+import {
+  Layers,
+  Calculator,
+  Info,
+  ArrowLeft,
+  X,
+  RotateCcw,
+  Sparkles,
+  ExternalLink,
+  Newspaper,
+  Loader2,
+  Star,
+} from "lucide-react";
 import { LightweightPriceChart } from "./LightweightPriceChart";
 import {
   getHistory,
@@ -36,15 +47,16 @@ import type { LiveMarketNewsItem, SentimentType } from "@/types/market";
 
 interface TerminalMainPaneProps {
   selectedTicker: string;
-  originNewsId?: string | null;
   originLiveNews?: LiveMarketNewsItem | null;
   liveNewsItems?: LiveMarketNewsItem[];
   onSelectTicker?: (ticker: string) => void;
-  onBackToArticle?: (newsId: string) => void;
   onBackToLiveNews?: () => void;
   onCloseOriginPanel?: () => void;
   onAskAiStock?: (ticker: string) => void;
   onAskAiTerminalNews?: (item: LiveMarketNewsItem) => void;
+  isInWatchlist?: boolean;
+  isWatchlistFull?: boolean;
+  onToggleWatchlist?: (ticker: string) => void;
   quote?: MarketQuote;
   provider?: MarketProvider;
   marketStatus?: MarketStatus;
@@ -78,15 +90,16 @@ function renderDarkSentimentBadge(sentiment: SentimentType) {
 
 export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   selectedTicker,
-  originNewsId = null,
   originLiveNews = null,
   liveNewsItems = [],
   onSelectTicker,
-  onBackToArticle,
   onBackToLiveNews,
   onCloseOriginPanel,
   onAskAiStock,
   onAskAiTerminalNews,
+  isInWatchlist = false,
+  isWatchlistFull = false,
+  onToggleWatchlist,
   quote,
   provider = "illustrative",
   marketStatus,
@@ -151,27 +164,17 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     };
   }, [selectedTicker, chartTf, provider, retryTrigger]);
 
-  // Article origin lookup (curated scenario or live RSS news) for banner and cross-stock switching
-  const originArticle = useMemo(() => {
-    if (!originNewsId) return null;
-    return MACRO_NEWS_DATA.find((n) => n.id === originNewsId) || null;
-  }, [originNewsId]);
-
-  const activeLiveOrigin = !originArticle ? originLiveNews : null;
+  const activeLiveOrigin = originLiveNews;
 
   const otherSupportedTickers = useMemo(() => {
     const supported = new Set(["ADRO", "ANTM", "ASII", "BBCA", "BBRI", "BMRI", "ICBP", "MEDC", "TLKM"]);
-    const rawTickers = originArticle
-      ? originArticle.sectorImpacts.flatMap((s) => s.tickers)
-      : activeLiveOrigin
-      ? activeLiveOrigin.tickers
-      : [];
+    const rawTickers = activeLiveOrigin ? activeLiveOrigin.tickers : [];
     const tickers = rawTickers.filter((t) => {
       if (t === selectedTicker) return false;
       return provider === "yahoo" ? /^[A-Z]{4}$/.test(t) : supported.has(t);
     });
     return Array.from(new Set(tickers));
-  }, [originArticle, activeLiveOrigin, selectedTicker, provider]);
+  }, [activeLiveOrigin, selectedTicker, provider]);
 
   // DCA Simulator inputs (Quarterly frequency)
   const [quarterlyDCA, setQuarterlyDCA] = useState<number>(3000000); // Rp 3.000.000/kuartal (~1jt/bln)
@@ -534,15 +537,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     reinvestDividends,
   ]);
 
-  const activeOriginBanner = originArticle
-    ? {
-        label: "Berita asal:",
-        title: originArticle.title,
-        meta: null as string | null,
-        externalLink: null as string | null,
-        onBack: onBackToArticle ? () => onBackToArticle(originArticle.id) : undefined,
-      }
-    : activeLiveOrigin
+  const activeOriginBanner = activeLiveOrigin
     ? {
         label: "Berita pasar asal:",
         title: activeLiveOrigin.title,
@@ -614,14 +609,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     return deduped;
   }, [provider, matchedGeneralLiveNews, tickerNewsState, selectedTicker]);
 
-  const matchedScenarioNews = useMemo(() => {
-    return MACRO_NEWS_DATA.filter((n) =>
-      n.sectorImpacts.some((sec) => sec.tickers.includes(selectedTicker))
-    );
-  }, [selectedTicker]);
-
   const relatedNewsBadgeCount =
-    provider === "yahoo" ? combinedTickerLiveNews.length : matchedScenarioNews.length;
+    provider === "yahoo" ? combinedTickerLiveNews.length : 0;
 
   const isMissingYahooTicker = Boolean(
     provider === "yahoo" &&
@@ -719,13 +708,35 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         <div className="p-4 border-b border-[#1E2736] flex flex-wrap items-center justify-between gap-3 bg-[#0E131C]">
           <div className="flex flex-wrap items-center gap-4">
             <div>
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xl font-bold text-white tnum">
                   {stock.ticker}
                 </span>
                 <span className="px-2 py-0.5 rounded text-xs font-sans bg-[#1E7B85]/20 text-slate-200 border border-[#1E7B85]/40">
                   {stock.sector}
                 </span>
+                {onToggleWatchlist && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleWatchlist(selectedTicker)}
+                    disabled={!isInWatchlist && isWatchlistFull}
+                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-sans border transition disabled:opacity-50 ${
+                      isInWatchlist
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                        : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-amber-300 hover:border-amber-500/40"
+                    }`}
+                    title={
+                      isInWatchlist
+                        ? `Hapus ${selectedTicker} dari Watchlist Saya`
+                        : isWatchlistFull
+                        ? "Watchlist Saya penuh (maks. 15 saham)"
+                        : `Simpan ${selectedTicker} ke Watchlist Saya`
+                    }
+                  >
+                    <Star className={`w-3 h-3 ${isInWatchlist ? "fill-amber-400 text-amber-400" : ""}`} />
+                    <span>{isInWatchlist ? "Di Watchlist" : "+ Watchlist"}</span>
+                  </button>
+                )}
               </div>
               <span className="text-xs text-slate-400 block mt-0.5 font-sans">
                 {isMissingYahooTicker
@@ -1399,7 +1410,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 <span className="text-[11px] text-slate-400">
                   {provider === "yahoo"
                     ? "Gabungan feed pasar modal terkini dan pencarian Google News emiten."
-                    : "Skenario transmisi makro contoh yang menyinggung emiten ini."}
+                    : "Berita pasar modal live aktif pada mode Yahoo Finance."}
                 </span>
               </div>
               {provider === "yahoo" && (
@@ -1506,36 +1517,9 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               </>
             )}
 
-            {matchedScenarioNews.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block">
-                  Skenario Transmisi Makro Terkait ({matchedScenarioNews.length})
-                </span>
-                <div className="space-y-2">
-                  {matchedScenarioNews.map((sc) => (
-                    <div
-                      key={sc.id}
-                      className="p-3 rounded-xl bg-[#0C1017] border border-[#1E2736] flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                    >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                          <span>{formatNewsCategoryLabel(sc.category)}</span>
-                          {renderDarkSentimentBadge(sc.marketSentiment)}
-                        </div>
-                        <p className="text-xs font-medium text-slate-200 leading-snug">{sc.title}</p>
-                      </div>
-                      {onBackToArticle && (
-                        <button
-                          type="button"
-                          onClick={() => onBackToArticle(sc.id)}
-                          className="shrink-0 min-h-[36px] px-3 py-1.5 rounded-lg bg-[#172332] hover:bg-[#1E7B85] text-[#2DD4BF] hover:text-white border border-[#25354A] text-xs font-medium transition"
-                        >
-                          Buka skenario →
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            {provider !== "yahoo" && (
+              <div className="p-5 rounded-xl bg-[#0C1017] border border-[#1E2736] text-center text-slate-400">
+                Mode data ilustrasi aktif. Aktifkan mode Yahoo Finance untuk memuat berita terkini terkait {selectedTicker}.
               </div>
             )}
           </div>

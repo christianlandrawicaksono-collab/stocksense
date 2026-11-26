@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildLiveMarketBrief, filterNewsByTicker } from "@/lib/news-brief";
+import {
+  buildLiveMarketBrief,
+  filterNewsByTicker,
+  prioritizeWatchlistNews,
+} from "@/lib/news-brief";
 import type { LiveMarketNewsItem, MarketTickerItem } from "@/types/market";
 
 const SAMPLE_ITEMS: LiveMarketNewsItem[] = [
@@ -94,5 +98,12 @@ describe("news-brief & filterNewsByTicker helpers", () => {
     const matchedUnvr = filterNewsByTicker([untaggedItem], "UNVR", "PT Unilever Indonesia Tbk");
     expect(matchedUnvr).toHaveLength(1);
     expect(filterNewsByTicker(SAMPLE_ITEMS, "INVALID")).toEqual([]);
+  });
+
+  it("prioritizes watchlist stories first while keeping general market stories below", () => {
+    const prioritized = prioritizeWatchlistNews(SAMPLE_ITEMS, new Set(["PTBA"]));
+    expect(prioritized.map((item) => item.id)).toEqual(["n3", "n1", "n2", "n4"]);
+
+    expect(prioritizeWatchlistNews(SAMPLE_ITEMS, new Set())).toBe(SAMPLE_ITEMS);
   });
 });
