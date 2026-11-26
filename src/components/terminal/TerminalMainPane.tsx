@@ -38,8 +38,18 @@ import {
   Newspaper,
   Loader2,
   Star,
+  Target,
+  GitCompareArrows,
+  StickyNote,
 } from "lucide-react";
 import { LightweightPriceChart } from "./LightweightPriceChart";
+import { StockCompareTab } from "./StockCompareTab";
+import {
+  evaluateTargetBuyStatus,
+  MAX_WATCHLIST_NOTE_LENGTH,
+  type WatchlistEntryMeta,
+} from "@/lib/watchlist";
+import type { ComparableStockMetrics } from "@/lib/compare";
 import {
   getHistory,
   getIllustrativeHistoryPoints,
@@ -71,16 +81,21 @@ interface TerminalMainPaneProps {
   onCloseOriginPanel?: () => void;
   onAskAiStock?: (ticker: string) => void;
   onAskAiTerminalNews?: (item: LiveMarketNewsItem) => void;
+  onAskAiCompare?: (tickers: string[]) => void;
   onCustomAiMetrics?: (metrics: CustomStockAiMetrics | null) => void;
   isInWatchlist?: boolean;
   isWatchlistFull?: boolean;
   onToggleWatchlist?: (ticker: string) => void;
   quote?: MarketQuote;
+  allQuotes?: Record<string, MarketQuote>;
+  customWatchlist?: string[];
+  watchlistNotes?: Record<string, WatchlistEntryMeta>;
+  onSaveWatchlistMeta?: (ticker: string, meta: WatchlistEntryMeta | null) => void;
   provider?: MarketProvider;
   marketStatus?: MarketStatus;
 }
 
-type TerminalTab = "valuation" | "simulator" | "fundamental" | "news";
+type TerminalTab = "valuation" | "simulator" | "fundamental" | "news" | "compare";
 
 function renderDarkSentimentBadge(sentiment: SentimentType) {
   switch (sentiment) {
@@ -115,11 +130,16 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   onCloseOriginPanel,
   onAskAiStock,
   onAskAiTerminalNews,
+  onAskAiCompare,
   onCustomAiMetrics,
   isInWatchlist = false,
   isWatchlistFull = false,
   onToggleWatchlist,
   quote,
+  allQuotes,
+  customWatchlist = [],
+  watchlistNotes = {},
+  onSaveWatchlistMeta,
   provider = "illustrative",
   marketStatus,
 }) => {
@@ -503,6 +523,84 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       ? ((targetMeanPrice - activePrice) / activePrice) * 100
       : 0;
 
+  const activeEntryMeta = watchlistNotes[selectedTicker];
+  const targetBuyEval = evaluateTargetBuyStatus(activePrice, activeEntryMeta?.targetBuyPrice);
+
+  const [targetEditorState, setTargetEditorState] = useState<{
+    isOpen: boolean;
+    ticker: string;
+    priceStr: string;
+    noteStr: string;
+  }>({ isOpen: false, ticker: "", priceStr: "", noteStr: "" });
+
+  const isTargetEditorOpen =
+    targetEditorState.isOpen && targetEditorState.ticker === selectedTicker;
+
+  const handleToggleTargetEditor = () => {
+    if (isTargetEditorOpen) {
+      setTargetEditorState((prev) => ({ ...prev, isOpen: false }));
+      return;
+    }
+    setTargetEditorState({
+      isOpen: true,
+      ticker: selectedTicker,
+      priceStr: activeEntryMeta?.targetBuyPrice
+        ? formatNumber(activeEntryMeta.targetBuyPrice)
+        : "",
+      noteStr: activeEntryMeta?.note || "",
+    });
+  };
+
+  const handleTargetPriceInput = (rawVal: string) => {
+    const parsed = parseFormattedNumber(rawVal);
+    setTargetEditorState((prev) => ({
+      ...prev,
+      priceStr: parsed > 0 ? formatNumber(parsed) : "",
+    }));
+  };
+
+  const handleSaveTargetEditor = () => {
+    const parsedPrice = parseFormattedNumber(targetEditorState.priceStr);
+    const cleanedNote = targetEditorState.noteStr.trim().slice(0, MAX_WATCHLIST_NOTE_LENGTH);
+    if (parsedPrice <= 0 && !cleanedNote) {
+      onSaveWatchlistMeta?.(selectedTicker, null);
+    } else {
+      onSaveWatchlistMeta?.(selectedTicker, {
+        ...(parsedPrice > 0 ? { targetBuyPrice: parsedPrice } : {}),
+        ...(cleanedNote ? { note: cleanedNote } : {}),
+      });
+    }
+    setTargetEditorState((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const primaryComparableMetrics: ComparableStockMetrics = useMemo(
+    () => ({
+      ticker: stock.ticker,
+      name: stock.name,
+      sector: stock.sector,
+      price: activePrice,
+      changePercent: quote?.changePercent ?? stock.change1D,
+      peRatio: activePe,
+      pbvRatio: activePbv,
+      dividendYield: activeDivYield,
+      roe: stock.roe,
+      der: stock.der,
+      marketCapTrillion: quote?.marketCapTrillion ?? stock.marketCapTrillion,
+      targetBuyPrice: activeEntryMeta?.targetBuyPrice,
+      isLive: isLiveValuation,
+    }),
+    [
+      stock,
+      activePrice,
+      quote,
+      activePe,
+      activePbv,
+      activeDivYield,
+      activeEntryMeta?.targetBuyPrice,
+      isLiveValuation,
+    ]
+  );
+
   // Valuation Diagnosis: Computed dynamically from active P/E position vs curated or 5Y estimated bands
   const valuationDiagnosis = useMemo(() => {
     if (!effectiveBands || activePe <= 0) {
@@ -828,6 +926,33 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     <span>{isInWatchlist ? "Di Watchlist" : "+ Watchlist"}</span>
                   </button>
                 )}
+                {onSaveWatchlistMeta && (
+                  <button
+                    type="button"
+                    onClick={handleToggleTargetEditor}
+                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-sans border transition ${
+                      targetBuyEval.status === "hit"
+                        ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
+                        : targetBuyEval.status === "near"
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                        : activeEntryMeta?.targetBuyPrice || activeEntryMeta?.note || isTargetEditorOpen
+                        ? "bg-[#1E7B85]/20 border-[#1E7B85]/50 text-[#2DD4BF]"
+                        : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-[#2DD4BF] hover:border-[#1E7B85]/50"
+                    }`}
+                    title="Atur target harga beli & catatan pribadi untuk saham ini"
+                  >
+                    <Target className="w-3 h-3" />
+                    <span>
+                      {activeEntryMeta?.targetBuyPrice
+                        ? targetBuyEval.status === "hit"
+                          ? `Area Beli ≤${formatNumber(activeEntryMeta.targetBuyPrice)}`
+                          : `Target ${formatNumber(activeEntryMeta.targetBuyPrice)}`
+                        : activeEntryMeta?.note
+                        ? "Catatan"
+                        : "Target Beli"}
+                    </span>
+                  </button>
+                )}
               </div>
               <span className="text-xs text-slate-400 block mt-0.5 font-sans">
                 {isMissingYahooTicker
@@ -919,6 +1044,95 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           </div>
         </div>
 
+        {/* Inline Editor & Preview Target Harga Beli / Catatan Pribadi */}
+        {isTargetEditorOpen ? (
+          <div className="px-4 py-3 border-b border-[#1E2736] bg-[#0B1018] flex flex-col lg:flex-row lg:items-end gap-2.5 text-xs">
+            <div className="w-full lg:w-48">
+              <label className="text-[11px] text-slate-400 block mb-1">
+                Target Harga Beli (Rp)
+              </label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono">
+                  Rp
+                </span>
+                <input
+                  type="text"
+                  value={targetEditorState.priceStr}
+                  onChange={(e) => handleTargetPriceInput(e.target.value)}
+                  placeholder="cth. 8.500"
+                  className="w-full pl-8 pr-2.5 py-1.5 bg-[#111622] border border-[#20293A] rounded-lg text-slate-100 font-mono tnum focus:outline-none focus:border-[#1E7B85]"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1">
+              <label className="text-[11px] text-slate-400 block mb-1">
+                Catatan Riset Pribadi (maks. {MAX_WATCHLIST_NOTE_LENGTH} karakter)
+              </label>
+              <input
+                type="text"
+                maxLength={MAX_WATCHLIST_NOTE_LENGTH}
+                value={targetEditorState.noteStr}
+                onChange={(e) =>
+                  setTargetEditorState((prev) => ({ ...prev, noteStr: e.target.value }))
+                }
+                placeholder="cth. Akumulasi bertahap jika koreksi ke area -1 SD..."
+                className="w-full px-3 py-1.5 bg-[#111622] border border-[#20293A] rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#1E7B85]"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleSaveTargetEditor}
+                className="px-3 py-1.5 rounded-lg bg-[#1E7B85] hover:bg-[#1E7B85]/85 text-white font-medium transition"
+              >
+                Simpan Target
+              </button>
+              {(activeEntryMeta?.targetBuyPrice || activeEntryMeta?.note) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSaveWatchlistMeta?.(selectedTicker, null);
+                    setTargetEditorState((prev) => ({ ...prev, isOpen: false }));
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#171F2C] hover:bg-red-950/50 text-slate-300 hover:text-red-300 border border-[#232F42] transition"
+                >
+                  Hapus
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setTargetEditorState((prev) => ({ ...prev, isOpen: false }))}
+                className="px-2.5 py-1.5 rounded-lg bg-[#111622] hover:bg-[#171F2C] text-slate-400 hover:text-slate-200 border border-[#20293A] transition"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        ) : (
+          activeEntryMeta?.note && (
+            <div className="px-4 py-1.5 border-b border-[#1E2736] bg-[#0B1018] flex items-center justify-between gap-2 text-[11px] text-slate-300">
+              <div className="flex items-center space-x-2 min-w-0">
+                <StickyNote className="w-3 h-3 text-[#2DD4BF] shrink-0" />
+                <span className="truncate">
+                  <strong className="text-slate-400 font-normal">Catatan: </strong>
+                  {activeEntryMeta.note}
+                </span>
+              </div>
+              {onSaveWatchlistMeta && (
+                <button
+                  type="button"
+                  onClick={handleToggleTargetEditor}
+                  className="text-[#2DD4BF] hover:underline shrink-0"
+                >
+                  Ubah
+                </button>
+              )}
+            </div>
+          )
+        )}
+
         {/* Kanvas Grafik Lightweight Charts */}
         <LightweightPriceChart
           ticker={selectedTicker}
@@ -932,6 +1146,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           changePercent={quote?.changePercent ?? stock.change1D}
           lastUpdated={quote?.lastUpdated || marketStatus?.formattedTime}
           fairValuePrice={targetMeanPrice}
+          targetBuyPrice={activeEntryMeta?.targetBuyPrice}
           error={effectiveHistoryError}
           onRetry={handleRetry}
         />
@@ -996,6 +1211,18 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 {relatedNewsBadgeCount}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("compare")}
+            className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+              activeTab === "compare"
+                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <GitCompareArrows className="w-3.5 h-3.5" />
+            <span>Bandingkan</span>
           </button>
         </div>
 
@@ -1625,6 +1852,20 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               </div>
             )}
           </div>
+        )}
+
+        {/* TAB 5: BANDINGKAN (MULTI-SAHAM HEAD-TO-HEAD & KURVA PERFORMA %) */}
+        {activeTab === "compare" && (
+          <StockCompareTab
+            primaryTicker={selectedTicker}
+            primaryMetrics={primaryComparableMetrics}
+            quotes={allQuotes}
+            provider={provider}
+            customWatchlist={customWatchlist}
+            watchlistNotes={watchlistNotes}
+            onSelectTicker={onSelectTicker}
+            onAskAiCompare={onAskAiCompare}
+          />
         )}
       </div>
     </div>

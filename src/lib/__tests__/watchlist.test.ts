@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CUSTOM_WATCHLIST,
   addTickerToWatchlist,
+  evaluateTargetBuyStatus,
   matchesWatchlistFilterPreset,
   normalizeIdxTicker,
   parseWatchlistJson,
+  parseWatchlistNotesJson,
   removeTickerFromWatchlist,
+  sanitizeWatchlistNotes,
   sanitizeWatchlistTickers,
   toggleTickerInWatchlist,
 } from "@/lib/watchlist";
@@ -70,5 +73,23 @@ describe("watchlist helpers", () => {
 
     expect(matchesWatchlistFilterPreset(customMissingFundamentals, "PROFITABLE")).toBe(false);
     expect(matchesWatchlistFilterPreset(customMissingFundamentals, "LOW_DEBT")).toBe(false);
+  });
+
+  it("evaluates target buy price status and sanitizes notes metadata cleanly", () => {
+    expect(evaluateTargetBuyStatus(8500, 8500).status).toBe("hit");
+    expect(evaluateTargetBuyStatus(8200, 8500).status).toBe("hit");
+    expect(evaluateTargetBuyStatus(8800, 8500).status).toBe("near");
+    expect(evaluateTargetBuyStatus(9600, 8500).status).toBe("above");
+    expect(evaluateTargetBuyStatus(0, 8500).status).toBe("none");
+
+    expect(parseWatchlistNotesJson("bad-json")).toEqual({});
+    const cleanNotes = sanitizeWatchlistNotes({
+      " bbca ": { targetBuyPrice: 8500.4, note: "  Tunggu koreksi Q1  " },
+      INVALID: { targetBuyPrice: 1000 },
+      aces: { targetBuyPrice: -10, note: "" },
+    });
+    expect(cleanNotes).toEqual({
+      BBCA: { targetBuyPrice: 8500, note: "Tunggu koreksi Q1" },
+    });
   });
 });

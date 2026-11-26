@@ -2,13 +2,15 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { STOCKS_DATA } from "@/data/stocksData";
-import { formatNumber, formatMultiple, formatPersen } from "@/lib/format";
+import { formatNumber, formatMultiple, formatPersen, formatRupiah } from "@/lib/format";
 import {
   MAX_CUSTOM_WATCHLIST,
+  evaluateTargetBuyStatus,
   matchesWatchlistFilterPreset,
+  type WatchlistEntryMeta,
   type WatchlistFilterPreset,
 } from "@/lib/watchlist";
-import { Search, ArrowUpDown, Plus, Loader2, Star, Bookmark } from "lucide-react";
+import { Search, ArrowUpDown, Plus, Loader2, Star, Bookmark, Target, StickyNote } from "lucide-react";
 import {
   MarketQuote,
   MarketProvider,
@@ -22,6 +24,7 @@ interface TerminalWatchlistProps {
   quotes?: Record<string, MarketQuote>;
   provider?: MarketProvider;
   customWatchlist?: string[];
+  watchlistNotes?: Record<string, WatchlistEntryMeta>;
   onToggleWatchlist?: (ticker: string) => void;
   onAddToWatchlist?: (ticker: string) => void;
   maxWatchlistSize?: number;
@@ -103,6 +106,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
   quotes,
   provider = "illustrative",
   customWatchlist = [],
+  watchlistNotes = {},
   onToggleWatchlist,
   onAddToWatchlist,
   maxWatchlistSize = MAX_CUSTOM_WATCHLIST,
@@ -396,6 +400,11 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         {filteredAndSortedStocks.map((stock) => {
           const isSelected = selectedTicker === stock.ticker;
           const inWatchlist = watchlistSet.has(stock.ticker);
+          const entryMeta = watchlistNotes[stock.ticker];
+          const targetEval = evaluateTargetBuyStatus(
+            stock.hasQuoteData ? stock.currentPrice : 0,
+            entryMeta?.targetBuyPrice
+          );
           const isUp = stock.change1D > 0;
           const isDown = stock.change1D < 0;
 
@@ -465,9 +474,51 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                   <span className="text-[11px] text-slate-400 truncate">
                     {stock.name}
                   </span>
-                  <span className="text-[10px] text-slate-500 truncate">
-                    {stock.sector}
-                  </span>
+                  <div className="flex items-center space-x-1.5 min-w-0">
+                    <span className="text-[10px] text-slate-500 truncate">
+                      {stock.sector}
+                    </span>
+                    {entryMeta?.note && (
+                      <span title={entryMeta.note} className="shrink-0 text-slate-400">
+                        <StickyNote className="w-2.5 h-2.5" />
+                      </span>
+                    )}
+                  </div>
+                  {entryMeta?.targetBuyPrice && (
+                    <div className="mt-0.5 flex items-center space-x-1 min-w-0">
+                      <Target
+                        className={`w-2.5 h-2.5 shrink-0 ${
+                          targetEval.status === "hit"
+                            ? "text-[#2EB886]"
+                            : targetEval.status === "near"
+                            ? "text-amber-400"
+                            : "text-slate-500"
+                        }`}
+                      />
+                      <span
+                        className={`text-[10px] font-mono tnum truncate ${
+                          targetEval.status === "hit"
+                            ? "text-[#2EB886] font-semibold"
+                            : targetEval.status === "near"
+                            ? "text-amber-400 font-medium"
+                            : "text-slate-400"
+                        }`}
+                        title={
+                          targetEval.status === "hit"
+                            ? `Harga di area target beli (${formatRupiah(entryMeta.targetBuyPrice)})`
+                            : targetEval.status === "near"
+                            ? `Mendekati target beli (${formatRupiah(entryMeta.targetBuyPrice)})`
+                            : `Target beli: ${formatRupiah(entryMeta.targetBuyPrice)}`
+                        }
+                      >
+                        {targetEval.status === "hit"
+                          ? `Area Beli ≤${formatNumber(entryMeta.targetBuyPrice)}`
+                          : targetEval.status === "near"
+                          ? `Dekat ${formatNumber(entryMeta.targetBuyPrice)}`
+                          : `Beli ${formatNumber(entryMeta.targetBuyPrice)}`}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -8,6 +8,7 @@ export interface ChartPreferences {
   showMa20: boolean;
   showMa50: boolean;
   showFairValue: boolean;
+  showTargetBuy: boolean;
   timeframe: HistoryRange | null;
 }
 
@@ -19,6 +20,7 @@ export const DEFAULT_CHART_PREFS: ChartPreferences = {
   showMa20: false,
   showMa50: false,
   showFairValue: false,
+  showTargetBuy: true,
   timeframe: null,
 };
 
@@ -33,6 +35,8 @@ export function sanitizeChartPreferences(raw: unknown): ChartPreferences {
   const showMa50 = typeof obj.showMa50 === "boolean" ? obj.showMa50 : DEFAULT_CHART_PREFS.showMa50;
   const showFairValue =
     typeof obj.showFairValue === "boolean" ? obj.showFairValue : DEFAULT_CHART_PREFS.showFairValue;
+  const showTargetBuy =
+    typeof obj.showTargetBuy === "boolean" ? obj.showTargetBuy : DEFAULT_CHART_PREFS.showTargetBuy;
   const rawTf = typeof obj.timeframe === "string" ? obj.timeframe : null;
   const timeframe = rawTf ? normalizeHistoryRange(rawTf, "3Bl") : null;
 
@@ -42,6 +46,7 @@ export function sanitizeChartPreferences(raw: unknown): ChartPreferences {
     showMa20,
     showMa50,
     showFairValue,
+    showTargetBuy,
     timeframe:
       rawTf && timeframe === rawTf ? timeframe : null,
   };
