@@ -46,6 +46,115 @@ function renderSentimentText(sentiment: SentimentType) {
   }
 }
 
+function PublisherBadge({
+  publisher,
+  sourceDomain,
+  emphasis = false,
+}: {
+  publisher: string;
+  sourceDomain?: string;
+  emphasis?: boolean;
+}) {
+  const initial = (publisher.trim().charAt(0) || "B").toUpperCase();
+  return (
+    <span
+      className="inline-flex items-center gap-1.5"
+      title={sourceDomain ? `Sumber: ${publisher} (${sourceDomain})` : `Sumber: ${publisher}`}
+    >
+      <span className="w-4 h-4 rounded-sm bg-[#EFEFEA] border border-[#D8D8CF] text-[#1E7B85] font-mono text-[10px] font-bold inline-flex items-center justify-center shrink-0">
+        {initial}
+      </span>
+      <span className={`${emphasis ? "font-semibold" : "font-medium"} text-[#1E7B85]`}>
+        {publisher}
+      </span>
+    </span>
+  );
+}
+
+interface NewsArticleImageProps {
+  src: string;
+  alt: string;
+  href: string;
+  publisher: string;
+  sourceDomain?: string;
+  variant: "lead" | "grid" | "sidebar";
+}
+
+const NewsArticleImage: React.FC<NewsArticleImageProps> = ({
+  src,
+  alt,
+  href,
+  publisher,
+  sourceDomain,
+  variant,
+}) => {
+  const [hasError, setHasError] = useState(false);
+  if (hasError) return null;
+
+  if (variant === "lead") {
+    return (
+      <figure className="overflow-hidden rounded-lg border border-[#E5E5DC] bg-[#EFEFEA]">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="block group">
+          {/* Dynamic RSS CDN hosts vary by publisher; native img prevents remotePatterns errors */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt={alt}
+            loading="eager"
+            referrerPolicy="no-referrer"
+            onError={() => setHasError(true)}
+            className="w-full aspect-[16/9] max-h-[340px] object-cover group-hover:scale-[1.01] transition-transform duration-300"
+          />
+        </a>
+        <figcaption className="px-3 py-1.5 text-[11px] text-[#5A6068] bg-[#F3F3ED] border-t border-[#E5E5DC] flex items-center justify-between gap-2">
+          <span>Foto: {publisher}</span>
+          {sourceDomain && <span className="font-mono text-[#7A8088]">{sourceDomain}</span>}
+        </figcaption>
+      </figure>
+    );
+  }
+
+  if (variant === "grid") {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block overflow-hidden rounded-md border border-[#E5E5DC] bg-[#EFEFEA] group"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setHasError(true)}
+          className="w-full aspect-[16/9] object-cover group-hover:scale-[1.02] transition-transform duration-300"
+        />
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="w-24 h-16 shrink-0 overflow-hidden rounded border border-[#E5E5DC] bg-[#EFEFEA] block group"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setHasError(true)}
+        className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
+      />
+    </a>
+  );
+};
+
 interface LiveStoryCardProps {
   story: LiveMarketNewsItem;
   variant: "grid" | "sidebar";
@@ -70,39 +179,65 @@ const LiveStoryCard: React.FC<LiveStoryCardProps> = ({
     <div
       className={
         isGrid
-          ? "pt-4 border-t border-[#E5E5DC] flex flex-col justify-between space-y-2"
+          ? "pt-4 border-t border-[#E5E5DC] flex flex-col justify-between space-y-2.5"
           : "py-4 first:pt-0 space-y-1.5"
       }
     >
-      <div className="space-y-1.5">
+      <div className="space-y-2">
+        {isGrid && story.imageUrl && (
+          <NewsArticleImage
+            src={story.imageUrl}
+            alt={story.title}
+            href={story.link}
+            publisher={story.publisher}
+            sourceDomain={story.sourceDomain}
+            variant="grid"
+          />
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5A6068]">
           <div className="flex items-center gap-x-2">
-            <span className="font-medium text-[#1E7B85]">{story.publisher}</span>
+            <PublisherBadge publisher={story.publisher} sourceDomain={story.sourceDomain} />
             <span className="text-[#D8D8CF]">|</span>
             {renderSentimentText(story.sentiment || "NEUTRAL")}
           </div>
           <span>{story.publishedWib}</span>
         </div>
 
-        <h3
-          className="text-base sm:text-lg font-serif font-bold text-[#1A1C1E] leading-snug"
-          style={{ textWrap: "balance" }}
-        >
-          <a
-            href={story.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[#1E7B85] transition"
-          >
-            {story.title}
-          </a>
-        </h3>
+        <div className={!isGrid && story.imageUrl ? "flex items-start gap-3" : ""}>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <h3
+              className="text-base sm:text-lg font-serif font-bold text-[#1A1C1E] leading-snug"
+              style={{ textWrap: "balance" }}
+            >
+              <a
+                href={story.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-[#1E7B85] transition"
+              >
+                {story.title}
+              </a>
+            </h3>
 
-        {story.summary && (
-          <p className="text-xs text-[#3E4349] line-clamp-2 leading-relaxed">
-            {story.summary}
-          </p>
-        )}
+            {story.summary && (
+              <p className="text-xs text-[#3E4349] line-clamp-2 leading-relaxed">
+                {story.summary}
+              </p>
+            )}
+          </div>
+
+          {!isGrid && story.imageUrl && (
+            <NewsArticleImage
+              src={story.imageUrl}
+              alt={story.title}
+              href={story.link}
+              publisher={story.publisher}
+              sourceDomain={story.sourceDomain}
+              variant="sidebar"
+            />
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
@@ -311,12 +446,31 @@ export const NewsView: React.FC<NewsViewProps> = ({
   const leadStory = filteredScenarioNews[0] || null;
   const secondaryStories = filteredScenarioNews.slice(1);
 
-  const leadLiveStory = filteredLiveNews[0] || null;
+  const leadLiveStory = useMemo(() => {
+    if (filteredLiveNews.length === 0) return null;
+    return filteredLiveNews.find((item) => Boolean(item.imageUrl)) || filteredLiveNews[0];
+  }, [filteredLiveNews]);
+
+  const remainingLiveStories = useMemo(() => {
+    if (!leadLiveStory) return [];
+    return filteredLiveNews.filter((item) => item.id !== leadLiveStory.id);
+  }, [filteredLiveNews, leadLiveStory]);
+
   const hasMultiGridLeft = filteredLiveNews.length > 6;
-  const featuredLiveStories = hasMultiGridLeft ? filteredLiveNews.slice(1, 5) : [];
-  const allSidebarLiveStories = hasMultiGridLeft
-    ? filteredLiveNews.slice(5)
-    : filteredLiveNews.slice(1);
+
+  const featuredLiveStories = useMemo(() => {
+    if (!hasMultiGridLeft) return [];
+    const withImages = remainingLiveStories.filter((item) => Boolean(item.imageUrl));
+    const withoutImages = remainingLiveStories.filter((item) => !item.imageUrl);
+    return [...withImages, ...withoutImages].slice(0, 4);
+  }, [hasMultiGridLeft, remainingLiveStories]);
+
+  const allSidebarLiveStories = useMemo(() => {
+    if (!hasMultiGridLeft) return remainingLiveStories;
+    const featuredIds = new Set(featuredLiveStories.map((item) => item.id));
+    return remainingLiveStories.filter((item) => !featuredIds.has(item.id));
+  }, [hasMultiGridLeft, remainingLiveStories, featuredLiveStories]);
+
   const visibleSidebarLiveStories = showAllLiveSidebar
     ? allSidebarLiveStories
     : allSidebarLiveStories.slice(0, 6);
@@ -534,7 +688,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
               </h1>
               <p className="text-xs sm:text-sm text-[#5A6068]">
                 {activeSourceTab === "live"
-                  ? "Berita terkini pasar saham Indonesia dari RSS publik (CNBC Indonesia & Google News IDX)."
+                  ? "Berita terkini pasar saham Indonesia dari RSS publik (CNBC Indonesia, ANTARA Ekonomi & Google News IDX)."
                   : "Skenario transmisi kebijakan ekonomi moneter dan fiskal terhadap kinerja sektoral saham."}
               </p>
             </div>
@@ -632,7 +786,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 <div className="flex flex-wrap items-center gap-2 text-xs text-[#5A6068]">
                   <span className="w-2 h-2 rounded-full bg-[#2EB886] shrink-0"></span>
                   <span>
-                    CNBC Indonesia &amp; Google News BEI ({filteredLiveNews.length} berita)
+                    CNBC, ANTARA &amp; Google News BEI ({filteredLiveNews.length} berita)
                     {liveNewsState.updatedAtWib ? ` • Diperbarui ${liveNewsState.updatedAtWib}` : ""}
                   </span>
                   <button
@@ -773,8 +927,23 @@ export const NewsView: React.FC<NewsViewProps> = ({
                     } space-y-6`}
                   >
                     <div className="space-y-3">
+                      {leadLiveStory.imageUrl && (
+                        <NewsArticleImage
+                          src={leadLiveStory.imageUrl}
+                          alt={leadLiveStory.title}
+                          href={leadLiveStory.link}
+                          publisher={leadLiveStory.publisher}
+                          sourceDomain={leadLiveStory.sourceDomain}
+                          variant="lead"
+                        />
+                      )}
+
                       <div className="flex flex-wrap items-center gap-x-2 text-xs text-[#5A6068]">
-                        <span className="font-semibold text-[#1E7B85]">{leadLiveStory.publisher}</span>
+                        <PublisherBadge
+                          publisher={leadLiveStory.publisher}
+                          sourceDomain={leadLiveStory.sourceDomain}
+                          emphasis
+                        />
                         <span className="text-[#D8D8CF]">|</span>
                         <span>{formatNewsCategoryLabel(leadLiveStory.category)}</span>
                         <span className="text-[#D8D8CF]">|</span>

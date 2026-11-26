@@ -82,6 +82,8 @@ export interface LiveMarketNewsItem {
   title: string;
   link: string;
   publisher: string;
+  sourceDomain?: string;
+  imageUrl?: string;
   publishedAt: string;
   publishedWib: string;
   summary: string;

@@ -41,6 +41,46 @@
   outline-offset: 2px;
 }
 
+/* Running marquee strip for MarketTicker */
+@keyframes market-marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.market-marquee-wrapper {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 16px,
+    black calc(100% - 16px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 16px,
+    black calc(100% - 16px),
+    transparent 100%
+  );
+}
+
+.animate-market-marquee {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: market-marquee 36s linear infinite;
+}
+
+.market-marquee-wrapper:hover .animate-market-marquee,
+.market-marquee-wrapper:focus-within .animate-market-marquee {
+  animation-play-state: paused;
+}
+
 /* Accessibility: respect user prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
@@ -48,5 +88,20 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .market-marquee-wrapper {
+    overflow-x: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .animate-market-marquee {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .market-marquee-clone {
+    display: none;
   }
 }
