@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, connection } from "next/server";
+import { generateWithGeminiFallback } from "@/lib/gemini-client";
 import {
   buildBuiltinSynthesis,
   buildContextSummary,
@@ -88,10 +89,6 @@ export async function POST(request: NextRequest) {
     const customApiKey = typeof body.customApiKey === "string" ? body.customApiKey.trim() : "";
     const serverApiKey = process.env.GEMINI_API_KEY?.trim() || "";
     const activeApiKey = customApiKey || serverApiKey;
-    const configuredModel = process.env.GEMINI_MODEL?.trim() || "gemini-3-flash-preview";
-    const candidateModels = Array.from(
-      new Set([configuredModel, "gemini-3-flash-preview", "gemini-3.1-flash-lite"])
-    );
 
     const contextBlock = buildContextSummary(body.context);
 
@@ -110,59 +107,29 @@ ${contextBlock || "(Tidak ada konteks saham spesifik yang dibuka saat ini.)"}
 Pertanyaan pengguna saat ini: ${prompt}`;
 
       const contents = buildGeminiContents(sanitizedHistory, latestTurnText);
-      let lastErrMsg = "Gemini API error";
+      const result = await generateWithGeminiFallback(contents, activeApiKey);
 
-      for (const model of candidateModels) {
-        try {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-goog-api-key": activeApiKey,
-              },
-              body: JSON.stringify({ contents }),
-            }
-          );
-
-          if (!res.ok) {
-            lastErrMsg = `Gemini API (${model}) HTTP ${res.status}`;
-            if (res.status === 400 || res.status === 401 || res.status === 403) {
-              break;
-            }
-            continue;
-          }
-
-          const data = (await res.json()) as {
-            candidates?: { content?: { parts?: { text?: string }[] } }[];
-          };
-          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-          if (text && text.trim()) {
-            return NextResponse.json(
-              {
-                reply: text.trim(),
-                source: "gemini",
-                model,
-              },
-              { headers: { "Cache-Control": "no-store" } }
-            );
-          }
-
-          lastErrMsg = `Respons kosong dari model ${model}`;
-        } catch (apiErr: unknown) {
-          lastErrMsg = apiErr instanceof Error ? apiErr.message : String(apiErr);
-        }
+      if (result.ok) {
+        return NextResponse.json(
+          {
+            reply: result.text,
+            source: "gemini",
+            model: result.model,
+          },
+          { headers: { "Cache-Control": "no-store" } }
+        );
       }
 
-      console.warn("[API /api/ai/analyze] Gemini API failed, using built-in synthesis:", lastErrMsg);
+      console.warn(
+        "[API /api/ai/analyze] Gemini API failed, using built-in synthesis:",
+        result.error
+      );
       const fallbackReply = buildBuiltinSynthesis(prompt, body.context);
       return NextResponse.json(
         {
           reply: fallbackReply,
           source: "builtin",
-          warning: `Koneksi Gemini API (${lastErrMsg}) gagal; menampilkan analisis kontekstual bawaan.`,
+          warning: `Koneksi Gemini API (${result.error}) gagal; menampilkan analisis kontekstual bawaan.`,
         },
         { headers: { "Cache-Control": "no-store" } }
       );

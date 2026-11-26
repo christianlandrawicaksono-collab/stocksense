@@ -9,6 +9,7 @@ import { TerminalMainPane } from "@/components/terminal/TerminalMainPane";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 import { useMarketData } from "@/hooks/useMarketData";
+import { useLiveNews } from "@/hooks/useLiveNews";
 import { useAiChat } from "@/hooks/useAiChat";
 import { STOCKS_DATA } from "@/data/stocksData";
 import { MACRO_NEWS_DATA } from "@/data/macroData";
@@ -81,6 +82,16 @@ function HomeContent() {
 
   const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } =
     useMarketData(trackedTickers);
+
+  const liveNews = useLiveNews(provider);
+
+  const watchlistTickers = useMemo(
+    () =>
+      Array.from(
+        new Set([...STOCKS_DATA.map((s) => s.ticker), ...customTickers, selectedTicker])
+      ),
+    [customTickers, selectedTicker]
+  );
 
   const handleAddCustomTicker = (ticker: string) => {
     const clean = ticker.trim().toUpperCase();
@@ -402,6 +413,7 @@ function HomeContent() {
                 selectedTicker={selectedTicker}
                 originNewsId={originNewsId}
                 originLiveNews={originLiveNews}
+                liveNewsItems={liveNews.items}
                 onSelectTicker={handleSelectTicker}
                 onBackToArticle={handleBackToArticle}
                 onBackToLiveNews={handleBackToLiveNews}
@@ -413,6 +425,13 @@ function HomeContent() {
                   setActiveLiveNewsForAi(null);
                   const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
                   runAiAnalysis(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
+                }}
+                onAskAiTerminalNews={(item) => {
+                  setActiveLiveNewsForAi(null);
+                  runAiAnalysis(
+                    `Bedah dampak berita "${item.title}" terhadap prospek & valuasi saham ${selectedTicker}.`,
+                    buildLiveNewsArticleContext(item)
+                  );
                 }}
                 quote={quotes[selectedTicker]}
                 provider={provider}
@@ -428,6 +447,17 @@ function HomeContent() {
               macroTickers={macroTickers}
               isMacroFallback={isMacroFallback}
               isMacroLoading={isLoading}
+              liveNewsItems={liveNews.items}
+              isLiveNewsLoading={liveNews.isLoading}
+              liveNewsUpdatedAtWib={liveNews.updatedAtWib}
+              onRefreshLiveNews={liveNews.refresh}
+              watchlistTickers={watchlistTickers}
+              aiMarketBrief={liveNews.aiBrief}
+              aiBriefNotice={liveNews.aiBriefNotice}
+              isAiBriefLoading={liveNews.isAiBriefLoading}
+              onRequestAiBrief={(items, tickers) => {
+                void liveNews.requestAiBrief(items, tickers, aiCustomApiKey);
+              }}
               onSelectStockFromNews={handleSelectStockFromNews}
               activeArticleId={activeArticleId}
               onOpenArticle={(id) => {

@@ -7,6 +7,7 @@ import {
   formatNumber,
   formatDesimal,
   formatMultiple,
+  formatNewsCategoryLabel,
   formatPersen,
   formatRupiah,
   parseFormattedNumber,
@@ -16,11 +17,13 @@ import {
   mapIllustrativeToDcaPoints,
   runQuarterlyDcaSimulation,
 } from "@/lib/dca-simulator";
-import { Layers, Calculator, Info, ArrowLeft, X, RotateCcw, Sparkles, ExternalLink } from "lucide-react";
+import { filterNewsByTicker } from "@/lib/news-brief";
+import { Layers, Calculator, Info, ArrowLeft, X, RotateCcw, Sparkles, ExternalLink, Newspaper, Loader2 } from "lucide-react";
 import { LightweightPriceChart } from "./LightweightPriceChart";
 import {
   getHistory,
   getIllustrativeHistoryPoints,
+  getLiveMarketNews,
   getStockProfile,
   MarketHistoryPoint,
   MarketQuote,
@@ -29,33 +32,61 @@ import {
   StockProfileData,
 } from "@/lib/market-data";
 import { MarketStatus } from "@/lib/market-hours";
-import type { LiveMarketNewsItem } from "@/types/market";
+import type { LiveMarketNewsItem, SentimentType } from "@/types/market";
 
 interface TerminalMainPaneProps {
   selectedTicker: string;
   originNewsId?: string | null;
   originLiveNews?: LiveMarketNewsItem | null;
+  liveNewsItems?: LiveMarketNewsItem[];
   onSelectTicker?: (ticker: string) => void;
   onBackToArticle?: (newsId: string) => void;
   onBackToLiveNews?: () => void;
   onCloseOriginPanel?: () => void;
   onAskAiStock?: (ticker: string) => void;
+  onAskAiTerminalNews?: (item: LiveMarketNewsItem) => void;
   quote?: MarketQuote;
   provider?: MarketProvider;
   marketStatus?: MarketStatus;
 }
 
-type TerminalTab = "valuation" | "simulator" | "fundamental";
+type TerminalTab = "valuation" | "simulator" | "fundamental" | "news";
+
+function renderDarkSentimentBadge(sentiment: SentimentType) {
+  switch (sentiment) {
+    case "BULLISH":
+      return (
+        <span className="px-1.5 py-0.5 rounded bg-[#2EB886]/15 text-[#2EB886] border border-[#2EB886]/30 text-[10px] font-medium">
+          Positif
+        </span>
+      );
+    case "BEARISH":
+      return (
+        <span className="px-1.5 py-0.5 rounded bg-[#DC525F]/15 text-[#DC525F] border border-[#DC525F]/30 text-[10px] font-medium">
+          Negatif
+        </span>
+      );
+    case "NEUTRAL":
+    default:
+      return (
+        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-medium">
+          Netral
+        </span>
+      );
+  }
+}
 
 export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   selectedTicker,
   originNewsId = null,
   originLiveNews = null,
+  liveNewsItems = [],
   onSelectTicker,
   onBackToArticle,
   onBackToLiveNews,
   onCloseOriginPanel,
   onAskAiStock,
+  onAskAiTerminalNews,
   quote,
   provider = "illustrative",
   marketStatus,
@@ -521,6 +552,77 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       }
     : null;
 
+  // Tab Berita Terkait Emiten (menggunakan feed live bersama + fallback query per ticker)
+  const stockCompanyName = useMemo(() => {
+    const curated = STOCKS_DATA.find((s) => s.ticker === selectedTicker);
+    return curated?.name || quote?.name || "";
+  }, [selectedTicker, quote?.name]);
+
+  const matchedGeneralLiveNews = useMemo(() => {
+    if (provider !== "yahoo") return [];
+    return filterNewsByTicker(liveNewsItems, selectedTicker, stockCompanyName);
+  }, [provider, liveNewsItems, selectedTicker, stockCompanyName]);
+
+  const [tickerNewsState, setTickerNewsState] = useState<{
+    ticker: string;
+    items: LiveMarketNewsItem[];
+  }>({ ticker: "", items: [] });
+
+  const needsTickerNewsFetch =
+    provider === "yahoo" &&
+    activeTab === "news" &&
+    matchedGeneralLiveNews.length < 2 &&
+    tickerNewsState.ticker !== selectedTicker;
+
+  useEffect(() => {
+    if (!needsTickerNewsFetch) return;
+    let cancelled = false;
+    getLiveMarketNews(selectedTicker)
+      .then((res) => {
+        if (!cancelled) {
+          setTickerNewsState({ ticker: selectedTicker, items: res.items });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTickerNewsState({ ticker: selectedTicker, items: [] });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [needsTickerNewsFetch, selectedTicker]);
+
+  const handleRefreshTickerNews = useCallback(() => {
+    setTickerNewsState({ ticker: "", items: [] });
+  }, []);
+
+  const combinedTickerLiveNews = useMemo(() => {
+    if (provider !== "yahoo") return [];
+    const extra = tickerNewsState.ticker === selectedTicker ? tickerNewsState.items : [];
+    const merged = [...matchedGeneralLiveNews, ...extra];
+    merged.sort((a, b) => (a.publishedAt > b.publishedAt ? -1 : 1));
+    const deduped: LiveMarketNewsItem[] = [];
+    const seen = new Set<string>();
+    for (const item of merged) {
+      const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 42);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+    return deduped;
+  }, [provider, matchedGeneralLiveNews, tickerNewsState, selectedTicker]);
+
+  const matchedScenarioNews = useMemo(() => {
+    return MACRO_NEWS_DATA.filter((n) =>
+      n.sectorImpacts.some((sec) => sec.tickers.includes(selectedTicker))
+    );
+  }, [selectedTicker]);
+
+  const relatedNewsBadgeCount =
+    provider === "yahoo" ? combinedTickerLiveNews.length : matchedScenarioNews.length;
+
   return (
     <div className="flex flex-col space-y-4 font-sans">
       {/* Origin News Banner (if navigated from curated scenario or live RSS news) */}
@@ -713,10 +815,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       {/* 2. BOTTOM SECTION: TABBED MULTI-PANEL (VALUATION, SIMULATOR, FUNDAMENTAL) */}
       <div className="bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg flex-1 flex flex-col">
         {/* Navigation Tabs Header (Responsive Short Labels on Mobile) */}
-        <div className="flex items-center border-b border-[#1E2736] bg-[#0E131C] px-3">
+        <div className="flex items-center overflow-x-auto terminal-scroll border-b border-[#1E2736] bg-[#0E131C] px-3">
           <button
             onClick={() => setActiveTab("valuation")}
-            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 ${
+            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "valuation"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"
@@ -729,7 +831,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
           <button
             onClick={() => setActiveTab("simulator")}
-            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 ${
+            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "simulator"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"
@@ -742,7 +844,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
 
           <button
             onClick={() => setActiveTab("fundamental")}
-            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 ${
+            className={`flex items-center space-x-2 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
               activeTab === "fundamental"
                 ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
                 : "border-transparent text-slate-400 hover:text-slate-200"
@@ -751,6 +853,24 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             <Info className="w-3.5 h-3.5" />
             <span className="sm:hidden">Profil</span>
             <span className="hidden sm:inline">Profil fundamental</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("news")}
+            className={`flex items-center space-x-1.5 px-3 sm:px-4 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+              activeTab === "news"
+                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Newspaper className="w-3.5 h-3.5" />
+            <span className="sm:hidden">Berita</span>
+            <span className="hidden sm:inline">Berita terkait</span>
+            {relatedNewsBadgeCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-[#1E7B85]/25 text-[#2DD4BF] font-mono text-[10px] tnum">
+                {relatedNewsBadgeCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -1239,6 +1359,159 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                       <li key={idx} className="leading-snug">{r}</li>
                     ))}
                   </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: BERITA TERKAIT EMITEN */}
+        {activeTab === "news" && (
+          <div className="p-4 md:p-5 space-y-4 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#1E2736]">
+              <div>
+                <span className="text-slate-200 font-semibold block">
+                  Warta &amp; sentimen untuk {selectedTicker}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {provider === "yahoo"
+                    ? "Gabungan feed pasar modal terkini dan pencarian Google News emiten."
+                    : "Skenario transmisi makro contoh yang menyinggung emiten ini."}
+                </span>
+              </div>
+              {provider === "yahoo" && (
+                <button
+                  type="button"
+                  onClick={handleRefreshTickerNews}
+                  disabled={needsTickerNewsFetch}
+                  className="min-h-[34px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#171F2C] hover:bg-[#1E2736] text-slate-200 border border-[#232F42] transition disabled:opacity-50"
+                >
+                  <RotateCcw className={`w-3 h-3 text-[#2DD4BF] ${needsTickerNewsFetch ? "animate-spin" : ""}`} />
+                  <span>Cari ulang</span>
+                </button>
+              )}
+            </div>
+
+            {provider === "yahoo" && (
+              <>
+                {needsTickerNewsFetch && combinedTickerLiveNews.length === 0 ? (
+                  <div className="py-8 flex items-center justify-center space-x-2 text-slate-400">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#2DD4BF]" />
+                    <span>Mencari berita terkini untuk {selectedTicker}...</span>
+                  </div>
+                ) : combinedTickerLiveNews.length === 0 ? (
+                  <div className="p-5 rounded-xl bg-[#0C1017] border border-[#1E2736] text-center text-slate-400">
+                    Belum ditemukan berita live terbaru yang menyinggung {selectedTicker}.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {combinedTickerLiveNews.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-xl bg-[#0C1017] border border-[#1E2736] hover:border-[#2B384E] transition space-y-2"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-[#2DD4BF]">{item.publisher}</span>
+                            <span>&bull;</span>
+                            <span>{formatNewsCategoryLabel(item.category)}</span>
+                            {renderDarkSentimentBadge(item.sentiment || "NEUTRAL")}
+                          </div>
+                          <span>{item.publishedWib}</span>
+                        </div>
+
+                        <h4 className="text-sm font-semibold text-slate-100 leading-snug">
+                          <a
+                            href={item.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-[#2DD4BF] transition"
+                          >
+                            {item.title}
+                          </a>
+                        </h4>
+
+                        {item.summary && (
+                          <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                            {item.summary}
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+                            {item.tickers.slice(0, 4).map((t) => (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => onSelectTicker?.(t)}
+                                className={`px-1.5 py-0.5 rounded border transition ${
+                                  t === selectedTicker
+                                    ? "bg-[#1E7B85]/25 border-[#1E7B85]/50 text-[#2DD4BF]"
+                                    : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-white"
+                                }`}
+                              >
+                                {t}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {onAskAiTerminalNews && (
+                              <button
+                                type="button"
+                                onClick={() => onAskAiTerminalNews(item)}
+                                className="inline-flex items-center space-x-1 text-[#2DD4BF] hover:underline font-medium"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                <span>Bedah AI</span>
+                              </button>
+                            )}
+                            <a
+                              href={item.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-1 text-slate-400 hover:text-slate-200 hover:underline"
+                            >
+                              <span>Baca</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {matchedScenarioNews.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 block">
+                  Skenario Transmisi Makro Terkait ({matchedScenarioNews.length})
+                </span>
+                <div className="space-y-2">
+                  {matchedScenarioNews.map((sc) => (
+                    <div
+                      key={sc.id}
+                      className="p-3 rounded-xl bg-[#0C1017] border border-[#1E2736] flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                          <span>{formatNewsCategoryLabel(sc.category)}</span>
+                          {renderDarkSentimentBadge(sc.marketSentiment)}
+                        </div>
+                        <p className="text-xs font-medium text-slate-200 leading-snug">{sc.title}</p>
+                      </div>
+                      {onBackToArticle && (
+                        <button
+                          type="button"
+                          onClick={() => onBackToArticle(sc.id)}
+                          className="shrink-0 min-h-[36px] px-3 py-1.5 rounded-lg bg-[#172332] hover:bg-[#1E7B85] text-[#2DD4BF] hover:text-white border border-[#25354A] text-xs font-medium transition"
+                        >
+                          Buka skenario →
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
