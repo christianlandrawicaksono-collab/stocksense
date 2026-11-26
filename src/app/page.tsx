@@ -360,13 +360,13 @@ function HomeContent() {
       >
         {provider === "yahoo" ? (
           <div className="flex items-center justify-center space-x-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#2EB886]"></span>
-            <span>
-              Sumber: Yahoo Finance (tidak resmi). Tertunda sekitar 10 menit.
+            <span className="w-1.5 h-1.5 rounded-full bg-[#2EB886] shrink-0"></span>
+            <span className="truncate">
+              Data Live Yahoo Finance &bull; Riset Pasar Modal BEI
             </span>
           </div>
         ) : (
-          <span>Data ilustrasi, bukan harga pasar</span>
+          <span>Mode data ilustrasi (bukan harga pasar)</span>
         )}
       </div>
 

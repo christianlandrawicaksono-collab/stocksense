@@ -1032,12 +1032,6 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   &bull; {marketStatus?.isOpen ? marketStatus?.sessionText : `Di luar jam bursa (${marketStatus?.dateWib || ''})`}
                 </span>
               </div>
-
-              {provider === "yahoo" && !quote?.isFallback && (
-                <span className="hidden xl:inline text-[11px] text-slate-400">
-                  &bull; Tertunda ~10 menit
-                </span>
-              )}
             </div>
           </div>
         </div>

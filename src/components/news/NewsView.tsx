@@ -8,7 +8,11 @@ import {
   SentimentType,
 } from "@/types/market";
 import { MarketProvider } from "@/lib/market-data";
-import { formatNewsCategoryLabel } from "@/lib/format";
+import {
+  formatNewsCategoryLabel,
+  formatNewsTimestamp,
+  getJakartaDateKey,
+} from "@/lib/format";
 import {
   buildLiveMarketBrief,
   prioritizeWatchlistNews,
@@ -241,6 +245,7 @@ const EditorialCardActions: React.FC<EditorialCardActionsProps> = ({
 interface LeadBroadsheetHeroProps {
   story: LiveMarketNewsItem;
   watchlistSet: ReadonlySet<string>;
+  todayWibKey?: string;
   onSelectStockFromNews: (
     ticker: string,
     newsId: string,
@@ -253,6 +258,7 @@ interface LeadBroadsheetHeroProps {
 const LeadBroadsheetHero: React.FC<LeadBroadsheetHeroProps> = ({
   story,
   watchlistSet,
+  todayWibKey,
   onSelectStockFromNews,
   onAskAiLiveNews,
 }) => {
@@ -260,6 +266,7 @@ const LeadBroadsheetHero: React.FC<LeadBroadsheetHeroProps> = ({
   const showImage = Boolean(story.imageUrl && !imageFailed);
   const isWatchlistMatch =
     watchlistSet.size > 0 && story.tickers.some((t) => watchlistSet.has(t));
+  const formattedTime = formatNewsTimestamp(story.publishedAt, story.publishedWib, todayWibKey);
 
   return (
     <article className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-stretch">
@@ -272,7 +279,7 @@ const LeadBroadsheetHero: React.FC<LeadBroadsheetHeroProps> = ({
             : "border-[#1D1F23]"
         }`}
       >
-        <div className="space-y-3 pt-1">
+        <div className="space-y-3.5 pt-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             {renderCategoryTag(story.category)}
             {isWatchlistMatch && (
@@ -284,7 +291,7 @@ const LeadBroadsheetHero: React.FC<LeadBroadsheetHeroProps> = ({
           </div>
 
           <h2
-            className="text-2xl sm:text-3xl lg:text-[34px] font-serif font-bold text-[#1D1F23] leading-[1.18]"
+            className="text-2xl sm:text-3xl lg:text-[38px] font-serif font-bold text-[#1D1F23] leading-[1.15]"
             style={{ textWrap: "balance" }}
           >
             <a
@@ -298,15 +305,15 @@ const LeadBroadsheetHero: React.FC<LeadBroadsheetHeroProps> = ({
           </h2>
 
           {story.summary && (
-            <p className="text-sm text-[#676E7E] leading-relaxed line-clamp-4">
+            <p className="text-[15px] sm:text-base text-[#4E5563] leading-[1.65] line-clamp-6">
               {story.summary}
             </p>
           )}
         </div>
 
-        <div className="space-y-3 pt-5">
+        <div className="space-y-3 pt-4">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#676E7E]">
-            <span>{story.publishedWib}</span>
+            <span>{formattedTime}</span>
             <span className="text-[#C5C7CE]">|</span>
             <span className="font-semibold text-[#1D1F23]">{story.publisher}</span>
             <span className="text-[#C5C7CE]">|</span>
@@ -343,6 +350,7 @@ const LeadBroadsheetHero: React.FC<LeadBroadsheetHeroProps> = ({
 interface EditorialGridCardProps {
   story: LiveMarketNewsItem;
   watchlistSet: ReadonlySet<string>;
+  todayWibKey?: string;
   onSelectStockFromNews: (
     ticker: string,
     newsId: string,
@@ -355,11 +363,13 @@ interface EditorialGridCardProps {
 const EditorialGridCard: React.FC<EditorialGridCardProps> = ({
   story,
   watchlistSet,
+  todayWibKey,
   onSelectStockFromNews,
   onAskAiLiveNews,
 }) => {
   const isWatchlistMatch =
     watchlistSet.size > 0 && story.tickers.some((t) => watchlistSet.has(t));
+  const formattedTime = formatNewsTimestamp(story.publishedAt, story.publishedWib, todayWibKey);
 
   return (
     <article
@@ -414,7 +424,7 @@ const EditorialGridCard: React.FC<EditorialGridCardProps> = ({
 
       <div className="space-y-2 pt-4">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[#676E7E]">
-          <span>{story.publishedWib}</span>
+          <span>{formattedTime}</span>
           <span className="text-[#C5C7CE]">|</span>
           <span className="font-medium text-[#1D1F23]">{story.publisher}</span>
           <span className="text-[#C5C7CE]">|</span>
@@ -435,6 +445,7 @@ const EditorialGridCard: React.FC<EditorialGridCardProps> = ({
 interface EditorialOverlayFeatureProps {
   story: LiveMarketNewsItem;
   watchlistSet: ReadonlySet<string>;
+  todayWibKey?: string;
   onSelectStockFromNews: (
     ticker: string,
     newsId: string,
@@ -447,18 +458,21 @@ interface EditorialOverlayFeatureProps {
 const EditorialOverlayFeature: React.FC<EditorialOverlayFeatureProps> = ({
   story,
   watchlistSet,
+  todayWibKey,
   onSelectStockFromNews,
   onAskAiLiveNews,
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const isWatchlistMatch =
     watchlistSet.size > 0 && story.tickers.some((t) => watchlistSet.has(t));
+  const formattedTime = formatNewsTimestamp(story.publishedAt, story.publishedWib, todayWibKey);
 
   if (!story.imageUrl || imageFailed) {
     return (
       <EditorialGridCard
         story={story}
         watchlistSet={watchlistSet}
+        todayWibKey={todayWibKey}
         onSelectStockFromNews={onSelectStockFromNews}
         onAskAiLiveNews={onAskAiLiveNews}
       />
@@ -508,7 +522,7 @@ const EditorialOverlayFeature: React.FC<EditorialOverlayFeatureProps> = ({
         </h3>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/80">
-          <span>{story.publishedWib}</span>
+          <span>{formattedTime}</span>
           <span className="text-white/40">|</span>
           <span className="font-semibold text-white">{story.publisher}</span>
           <span className="text-white/40">|</span>
@@ -530,6 +544,7 @@ const EditorialOverlayFeature: React.FC<EditorialOverlayFeatureProps> = ({
 interface EditorialTextItemProps {
   story: LiveMarketNewsItem;
   watchlistSet: ReadonlySet<string>;
+  todayWibKey?: string;
   onSelectStockFromNews: (
     ticker: string,
     newsId: string,
@@ -543,12 +558,19 @@ interface EditorialTextItemProps {
 const EditorialTextItem: React.FC<EditorialTextItemProps> = ({
   story,
   watchlistSet,
+  todayWibKey,
   onSelectStockFromNews,
   onAskAiLiveNews,
   compact = false,
 }) => {
   const isWatchlistMatch =
     watchlistSet.size > 0 && story.tickers.some((t) => watchlistSet.has(t));
+  const formattedTime = formatNewsTimestamp(
+    story.publishedAt,
+    story.publishedWib,
+    todayWibKey,
+    compact
+  );
 
   return (
     <article
@@ -590,7 +612,7 @@ const EditorialTextItem: React.FC<EditorialTextItemProps> = ({
 
       <div className="space-y-1.5 pt-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[#676E7E]">
-          <span>{story.publishedWib}</span>
+          <span>{formattedTime}</span>
           <span className="text-[#C5C7CE]">|</span>
           <span className="font-medium text-[#1D1F23]">{story.publisher}</span>
           {!compact && (
@@ -702,6 +724,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isMarketSummaryExpanded, setIsMarketSummaryExpanded] = useState<boolean>(false);
   const [showAllCompactStories, setShowAllCompactStories] = useState<boolean>(false);
+  const [todayWibKey] = useState<string>(() => getJakartaDateKey(new Date()));
 
   const handleRetryLiveNews = useCallback(() => {
     setShowAllCompactStories(false);
@@ -1032,7 +1055,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
         {/* Minimal Broadsheet Filter Bar (Underline Category Tabs + Watchlist + Sentiment) */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D5D7DC] text-xs">
-          <div className="flex items-center gap-x-5 overflow-x-auto pb-0.5">
+          <div className="w-full md:w-auto flex items-center gap-x-4 sm:gap-x-5 overflow-x-auto scrollbar-none news-tabs-fade pr-5 md:pr-0">
             {[
               { id: "ALL", label: "Semua" },
               { id: "CORPORATE", label: "Korporasi & bursa" },
@@ -1093,13 +1116,14 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
             <div className="flex items-center bg-[#F4F3EE] border border-[#D5D7DC] text-[11px]">
               {[
-                { id: "ALL", label: "Semua sentimen" },
-                { id: "BULLISH", label: "Positif" },
-                { id: "BEARISH", label: "Negatif" },
+                { id: "ALL", label: "Semua", title: "Tampilkan semua sentimen" },
+                { id: "BULLISH", label: "Positif", title: "Hanya berita sentimen positif" },
+                { id: "BEARISH", label: "Negatif", title: "Hanya berita sentimen negatif" },
               ].map((opt) => (
                 <button
                   key={opt.id}
                   type="button"
+                  title={opt.title}
                   onClick={() => {
                     setSelectedSentiment(opt.id as NewsFilterSentiment);
                     setShowAllCompactStories(false);
@@ -1178,6 +1202,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                   key={editorialBuckets.leadStory.id}
                   story={editorialBuckets.leadStory}
                   watchlistSet={watchlistSet}
+                  todayWibKey={todayWibKey}
                   onSelectStockFromNews={onSelectStockFromNews}
                   onAskAiLiveNews={onAskAiLiveNews}
                 />
@@ -1190,6 +1215,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                         key={story.id}
                         story={story}
                         watchlistSet={watchlistSet}
+                        todayWibKey={todayWibKey}
                         onSelectStockFromNews={onSelectStockFromNews}
                         onAskAiLiveNews={onAskAiLiveNews}
                       />
@@ -1221,6 +1247,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                           key={editorialBuckets.overlayStory.id}
                           story={editorialBuckets.overlayStory}
                           watchlistSet={watchlistSet}
+                          todayWibKey={todayWibKey}
                           onSelectStockFromNews={onSelectStockFromNews}
                           onAskAiLiveNews={onAskAiLiveNews}
                         />
@@ -1240,6 +1267,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                             key={story.id}
                             story={story}
                             watchlistSet={watchlistSet}
+                            todayWibKey={todayWibKey}
                             onSelectStockFromNews={onSelectStockFromNews}
                             onAskAiLiveNews={onAskAiLiveNews}
                           />
@@ -1258,6 +1286,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
                           key={story.id}
                           story={story}
                           watchlistSet={watchlistSet}
+                          todayWibKey={todayWibKey}
                           onSelectStockFromNews={onSelectStockFromNews}
                           onAskAiLiveNews={onAskAiLiveNews}
                           compact

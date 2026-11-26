@@ -8,6 +8,8 @@ import {
   parseFormattedNumber,
   calculateAnnualizedIRR,
   formatNewsCategoryLabel,
+  formatNewsTimestamp,
+  getJakartaDateKey,
 } from "@/lib/format";
 
 describe("format utilities (id-ID)", () => {
@@ -62,5 +64,25 @@ describe("calculateAnnualizedIRR", () => {
     expect(formatNewsCategoryLabel("DOMESTIC_POLITICS")).toBe("Politik dan fiskal");
     expect(formatNewsCategoryLabel("CORPORATE")).toBe("Korporasi & bursa");
     expect(formatNewsCategoryLabel("UNKNOWN")).toBe("Makroekonomi");
+  });
+
+  it("formats news timestamps compactly for same-day WIB items and crosses UTC boundaries properly", () => {
+    // 2026-11-26T17:30:00Z = 2026-11-27 00:30 WIB (next day in Jakarta)
+    const jakartaDate = getJakartaDateKey(new Date("2026-11-26T17:30:00Z"));
+    expect(jakartaDate).toBe("2026-11-27");
+
+    expect(
+      formatNewsTimestamp("2026-11-26T13:50:00Z", "26 Nov 2026, 20.50 WIB", "2026-11-26", false)
+    ).toBe("Hari ini, 20.50 WIB");
+    expect(
+      formatNewsTimestamp("2026-11-26T13:50:00Z", "26 Nov 2026, 20.50 WIB", "2026-11-26", true)
+    ).toBe("20.50 WIB");
+
+    expect(
+      formatNewsTimestamp("2026-11-25T07:30:00Z", "25 Nov 2026, 14.30 WIB", "2026-11-26", false)
+    ).toBe("25 Nov 2026, 14.30 WIB");
+    expect(
+      formatNewsTimestamp("2026-11-25T07:30:00Z", "25 Nov 2026, 14.30 WIB", "2026-11-26", true)
+    ).toBe("25 Nov, 14.30 WIB");
   });
 });
