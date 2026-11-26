@@ -52,6 +52,12 @@ describe("news-server RSS helpers", () => {
     expect(
       categorizeNewsItem("BEI Percepat Reformasi Transparansi Likuiditas dan Pengawasan", "")
     ).toBe("DOMESTIC_POLITICS");
+    expect(
+      categorizeNewsItem(
+        "IHSG ditutup menguat seiring optimisme window dressing akhir tahun",
+        "Indeks Harga Saham Gabungan (IHSG) Bursa Efek Indonesia (BEI) ditutup menguat."
+      )
+    ).toBe("CORPORATE");
     expect(categorizeNewsItem("Likuiditas Perbankan Ketat Menjelang Akhir Tahun", "")).toBe(
       "MONETARY_CURRENCY"
     );
@@ -134,6 +140,17 @@ describe("news-server RSS helpers", () => {
 
     const cnbcItems = parseRssItems(cnbcAndAntaraXml, "CNBC Indonesia");
     expect(cnbcItems).toHaveLength(2);
+    expect(cnbcItems[0].id).not.toBe(cnbcItems[1].id);
+    // Items at index 0 from separate feeds sharing "https://www." prefix must never collide
+    const singleCnbc = parseRssItems(
+      `<rss version="2.0"><channel><item><title>Berita Satu</title><link>https://www.cnbcindonesia.com/market/news-a</link></item></channel></rss>`,
+      "CNBC Indonesia"
+    );
+    const singleAntara = parseRssItems(
+      `<rss version="2.0"><channel><item><title>Berita Dua</title><link>https://www.antaranews.com/berita/news-b</link></item></channel></rss>`,
+      "ANTARA Ekonomi"
+    );
+    expect(singleCnbc[0].id).not.toBe(singleAntara[0].id);
     expect(cnbcItems[0].imageUrl).toBe(
       "https://awsimages.detik.net.id/visual/2026/10/27/bsi.jpeg?w=1200&q=90"
     );
