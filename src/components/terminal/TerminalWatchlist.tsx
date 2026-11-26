@@ -364,7 +364,10 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           <div className="relative flex-1 min-w-0">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
+              id="watchlist-search-input"
+              name="watchlistSearch"
               type="text"
+              aria-label="Cari kode saham atau emiten"
               placeholder={
                 provider === "yahoo"
                   ? "Cari / tambah BEI (mis. ACES)..."
@@ -389,6 +392,8 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
 
           {availableSectors.length > 1 && (
             <select
+              id="watchlist-sector-select"
+              name="watchlistSector"
               value={effectiveSector}
               onChange={(e) => setSelectedSector(e.target.value)}
               aria-label="Filter sektor saham"

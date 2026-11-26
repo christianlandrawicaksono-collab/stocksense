@@ -13,6 +13,7 @@ interface MarketTickerProps {
   isLoading?: boolean;
   theme?: "dark" | "light";
   embedded?: boolean;
+  sharp?: boolean;
 }
 
 interface TickerGroupProps {
@@ -87,6 +88,7 @@ export const MarketTicker: React.FC<MarketTickerProps> = ({
   isLoading = false,
   theme = "dark",
   embedded = false,
+  sharp = false,
 }) => {
   const isYahooLive = provider === "yahoo" && !isMacroFallback && (tickers?.length ?? 0) > 0;
   const displayTickers =
@@ -94,14 +96,14 @@ export const MarketTicker: React.FC<MarketTickerProps> = ({
   const isLight = theme === "light";
 
   const wrapperClass = embedded
-    ? `w-full rounded-lg border text-xs py-2 px-3.5 select-none ${
+    ? `w-full ${sharp ? "rounded-none" : "rounded-lg"} border text-xs py-2 px-3.5 select-none ${
         isLight
-          ? "bg-[#F3F3ED]/80 border-[#E5E5DC]"
+          ? "bg-[#F4F3EE] border-[#E5E5DC]"
           : "bg-[#0A0D14] border-[#1A2230]"
       }`
-    : `hidden sm:block w-full border-b text-xs py-2 px-4 select-none ${
+    : `block w-full border-b text-xs py-1.5 sm:py-2 px-3 sm:px-4 select-none ${
         isLight
-          ? "bg-[#F3F3ED] border-[#E5E5DC]"
+          ? "bg-[#F4F3EE] border-[#E5E5DC]"
           : "bg-[#0A0D14] border-[#1A2230]"
       }`;
 

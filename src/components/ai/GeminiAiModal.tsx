@@ -172,9 +172,9 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
 
   return (
     <>
-      {/* Mobile-only backdrop (Desktop tetap non-blocking agar user bebas klik Watchlist/Grafik) */}
+      {/* Overlay backdrop di mobile hingga laptop (<1280px); di layar xl non-blocking */}
       <div
-        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px] lg:hidden"
+        className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px] xl:hidden"
         onClick={onClose}
         aria-hidden="true"
       />

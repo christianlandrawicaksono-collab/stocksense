@@ -346,9 +346,9 @@ function HomeContent() {
     <div
       className={`min-h-screen flex flex-col font-sans transition-[colors,padding] duration-200 ${
         isLight
-          ? "bg-[#FBFBFA] text-[#1A1C1E]"
+          ? "bg-[#FBFBFA] text-[#1D1F23]"
           : "bg-[#0C1017] text-slate-100"
-      } ${isAiModalOpen ? "lg:pr-[400px] xl:pr-[440px]" : ""}`}
+      } ${isAiModalOpen ? "xl:pr-[440px]" : ""}`}
     >
       {/* 1. Satu strip tipis disclaimer di bagian paling atas */}
       <div
