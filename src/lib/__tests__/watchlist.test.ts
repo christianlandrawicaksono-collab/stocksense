@@ -57,20 +57,30 @@ describe("watchlist helpers", () => {
   });
 
   it("evaluates screener filter presets accurately including custom ROE and DER values", () => {
-    const customStrong = { dividendYield: 5.5, peRatio: 10.2, roe: 21.4, der: 0.45 };
+    const customStrong = {
+      dividendYield: 5.5,
+      peRatio: 10.2,
+      roe: 21.4,
+      der: 0.45,
+      targetStatus: "hit" as const,
+    };
     const customMissingFundamentals = {
       dividendYield: 2.0,
       peRatio: 18.0,
       roe: undefined,
       der: undefined,
+      targetStatus: "above" as const,
     };
 
     expect(matchesWatchlistFilterPreset(customStrong, "ALL")).toBe(true);
+    expect(matchesWatchlistFilterPreset(customStrong, "TARGET_BUY")).toBe(true);
+    expect(matchesWatchlistFilterPreset({ ...customStrong, targetStatus: "near" }, "TARGET_BUY")).toBe(true);
     expect(matchesWatchlistFilterPreset(customStrong, "DIVIDEND")).toBe(true);
     expect(matchesWatchlistFilterPreset(customStrong, "UNDERVALUED")).toBe(true);
     expect(matchesWatchlistFilterPreset(customStrong, "PROFITABLE")).toBe(true);
     expect(matchesWatchlistFilterPreset(customStrong, "LOW_DEBT")).toBe(true);
 
+    expect(matchesWatchlistFilterPreset(customMissingFundamentals, "TARGET_BUY")).toBe(false);
     expect(matchesWatchlistFilterPreset(customMissingFundamentals, "PROFITABLE")).toBe(false);
     expect(matchesWatchlistFilterPreset(customMissingFundamentals, "LOW_DEBT")).toBe(false);
   });

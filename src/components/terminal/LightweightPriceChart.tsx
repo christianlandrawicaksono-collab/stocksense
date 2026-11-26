@@ -24,7 +24,7 @@ import {
   updateChartPreferencesStorage,
 } from "@/lib/chart-prefs";
 import { formatNumber, formatDesimal, formatRupiah, formatPersen } from "@/lib/format";
-import { TrendingUp, BarChart2, AlertCircle, AlertTriangle, RotateCcw } from "lucide-react";
+import { TrendingUp, BarChart2, AlertCircle, AlertTriangle, RotateCcw, Maximize2, Minimize2 } from "lucide-react";
 
 interface LightweightPriceChartProps {
   ticker?: string;
@@ -99,6 +99,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   );
   const { chartType, showVolume, showMa20, showMa50, showFairValue, showTargetBuy } = chartPrefs;
   const isWeeklyTimeframe = timeframe === "5Th" || timeframe === "Semua";
+  const [isExpanded, setIsExpanded] = useState(false);
   const [hoverData, setHoverData] = useState<{
     time: string;
     close: number;
@@ -175,7 +176,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     const container = containerRef.current;
     const chart = createChart(container, {
       width: container.clientWidth || 600,
-      height: 280,
+      height: container.clientHeight || 340,
       layout: {
         background: { type: ColorType.Solid, color: "#111622" },
         textColor: "#94A3B8",
@@ -361,7 +362,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         param.point.x < 0 ||
         param.point.x > container.clientWidth ||
         param.point.y < 0 ||
-        param.point.y > 280
+        param.point.y > container.clientHeight
       ) {
         setHoverData(null);
       } else {
@@ -381,12 +382,13 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       }
     });
 
-    // ResizeObserver responsif untuk menyesuaikan lebar grafik secara otomatis
+    // ResizeObserver responsif untuk menyesuaikan lebar dan tinggi grafik secara otomatis
     const resizeObserver = new ResizeObserver((entries) => {
       if (!entries || entries.length === 0 || !entries[0].contentRect) return;
-      const newWidth = entries[0].contentRect.width;
-      if (newWidth > 0 && chartRef.current) {
-        chartRef.current.applyOptions({ width: newWidth });
+      const newWidth = Math.round(entries[0].contentRect.width);
+      const newHeight = Math.round(entries[0].contentRect.height);
+      if (newWidth > 0 && newHeight > 0 && chartRef.current) {
+        chartRef.current.applyOptions({ width: newWidth, height: newHeight });
       }
     });
 
@@ -430,6 +432,21 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       return isoDate;
     }
   };
+
+  const latestPoint = sortedPoints.length > 0 ? sortedPoints[sortedPoints.length - 1] : null;
+  const activeBar = hoverData ?? (latestPoint
+    ? {
+        time: latestPoint.time,
+        close: latestPoint.close,
+        open: latestPoint.open,
+        high: latestPoint.high,
+        low: latestPoint.low,
+        volume: latestPoint.volume,
+        dividend: latestPoint.dividend,
+      }
+    : null);
+  const isUpBar = activeBar && activeBar.open !== undefined ? activeBar.close > activeBar.open : false;
+  const isDownBar = activeBar && activeBar.open !== undefined ? activeBar.close < activeBar.open : false;
 
   return (
     <div className="flex flex-col bg-[#111622] rounded-xl overflow-hidden font-sans">
@@ -544,59 +561,79 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
           </div>
         </div>
 
-        {/* Kanan: Timeframe selector (1Bl, 3Bl, 6Bl, 1Th, 3Th, 5Th, Semua) */}
-        <div className="flex flex-wrap items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#1E2736]">
-          {HISTORY_RANGES.map((tf) => (
-            <button
-              key={tf}
-              type="button"
-              onClick={() => onTimeframeChange(tf)}
-              className={`px-2 py-1 rounded text-[11px] sm:text-xs font-sans transition ${
-                timeframe === tf
-                  ? "bg-[#1E7B85] text-white font-medium shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              {tf}
-            </button>
-          ))}
+        {/* Kanan: Timeframe selector & Tombol Perbesar Kanvas */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#1E2736]">
+            {HISTORY_RANGES.map((tf) => (
+              <button
+                key={tf}
+                type="button"
+                onClick={() => onTimeframeChange(tf)}
+                className={`px-2 py-1 rounded text-[11px] sm:text-xs font-sans transition ${
+                  timeframe === tf
+                    ? "bg-[#1E7B85] text-white font-medium shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsExpanded((prev) => !prev)}
+            className={`p-1.5 rounded-lg border transition hidden sm:inline-flex items-center justify-center ${
+              isExpanded
+                ? "bg-[#1E7B85]/20 border-[#1E7B85] text-[#2DD4BF]"
+                : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200 hover:border-[#2B374C]"
+            }`}
+            title={isExpanded ? "Kembalikan ukuran grafik" : "Perbesar tinggi grafik"}
+            aria-label={isExpanded ? "Kembalikan ukuran grafik" : "Perbesar tinggi grafik"}
+          >
+            {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
         </div>
       </div>
 
-      {/* Tooltip Bar di atas kanvas: Nilai saat crosshair aktif atau data terbaru */}
-      <div className="px-4 py-1.5 bg-[#0A0E16] border-b border-[#1A2230] min-h-[34px] flex items-center justify-between text-xs text-slate-300 font-mono tnum">
-        {hoverData ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+      {/* Tooltip Bar di atas kanvas: Nilai saat crosshair aktif atau bar terakhir */}
+      <div className="px-4 py-1.5 bg-[#0A0E16] border-b border-[#1A2230] min-h-[34px] flex items-center justify-between gap-2 text-xs text-slate-300 font-mono tnum">
+        {activeBar ? (
+          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
             <span className="text-slate-400 font-sans text-[11px]">
-              {formatTooltipDate(hoverData.time)}
+              {hoverData ? formatTooltipDate(activeBar.time) : `Bar terakhir · ${formatTooltipDate(activeBar.time)}`}
             </span>
             <div className="flex items-center space-x-1.5">
               <span className="text-slate-400 font-sans text-[11px]">Tutup:</span>
-              <span className="font-semibold text-white">
-                {formatRupiah(hoverData.close)}
+              <span
+                className={`font-semibold ${
+                  isUpBar ? "text-[#2EB886]" : isDownBar ? "text-[#DC525F]" : "text-white"
+                }`}
+              >
+                {formatRupiah(activeBar.close)}
               </span>
             </div>
-            {hasValidOHLC && hoverData.open !== undefined && (
+            {hasValidOHLC && activeBar.open !== undefined && (
               <>
-                <span className="text-slate-400 text-[11px]">
-                  B: {formatNumber(hoverData.open)}
+                <span className="text-[11px] text-slate-300">
+                  <span className="text-slate-500">B:</span> {formatNumber(activeBar.open)}
                 </span>
-                <span className="text-slate-400 text-[11px]">
-                  T: {formatNumber(hoverData.high || hoverData.close)}
+                <span className="text-[11px] text-slate-300">
+                  <span className="text-[#2EB886]/80">T:</span> {formatNumber(activeBar.high || activeBar.close)}
                 </span>
-                <span className="text-slate-400 text-[11px]">
-                  R: {formatNumber(hoverData.low || hoverData.close)}
+                <span className="text-[11px] text-slate-300">
+                  <span className="text-[#DC525F]/80">R:</span> {formatNumber(activeBar.low || activeBar.close)}
                 </span>
               </>
             )}
-            {hasValidVolume && hoverData.volume !== undefined && hoverData.volume > 0 && (
-              <span className="text-slate-400 text-[11px]">
-                Vol: {formatCompactVolume(hoverData.volume)}
+            {hasValidVolume && activeBar.volume !== undefined && activeBar.volume > 0 && (
+              <span className="text-[11px] text-slate-400">
+                Vol: <span className="text-slate-200">{formatCompactVolume(activeBar.volume)}</span>
               </span>
             )}
-            {hoverData.dividend !== undefined && hoverData.dividend > 0 && (
+            {activeBar.dividend !== undefined && activeBar.dividend > 0 && (
               <span className="px-1.5 py-0.5 rounded bg-[#F59E0B]/20 text-[#F59E0B] font-semibold text-[11px]">
-                Dividen: {formatRupiah(hoverData.dividend)} per lembar
+                Dividen: {formatRupiah(activeBar.dividend)} per lembar
               </span>
             )}
           </div>
@@ -607,7 +644,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         )}
 
         {isLoading && (
-          <span className="text-[11px] text-[#2DD4BF] animate-pulse font-sans">
+          <span className="text-[11px] text-[#2DD4BF] animate-pulse font-sans shrink-0">
             Memperbarui...
           </span>
         )}
@@ -626,7 +663,11 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       )}
 
       {/* Area Kanvas Lightweight Chart */}
-      <div className="relative w-full h-[280px] bg-[#111622]">
+      <div
+        className={`relative w-full ${
+          isExpanded ? "h-[400px] sm:h-[460px]" : "h-[280px] sm:h-[340px]"
+        } bg-[#111622]`}
+      >
         {error || !priceConsistency.isConsistent || (points.length === 0 && !isLoading) ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-[#111622]">
             {!priceConsistency.isConsistent ? (
