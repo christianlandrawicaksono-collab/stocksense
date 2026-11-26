@@ -14,8 +14,10 @@ import {
   getJakartaDateKey,
 } from "@/lib/format";
 import {
+  allocateEditorialBuckets,
   buildLiveMarketBrief,
-  prioritizeWatchlistNews,
+  computeNewsCategoryCounts,
+  filterLiveNewsItems,
   type LiveMarketBrief,
 } from "@/lib/news-brief";
 import { MarketTicker } from "@/components/layout/MarketTicker";
@@ -744,12 +746,6 @@ export const NewsView: React.FC<NewsViewProps> = ({
     [watchlistTickers]
   );
 
-  const isWatchlistItem = useCallback(
-    (item: LiveMarketNewsItem) =>
-      watchlistSet.size > 0 && item.tickers.some((t) => watchlistSet.has(t)),
-    [watchlistSet]
-  );
-
   const hasActiveFilters =
     selectedCategory !== "ALL" ||
     selectedSentiment !== "ALL" ||
@@ -761,28 +757,28 @@ export const NewsView: React.FC<NewsViewProps> = ({
     return liveNewsItems.filter((item) => item.tickers.some((t) => watchlistSet.has(t))).length;
   }, [liveNewsItems, watchlistSet]);
 
-  const filteredLiveNews = useMemo(() => {
-    const filtered = liveNewsItems.filter((item) => {
-      if (selectedCategory !== "ALL" && item.category !== selectedCategory) return false;
-      if (selectedSentiment !== "ALL" && (item.sentiment || "NEUTRAL") !== selectedSentiment) {
-        return false;
-      }
-      if (onlyWatchlist && watchlistSet.size > 0) {
-        if (!item.tickers.some((t) => watchlistSet.has(t))) return false;
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const inTitle = item.title.toLowerCase().includes(q);
-        const inSummary = item.summary.toLowerCase().includes(q);
-        const inPublisher = item.publisher.toLowerCase().includes(q);
-        const inTickers = item.tickers.some((t) => t.toLowerCase().includes(q));
-        if (!inTitle && !inSummary && !inPublisher && !inTickers) return false;
-      }
-      return true;
-    });
+  const categoryCounts = useMemo(
+    () =>
+      computeNewsCategoryCounts(liveNewsItems, {
+        sentiment: selectedSentiment,
+        onlyWatchlist,
+        watchlistSet,
+        searchQuery,
+      }),
+    [liveNewsItems, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]
+  );
 
-    return prioritizeWatchlistNews(filtered, watchlistSet);
-  }, [liveNewsItems, selectedCategory, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]);
+  const filteredLiveNews = useMemo(
+    () =>
+      filterLiveNewsItems(liveNewsItems, {
+        category: selectedCategory,
+        sentiment: selectedSentiment,
+        onlyWatchlist,
+        watchlistSet,
+        searchQuery,
+      }),
+    [liveNewsItems, selectedCategory, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]
+  );
 
   const deterministicBrief = useMemo(
     () => buildLiveMarketBrief(liveNewsItems, macroTickers),
@@ -790,69 +786,10 @@ export const NewsView: React.FC<NewsViewProps> = ({
   );
   const activeBrief = aiMarketBrief || deterministicBrief;
 
-  const editorialBuckets = useMemo(() => {
-    if (filteredLiveNews.length === 0) {
-      return {
-        leadStory: null as LiveMarketNewsItem | null,
-        gridStories: [] as LiveMarketNewsItem[],
-        overlayStory: null as LiveMarketNewsItem | null,
-        stackedStories: [] as LiveMarketNewsItem[],
-        compactStories: [] as LiveMarketNewsItem[],
-      };
-    }
-
-    const watchlistMatched = filteredLiveNews.filter(isWatchlistItem);
-    const leadStory =
-      (watchlistMatched.length > 0
-        ? watchlistMatched.find((item) => Boolean(item.imageUrl)) || watchlistMatched[0]
-        : filteredLiveNews.find((item) => Boolean(item.imageUrl)) || filteredLiveNews[0]) || null;
-
-    if (!leadStory) {
-      return {
-        leadStory: null,
-        gridStories: [],
-        overlayStory: null,
-        stackedStories: [],
-        compactStories: [],
-      };
-    }
-
-    const remaining = filteredLiveNews.filter((item) => item.id !== leadStory.id);
-    const photoRemaining = remaining.filter((item) => Boolean(item.imageUrl));
-
-    let gridStories: LiveMarketNewsItem[] = [];
-    let overlayStory: LiveMarketNewsItem | null = null;
-
-    if (photoRemaining.length >= 4) {
-      gridStories = photoRemaining.slice(0, 3);
-      overlayStory = photoRemaining[3];
-    } else if (photoRemaining.length === 3) {
-      gridStories = photoRemaining.slice(0, 3);
-    } else if (photoRemaining.length === 2 && remaining.length === 2) {
-      gridStories = photoRemaining;
-    } else if (photoRemaining.length >= 1) {
-      overlayStory = photoRemaining[0];
-    }
-
-    const allocatedIds = new Set<string>([
-      leadStory.id,
-      ...gridStories.map((s) => s.id),
-      ...(overlayStory ? [overlayStory.id] : []),
-    ]);
-
-    const tail = remaining.filter((item) => !allocatedIds.has(item.id));
-    const stackedLimit = overlayStory ? 3 : 4;
-    const stackedStories = tail.slice(0, stackedLimit);
-    const compactStories = tail.slice(stackedLimit);
-
-    return {
-      leadStory,
-      gridStories,
-      overlayStory,
-      stackedStories,
-      compactStories,
-    };
-  }, [filteredLiveNews, isWatchlistItem]);
+  const editorialBuckets = useMemo(
+    () => allocateEditorialBuckets(filteredLiveNews, watchlistSet),
+    [filteredLiveNews, watchlistSet]
+  );
 
   const visibleCompactStories = showAllCompactStories
     ? editorialBuckets.compactStories
@@ -1063,23 +1000,42 @@ export const NewsView: React.FC<NewsViewProps> = ({
               { id: "GLOBAL_MACRO", label: "Makro global" },
               { id: "DOMESTIC_POLITICS", label: "Politik dan fiskal" },
               { id: "COMMODITIES", label: "Komoditas & energi" },
-            ].map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => {
-                  setSelectedCategory(cat.id as NewsFilterCategory);
-                  setShowAllCompactStories(false);
-                }}
-                className={`min-h-[42px] inline-flex items-center px-0.5 transition whitespace-nowrap border-b-2 -mb-px ${
-                  selectedCategory === cat.id
-                    ? "text-[#1D1F23] font-bold border-[#1E7B85]"
-                    : "text-[#676E7E] hover:text-[#1D1F23] font-medium border-transparent"
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
+            ].map((cat) => {
+              const count = categoryCounts[cat.id as keyof typeof categoryCounts] ?? 0;
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory(cat.id as NewsFilterCategory);
+                    setShowAllCompactStories(false);
+                  }}
+                  className={`min-h-[42px] inline-flex items-center gap-1.5 px-0.5 transition whitespace-nowrap border-b-2 -mb-px ${
+                    isSelected
+                      ? "text-[#1D1F23] font-bold border-[#1E7B85]"
+                      : count === 0
+                      ? "text-[#848B99]/70 hover:text-[#676E7E] font-medium border-transparent"
+                      : "text-[#676E7E] hover:text-[#1D1F23] font-medium border-transparent"
+                  }`}
+                >
+                  <span>{cat.label}</span>
+                  {liveNewsItems.length > 0 && (
+                    <span
+                      className={`font-mono text-[10px] tnum ${
+                        isSelected
+                          ? "text-[#1E7B85]"
+                          : count === 0
+                          ? "text-[#848B99]/60"
+                          : "text-[#848B99]"
+                      }`}
+                    >
+                      ({count})
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pb-2">

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateEditorialBuckets,
+  areTitlesTopicallySimilar,
   buildLiveMarketBrief,
+  computeNewsCategoryCounts,
+  filterLiveNewsItems,
   filterNewsByTicker,
+  normalizeNewsImageKey,
   prioritizeWatchlistNews,
 } from "@/lib/news-brief";
 import type { LiveMarketNewsItem, MarketTickerItem } from "@/types/market";
@@ -105,5 +110,100 @@ describe("news-brief & filterNewsByTicker helpers", () => {
     expect(prioritized.map((item) => item.id)).toEqual(["n3", "n1", "n2", "n4"]);
 
     expect(prioritizeWatchlistNews(SAMPLE_ITEMS, new Set())).toBe(SAMPLE_ITEMS);
+  });
+
+  it("computes category counts accurately under active sentiment/search/watchlist filters", () => {
+    const countsAll = computeNewsCategoryCounts(SAMPLE_ITEMS, {});
+    expect(countsAll).toEqual({
+      ALL: 4,
+      CORPORATE: 2,
+      MONETARY_CURRENCY: 1,
+      GLOBAL_MACRO: 0,
+      DOMESTIC_POLITICS: 0,
+      COMMODITIES: 1,
+    });
+
+    const countsBullish = computeNewsCategoryCounts(SAMPLE_ITEMS, { sentiment: "BULLISH" });
+    expect(countsBullish.ALL).toBe(2);
+    expect(countsBullish.CORPORATE).toBe(2);
+    expect(countsBullish.COMMODITIES).toBe(0);
+
+    const filteredCorp = filterLiveNewsItems(SAMPLE_ITEMS, {
+      category: "CORPORATE",
+      sentiment: "BULLISH",
+      watchlistSet: new Set(["BBCA"]),
+    });
+    expect(filteredCorp.map((i) => i.id)).toEqual(["n2", "n1"]);
+  });
+
+  it("curates editorial grid slots to avoid duplicate images/topics while prioritizing diversity and watchlist", () => {
+    expect(areTitlesTopicallySimilar(
+      "BEI Perkuat Pengawasan Perdagangan Saham dan Transparansi",
+      "BEI Perkuat Sistem Pengawasan Perdagangan Saham, Tingkatkan Transparansi"
+    )).toBe(true);
+    expect(areTitlesTopicallySimilar(
+      "IHSG Ditutup Menguat ke Level 5.242",
+      "Harga Emas Dunia Melonjak ke Rekor Baru"
+    )).toBe(false);
+
+    expect(normalizeNewsImageKey("https://cdn.example.com/photo-1200x675.jpg?w=800")).toBe(
+      "cdn.example.com/photo.jpg"
+    );
+
+    const curatedFeed: LiveMarketNewsItem[] = [
+      {
+        ...SAMPLE_ITEMS[0],
+        id: "lead",
+        title: "Kemenkeu Raup Dana Lelang SBN Rp35 Triliun",
+        category: "DOMESTIC_POLITICS",
+        imageUrl: "https://cdn.example.com/lead.jpg",
+      },
+      {
+        ...SAMPLE_ITEMS[0],
+        id: "dup-photo",
+        title: "Danantara Bongkar Modus BUMN dan Tutup Anak Usaha",
+        category: "DOMESTIC_POLITICS",
+        imageUrl: "https://cdn.example.com/danantara-800x450.jpg",
+      },
+      {
+        ...SAMPLE_ITEMS[0],
+        id: "dup-photo-same-img",
+        title: "Bukan Akuisisi! Status Danantara di Lahan RAPP Diungkap",
+        category: "DOMESTIC_POLITICS",
+        imageUrl: "https://cdn.example.com/danantara-1200x675.jpg?q=80",
+      },
+      {
+        ...SAMPLE_ITEMS[1],
+        id: "corp-photo",
+        title: "Bank Mandiri Cetak Kenaikan Laba Kuartal III",
+        category: "CORPORATE",
+        imageUrl: "https://cdn.example.com/bmri.jpg",
+      },
+      {
+        ...SAMPLE_ITEMS[2],
+        id: "comm-photo",
+        title: "Harga Batubara Dunia Menguat Menopang Emiten Energi",
+        category: "COMMODITIES",
+        imageUrl: "https://cdn.example.com/coal.jpg",
+      },
+      {
+        ...SAMPLE_ITEMS[3],
+        id: "fx-photo",
+        title: "Bank Indonesia Jaga Stabilitas Rupiah di Pasar Spot",
+        category: "MONETARY_CURRENCY",
+        imageUrl: "https://cdn.example.com/bi.jpg",
+      },
+    ];
+
+    const buckets = allocateEditorialBuckets(curatedFeed);
+    expect(buckets.leadStory?.id).toBe("lead");
+    // Top 3 grid should prefer diverse categories/images and skip the duplicate danantara photo
+    const gridIds = buckets.gridStories.map((s) => s.id);
+    expect(gridIds).toHaveLength(3);
+    expect(gridIds).toContain("corp-photo");
+    expect(gridIds).toContain("comm-photo");
+    expect(gridIds).toContain("fx-photo");
+    expect(buckets.overlayStory?.id).toBe("dup-photo");
+    expect(buckets.stackedStories.map((s) => s.id)).toEqual(["dup-photo-same-img"]);
   });
 });

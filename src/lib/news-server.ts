@@ -3,6 +3,7 @@
  * Menggunakan feed RSS publik (CNBC Indonesia Market & Google News BEI/IHSG) melalui cache Next.js 16.
  */
 
+import { createHash } from "node:crypto";
 import { LiveMarketNewsItem, LiveNewsCategory, SentimentType } from "@/types/market";
 import { filterNewsByTicker } from "./news-brief";
 import { MAX_NEWS_WATCHLIST_ENRICHMENT, sanitizeWatchlistTickers } from "./watchlist";
@@ -207,7 +208,7 @@ export function categorizeNewsItem(title: string, summary: string): LiveNewsCate
   }
 
   if (
-    /apbn|pajak|\bppn\b|danantara|bumn|presiden|menteri|fiskal|pemerintah|regulasi|pengawasan|\bojk\b|suspensi|\bbei\b/.test(
+    /apbn|pajak|\bppn\b|danantara|bumn|presiden|menteri|fiskal|pemerintah|regulasi|pengawasan|\bojk\b|suspensi/.test(
       txt
     )
   ) {
@@ -396,8 +397,10 @@ export function parseRssItems(xml: string, defaultPublisher: string): LiveMarket
     const imageUrl = extractImageUrlFromRssItem(rawItem, rawDescTag);
     const sourceDomain = extractSourceDomain(rawItem, link);
 
+    const linkHash = createHash("sha256").update(link).digest("base64url").slice(0, 16);
+
     items.push({
-      id: `rss-${Buffer.from(link).toString("base64url").slice(0, 16)}-${i}`,
+      id: `rss-${linkHash}`,
       title,
       link,
       publisher,
