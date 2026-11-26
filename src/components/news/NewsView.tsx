@@ -1,27 +1,23 @@
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
-import { MACRO_NEWS_DATA, MACRO_MARKET_SUMMARY } from "@/data/macroData";
 import {
   LiveMarketNewsItem,
   MacroCategory,
-  MacroNewsItem,
   MarketTickerItem,
   SentimentType,
 } from "@/types/market";
 import { MarketProvider } from "@/lib/market-data";
 import { formatNewsCategoryLabel } from "@/lib/format";
-import { buildLiveMarketBrief, type LiveMarketBrief } from "@/lib/news-brief";
+import {
+  buildLiveMarketBrief,
+  prioritizeWatchlistNews,
+  type LiveMarketBrief,
+} from "@/lib/news-brief";
 import { MarketTicker } from "@/components/layout/MarketTicker";
-import { Search, Sparkles, ExternalLink, RotateCcw, Bookmark } from "lucide-react";
+import { Search, Sparkles, ExternalLink, RotateCcw, Bookmark, Star } from "lucide-react";
 
-// 9 Saham yang memiliki data kurasi lengkap di mode ilustrasi
-export const SUPPORTED_TERMINAL_TICKERS = new Set([
-  "ADRO", "ANTM", "ASII", "BBCA", "BBRI", "BMRI", "ICBP", "MEDC", "TLKM"
-]);
-
-type NewsSourceTab = "live" | "scenario";
-type NewsFilterCategory = MacroCategory | "CORPORATE";
+type NewsFilterCategory = "ALL" | MacroCategory | "CORPORATE";
 type NewsFilterSentiment = "ALL" | SentimentType;
 
 function renderSentimentText(sentiment: SentimentType) {
@@ -148,6 +144,7 @@ const NewsArticleImage: React.FC<NewsArticleImageProps> = ({
 interface LiveStoryCardProps {
   story: LiveMarketNewsItem;
   variant: "grid" | "sidebar";
+  watchlistSet: ReadonlySet<string>;
   onSelectStockFromNews: (
     ticker: string,
     newsId: string,
@@ -160,10 +157,13 @@ interface LiveStoryCardProps {
 const LiveStoryCard: React.FC<LiveStoryCardProps> = ({
   story,
   variant,
+  watchlistSet,
   onSelectStockFromNews,
   onAskAiLiveNews,
 }) => {
   const isGrid = variant === "grid";
+  const isWatchlistMatch =
+    watchlistSet.size > 0 && story.tickers.some((t) => watchlistSet.has(t));
 
   return (
     <div
@@ -186,8 +186,14 @@ const LiveStoryCard: React.FC<LiveStoryCardProps> = ({
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#5A6068]">
-          <div className="flex items-center gap-x-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <PublisherBadge publisher={story.publisher} sourceDomain={story.sourceDomain} />
+            {isWatchlistMatch && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1E7B85]/12 text-[#1E7B85] border border-[#1E7B85]/35 text-[10px] font-semibold">
+                <Star className="w-2.5 h-2.5 fill-[#1E7B85]" />
+                <span>Watchlist</span>
+              </span>
+            )}
             <span className="text-[#D8D8CF]">|</span>
             {renderSentimentText(story.sentiment || "NEUTRAL")}
           </div>
@@ -232,17 +238,28 @@ const LiveStoryCard: React.FC<LiveStoryCardProps> = ({
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
         <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
-          {story.tickers.slice(0, 3).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => onSelectStockFromNews(t, "", story.title, story)}
-              className="px-1.5 py-0.5 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D8D8CF] font-semibold transition"
-              title={`Buka ${t} di Terminal`}
-            >
-              {t}
-            </button>
-          ))}
+          {story.tickers.slice(0, 4).map((t) => {
+            const isMatchedTicker = watchlistSet.has(t);
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => onSelectStockFromNews(t, "", story.title, story)}
+                className={`px-1.5 py-0.5 rounded border font-semibold transition ${
+                  isMatchedTicker
+                    ? "bg-[#1E7B85]/15 hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border-[#1E7B85]/50"
+                    : "bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border-[#D8D8CF]"
+                }`}
+                title={
+                  isMatchedTicker
+                    ? `${t} ada di Watchlist Anda • Buka di Terminal`
+                    : `Buka ${t} di Terminal`
+                }
+              >
+                {t}
+              </button>
+            );
+          })}
         </div>
         <div className="flex items-center gap-3">
           {onAskAiLiveNews && (
@@ -277,9 +294,6 @@ interface NewsViewProps {
     newsTitle: string,
     liveItem?: LiveMarketNewsItem
   ) => void;
-  activeArticleId?: string | null;
-  onOpenArticle?: (articleId: string | null) => void;
-  onAskAiArticle?: (article: MacroNewsItem) => void;
   onAskAiLiveNews?: (item: LiveMarketNewsItem) => void;
   provider?: MarketProvider;
   macroTickers?: MarketTickerItem[];
@@ -290,6 +304,7 @@ interface NewsViewProps {
   liveNewsUpdatedAtWib?: string;
   onRefreshLiveNews?: () => void;
   watchlistTickers?: string[];
+  onOpenTerminalWatchlist?: () => void;
   aiMarketBrief?: LiveMarketBrief | null;
   aiBriefNotice?: string | null;
   isAiBriefLoading?: boolean;
@@ -298,9 +313,6 @@ interface NewsViewProps {
 
 export const NewsView: React.FC<NewsViewProps> = ({
   onSelectStockFromNews,
-  activeArticleId: propArticleId = null,
-  onOpenArticle,
-  onAskAiArticle,
   onAskAiLiveNews,
   provider = "illustrative",
   macroTickers = [],
@@ -311,21 +323,16 @@ export const NewsView: React.FC<NewsViewProps> = ({
   liveNewsUpdatedAtWib = "",
   onRefreshLiveNews,
   watchlistTickers = [],
+  onOpenTerminalWatchlist,
   aiMarketBrief = null,
   aiBriefNotice = null,
   isAiBriefLoading = false,
   onRequestAiBrief,
 }) => {
-  const [sourceTabPref, setSourceTabPref] = useState<NewsSourceTab | null>(null);
-  const activeSourceTab: NewsSourceTab =
-    sourceTabPref ?? (provider === "yahoo" ? "live" : "scenario");
-
-  const [selectedPeriod, setSelectedPeriod] = useState<"1W" | "1M">("1W");
   const [selectedCategory, setSelectedCategory] = useState<NewsFilterCategory>("ALL");
   const [selectedSentiment, setSelectedSentiment] = useState<NewsFilterSentiment>("ALL");
   const [onlyWatchlist, setOnlyWatchlist] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [localArticleId, setLocalArticleId] = useState<string | null>(propArticleId);
   const [isMarketSummaryExpanded, setIsMarketSummaryExpanded] = useState<boolean>(false);
   const [showAllLiveSidebar, setShowAllLiveSidebar] = useState<boolean>(false);
 
@@ -342,24 +349,15 @@ export const NewsView: React.FC<NewsViewProps> = ({
     setShowAllLiveSidebar(false);
   }, []);
 
-  const activeArticleId = onOpenArticle ? propArticleId : localArticleId;
-  const setActiveArticle = (id: string | null) => {
-    if (onOpenArticle) {
-      onOpenArticle(id);
-    } else {
-      setLocalArticleId(id);
-    }
-  };
-
-  const canOpenTickerInTerminal = (ticker: string) => {
-    return provider === "yahoo"
-      ? /^[A-Z]{4}$/.test(ticker)
-      : SUPPORTED_TERMINAL_TICKERS.has(ticker);
-  };
-
   const watchlistSet = useMemo(
     () => new Set(watchlistTickers.map((t) => t.trim().toUpperCase()).filter(Boolean)),
     [watchlistTickers]
+  );
+
+  const isWatchlistItem = useCallback(
+    (item: LiveMarketNewsItem) =>
+      watchlistSet.size > 0 && item.tickers.some((t) => watchlistSet.has(t)),
+    [watchlistSet]
   );
 
   const hasActiveFilters =
@@ -373,20 +371,8 @@ export const NewsView: React.FC<NewsViewProps> = ({
     return liveNewsItems.filter((item) => item.tickers.some((t) => watchlistSet.has(t))).length;
   }, [liveNewsItems, watchlistSet]);
 
-  const scenarioWatchlistCount = useMemo(() => {
-    if (watchlistSet.size === 0) return 0;
-    return MACRO_NEWS_DATA.filter(
-      (item) =>
-        item.period === selectedPeriod &&
-        item.sectorImpacts.some((sec) => sec.tickers.some((t) => watchlistSet.has(t)))
-    ).length;
-  }, [selectedPeriod, watchlistSet]);
-
-  const activeWatchlistMatchCount =
-    activeSourceTab === "live" ? liveWatchlistCount : scenarioWatchlistCount;
-
   const filteredLiveNews = useMemo(() => {
-    return liveNewsItems.filter((item) => {
+    const filtered = liveNewsItems.filter((item) => {
       if (selectedCategory !== "ALL" && item.category !== selectedCategory) return false;
       if (selectedSentiment !== "ALL" && (item.sentiment || "NEUTRAL") !== selectedSentiment) {
         return false;
@@ -404,42 +390,9 @@ export const NewsView: React.FC<NewsViewProps> = ({
       }
       return true;
     });
+
+    return prioritizeWatchlistNews(filtered, watchlistSet);
   }, [liveNewsItems, selectedCategory, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]);
-
-  const filteredScenarioNews = useMemo(() => {
-    return MACRO_NEWS_DATA.filter((item) => {
-      if (item.period !== selectedPeriod) return false;
-      if (
-        selectedCategory !== "ALL" &&
-        selectedCategory !== "CORPORATE" &&
-        item.category !== selectedCategory
-      ) {
-        return false;
-      }
-      if (selectedSentiment !== "ALL" && item.marketSentiment !== selectedSentiment) {
-        return false;
-      }
-      if (onlyWatchlist && watchlistSet.size > 0) {
-        const matchesWatchlist = item.sectorImpacts.some((sec) =>
-          sec.tickers.some((t) => watchlistSet.has(t))
-        );
-        if (!matchesWatchlist) return false;
-      }
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const inTitle = item.title.toLowerCase().includes(q);
-        const inSummary = item.summary.toLowerCase().includes(q);
-        const inCatalyst = item.catalyst.toLowerCase().includes(q);
-        const inTickers = item.sectorImpacts.some((sec) =>
-          sec.tickers.some((t) => t.toLowerCase().includes(q))
-        );
-        if (!inTitle && !inSummary && !inCatalyst && !inTickers) return false;
-      }
-
-      return true;
-    });
-  }, [selectedPeriod, selectedCategory, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]);
 
   const deterministicBrief = useMemo(
     () => buildLiveMarketBrief(liveNewsItems, macroTickers),
@@ -447,18 +400,14 @@ export const NewsView: React.FC<NewsViewProps> = ({
   );
   const activeBrief = aiMarketBrief || deterministicBrief;
 
-  const activeArticle = useMemo(() => {
-    if (!activeArticleId) return null;
-    return MACRO_NEWS_DATA.find((n) => n.id === activeArticleId) || null;
-  }, [activeArticleId]);
-
-  const leadStory = filteredScenarioNews[0] || null;
-  const secondaryStories = filteredScenarioNews.slice(1);
-
   const leadLiveStory = useMemo(() => {
     if (filteredLiveNews.length === 0) return null;
+    const watchlistMatched = filteredLiveNews.filter(isWatchlistItem);
+    if (watchlistMatched.length > 0) {
+      return watchlistMatched.find((item) => Boolean(item.imageUrl)) || watchlistMatched[0];
+    }
     return filteredLiveNews.find((item) => Boolean(item.imageUrl)) || filteredLiveNews[0];
-  }, [filteredLiveNews]);
+  }, [filteredLiveNews, isWatchlistItem]);
 
   const remainingLiveStories = useMemo(() => {
     if (!leadLiveStory) return [];
@@ -469,10 +418,14 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
   const featuredLiveStories = useMemo(() => {
     if (!hasMultiGridLeft) return [];
-    const withImages = remainingLiveStories.filter((item) => Boolean(item.imageUrl));
-    const withoutImages = remainingLiveStories.filter((item) => !item.imageUrl);
-    return [...withImages, ...withoutImages].slice(0, 4);
-  }, [hasMultiGridLeft, remainingLiveStories]);
+    const watchlistRem = remainingLiveStories.filter(isWatchlistItem);
+    const otherRem = remainingLiveStories.filter((item) => !isWatchlistItem(item));
+    const withImagesFirst = (arr: LiveMarketNewsItem[]) => [
+      ...arr.filter((item) => Boolean(item.imageUrl)),
+      ...arr.filter((item) => !item.imageUrl),
+    ];
+    return [...withImagesFirst(watchlistRem), ...withImagesFirst(otherRem)].slice(0, 4);
+  }, [hasMultiGridLeft, remainingLiveStories, isWatchlistItem]);
 
   const allSidebarLiveStories = useMemo(() => {
     if (!hasMultiGridLeft) return remainingLiveStories;
@@ -485,823 +438,457 @@ export const NewsView: React.FC<NewsViewProps> = ({
     : allSidebarLiveStories.slice(0, 6);
   const hiddenSidebarCount = Math.max(0, allSidebarLiveStories.length - 6);
 
+  const isLeadWatchlistMatch = leadLiveStory ? isWatchlistItem(leadLiveStory) : false;
+
   return (
     <div className="w-full text-[#1A1C1E] font-sans">
-      {/* JIKA MEMBUKA HALAMAN ARTIKEL SKENARIO */}
-      {activeArticle ? (
-        <article className="max-w-[680px] mx-auto py-6 px-4 sm:px-0 space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="max-w-7xl mx-auto py-6 space-y-6">
+        <div className="border-b border-[#E5E5DC] pb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E]">
+              Warta pasar modal &amp; makro terkini
+            </h1>
+            <p className="text-xs sm:text-sm text-[#5A6068]">
+              Berita terkini pasar saham Indonesia dari RSS publik (CNBC Indonesia, ANTARA Ekonomi &amp; Google News IDX).
+            </p>
+          </div>
+        </div>
+
+        <MarketTicker
+          provider={provider}
+          tickers={macroTickers}
+          isMacroFallback={isMacroFallback}
+          isLoading={isMacroLoading}
+          theme="light"
+          embedded
+        />
+
+        {provider === "yahoo" && liveNewsItems.length > 0 && (
+          <div className="rounded-lg border border-[#E5E5DC] bg-[#F3F3ED]/60 px-3.5 py-3 space-y-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar hari ini</span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
+                    activeBrief.source === "gemini"
+                      ? "bg-[#1E7B85]/10 text-[#1E7B85] border-[#1E7B85]/30"
+                      : "bg-[#EFEFEA] text-[#5A6068] border-[#D8D8CF]"
+                  }`}
+                >
+                  {activeBrief.source === "gemini"
+                    ? `Ringkasan AI (${activeBrief.model || "flash"})`
+                    : "Sintesis otomatis"}
+                </span>
+                <span className="text-[11px] text-[#5A6068] tnum">
+                  {activeBrief.sentimentCounts.bullish} positif &bull;{" "}
+                  {activeBrief.sentimentCounts.bearish} negatif &bull;{" "}
+                  {activeBrief.sentimentCounts.neutral} netral
+                </span>
+              </div>
+
+              {onRequestAiBrief && activeBrief.source !== "gemini" && (
+                <button
+                  type="button"
+                  onClick={() => onRequestAiBrief(liveNewsItems, macroTickers)}
+                  disabled={isAiBriefLoading}
+                  className="min-h-[32px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1E7B85] border border-[#D8D8CF] font-medium transition disabled:opacity-60"
+                >
+                  <Sparkles className={`w-3 h-3 ${isAiBriefLoading ? "animate-pulse" : ""}`} />
+                  <span>{isAiBriefLoading ? "Meringkas..." : "Ringkas dengan AI"}</span>
+                </button>
+              )}
+            </div>
+
+            <div
+              className={`text-xs sm:text-sm text-[#3E4349] leading-relaxed ${
+                !isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""
+              }`}
+            >
+              {activeBrief.summary}
+            </div>
+
+            {activeBrief.topTickers.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-[#5A6068]">
+                <span>Banyak disorot:</span>
+                <div className="flex flex-wrap items-center gap-1 font-mono tnum">
+                  {activeBrief.topTickers.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => onSelectStockFromNews(t, "", activeBrief.headline)}
+                      className="px-1.5 py-0.5 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D8D8CF] font-semibold transition"
+                      title={`Buka ${t} di Terminal`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {aiBriefNotice && (
+              <p className="text-[11px] text-[#7A8088]">{aiBriefNotice}</p>
+            )}
+
             <button
               type="button"
-              onClick={() => setActiveArticle(null)}
-              className="min-h-[44px] inline-flex items-center text-xs text-[#1E7B85] hover:underline font-medium"
+              onClick={() => setIsMarketSummaryExpanded(!isMarketSummaryExpanded)}
+              className="sm:hidden text-xs text-[#1E7B85] hover:underline font-medium min-h-[36px] inline-flex items-center"
             >
-              ← Kembali ke daftar berita
+              {isMarketSummaryExpanded ? "Tutup ringkasan" : "Selengkapnya"}
             </button>
-            {onAskAiArticle && (
-              <button
-                type="button"
-                onClick={() => onAskAiArticle(activeArticle)}
-                className="min-h-[44px] inline-flex items-center space-x-1.5 px-3 py-2 rounded-lg bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1E7B85] border border-[#D5D5CA] text-xs font-medium transition"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Tanya AI soal skenario ini</span>
-              </button>
-            )}
           </div>
+        )}
 
-          <div className="border-b border-[#E5E5DC] pb-4 space-y-2">
-            <span className="text-xs text-[#7A8088] font-medium tracking-wide block">
-              Skenario contoh, bukan berita.
-            </span>
-
-            <h1
-              className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E] leading-snug"
-              style={{ textWrap: "balance" }}
-            >
-              {activeArticle.title}
-            </h1>
-
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#5A6068] pt-1">
-              <span>{formatNewsCategoryLabel(activeArticle.category)}</span>
-              <span className="text-[#D8D8CF]">|</span>
-              {renderSentimentText(activeArticle.marketSentiment)}
-              <span className="text-[#D8D8CF]">|</span>
-              <span>{activeArticle.date}</span>
-            </div>
-          </div>
-
-          <div className="text-base sm:text-[17px] text-[#2A2E33] leading-relaxed font-sans border-b border-[#E5E5DC] pb-6">
-            {activeArticle.summary}
-          </div>
-
-          <div className="space-y-4 border-b border-[#E5E5DC] pb-6">
-            <div className="border-l-2 border-[#1E7B85] pl-4 py-0.5 space-y-1">
-              <span className="text-xs font-semibold text-[#1A1C1E] block">
-                Katalis penggerak
+        {/* Baris Kontrol */}
+        <div className="space-y-3 border-b border-[#E5E5DC] pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#5A6068]">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  provider === "yahoo" ? "bg-[#2EB886]" : "bg-[#9CA3AF]"
+                }`}
+              ></span>
+              <span>
+                CNBC, ANTARA &amp; Google News BEI ({filteredLiveNews.length} berita)
+                {liveNewsUpdatedAtWib ? ` • Diperbarui ${liveNewsUpdatedAtWib}` : ""}
               </span>
-              <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
-                {activeArticle.catalyst}
-              </p>
+              {provider === "yahoo" && (
+                <button
+                  type="button"
+                  onClick={handleRetryLiveNews}
+                  disabled={isLiveNewsLoading}
+                  className="min-h-[32px] inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] font-medium transition disabled:opacity-50"
+                  title="Muat ulang berita pasar terkini"
+                >
+                  <RotateCcw
+                    className={`w-3 h-3 text-[#1E7B85] ${isLiveNewsLoading ? "animate-spin" : ""}`}
+                  />
+                  <span>Segarkan</span>
+                </button>
+              )}
             </div>
 
-            <div className="border-l-2 border-[#D8D8CF] pl-4 py-0.5 space-y-1">
-              <span className="text-xs font-semibold text-[#1A1C1E] block">
-                Implikasi transmisi kebijakan
-              </span>
-              <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
-                {activeArticle.overallImpact}
-              </p>
+            <div className="relative w-full sm:w-64">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#7A8088]" />
+              <input
+                type="text"
+                placeholder="Cari berita atau kode saham..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowAllLiveSidebar(false);
+                }}
+                className="w-full h-[44px] pl-9 pr-3 bg-transparent border border-[#D8D8CF] rounded text-xs text-[#1A1C1E] placeholder-[#7A8088] focus:outline-none focus:border-[#1E7B85]"
+              />
             </div>
           </div>
 
-          <section className="space-y-4 pt-2">
-            <div>
-              <h2 className="text-base sm:text-lg font-serif font-bold text-[#1A1C1E]">
-                Emiten dan sektor terdampak
-              </h2>
-              <span className="text-xs text-[#5A6068]">
-                Skenario transmisi kebijakan per sektor emiten IDX.
-              </span>
-            </div>
-
-            {/* Desktop Table */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-left text-xs divide-y divide-[#E5E5DC]">
-                <thead>
-                  <tr className="text-[#5A6068] font-medium">
-                    <th className="py-2.5 pr-4 font-medium">Sektor</th>
-                    <th className="py-2.5 pr-4 font-medium">Arah dampak</th>
-                    <th className="py-2.5 pr-4 font-medium">Emiten</th>
-                    <th className="py-2.5 font-medium">Alasan transmisi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E5E5DC] text-[#2A2E33]">
-                  {activeArticle.sectorImpacts.map((sec, idx) => (
-                    <tr key={idx} className="align-top">
-                      <td className="py-3 pr-4 font-medium text-[#1A1C1E]">
-                        {sec.sector}
-                      </td>
-                      <td className="py-3 pr-4">
-                        {renderSentimentText(sec.sentiment)}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <div className="flex flex-wrap gap-1.5 font-mono tnum">
-                          {sec.tickers.map((ticker) => {
-                            const isSupported = canOpenTickerInTerminal(ticker);
-                            if (isSupported) {
-                              return (
-                                <button
-                                  key={ticker}
-                                  type="button"
-                                  onClick={() =>
-                                    onSelectStockFromNews(ticker, activeArticle.id, activeArticle.title)
-                                  }
-                                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-2 py-1 text-[#1E7B85] hover:underline font-semibold"
-                                  title={`Buka ${ticker} di Terminal`}
-                                >
-                                  {ticker}
-                                </button>
-                              );
-                            }
-                            return (
-                              <span
-                                key={ticker}
-                                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-1 text-[#9CA3AF]"
-                              >
-                                {ticker}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </td>
-                      <td className="py-3 text-[#3E4349] leading-relaxed">
-                        {sec.impactDescription}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Stacked List */}
-            <div className="sm:hidden divide-y divide-[#E5E5DC]">
-              {activeArticle.sectorImpacts.map((sec, idx) => (
-                <div key={idx} className="py-3.5 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[#1A1C1E]">{sec.sector}</span>
-                    {renderSentimentText(sec.sentiment)}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 font-mono tnum pt-0.5">
-                    <span className="text-[#5A6068] font-sans text-xs">Emiten:</span>
-                    {sec.tickers.map((ticker) => {
-                      const isSupported = canOpenTickerInTerminal(ticker);
-                      if (isSupported) {
-                        return (
-                          <button
-                            key={ticker}
-                            type="button"
-                            onClick={() =>
-                              onSelectStockFromNews(ticker, activeArticle.id, activeArticle.title)
-                            }
-                            className="min-h-[44px] min-w-[48px] px-3 py-2 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D5D5CA] text-xs font-semibold inline-flex items-center justify-center transition"
-                            title={`Buka ${ticker} di Terminal`}
-                          >
-                            {ticker} ↗
-                          </button>
-                        );
-                      }
-                      return (
-                        <span
-                          key={ticker}
-                          className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-2 text-[#9CA3AF] text-xs"
-                        >
-                          {ticker}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[#3E4349] leading-relaxed pt-1">
-                    {sec.impactDescription}
-                  </p>
-                </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              {[
+                { id: "ALL", label: "Semua" },
+                { id: "CORPORATE", label: "Korporasi & bursa" },
+                { id: "MONETARY_CURRENCY", label: "Moneter dan FX" },
+                { id: "GLOBAL_MACRO", label: "Makro global" },
+                { id: "DOMESTIC_POLITICS", label: "Politik dan fiskal" },
+                { id: "COMMODITIES", label: "Komoditas dan energi" },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory(cat.id as NewsFilterCategory);
+                    setShowAllLiveSidebar(false);
+                  }}
+                  className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
+                    selectedCategory === cat.id
+                      ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
+                      : "text-[#5A6068] hover:text-[#1A1C1E]"
+                  }`}
+                >
+                  {cat.label}
+                </button>
               ))}
             </div>
 
-            <p className="text-xs text-[#7A8088] pt-2 border-t border-[#E5E5DC]">
-              {provider === "yahoo"
-                ? "Semua kode saham IDX 4 huruf berwarna biru dapat dibuka langsung di Terminal (mode Yahoo Finance)."
-                : "Ticker abu-abu belum tersedia pada dataset contoh Terminal (aktif penuh di mode Yahoo Finance)."}
-            </p>
-          </section>
-
-          <div className="pt-6 border-t border-[#E5E5DC]">
-            <button
-              type="button"
-              onClick={() => setActiveArticle(null)}
-              className="min-h-[44px] inline-flex items-center text-xs text-[#1E7B85] hover:underline font-medium"
-            >
-              ← Kembali ke daftar berita
-            </button>
-          </div>
-        </article>
-      ) : (
-        /* BERANDA BERITA */
-        <div className="max-w-7xl mx-auto py-6 space-y-6">
-          <div className="border-b border-[#E5E5DC] pb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-            <div className="space-y-1">
-              <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E]">
-                {activeSourceTab === "live"
-                  ? "Warta pasar modal & makro terkini"
-                  : "Warta makro dan transmisi kebijakan"}
-              </h1>
-              <p className="text-xs sm:text-sm text-[#5A6068]">
-                {activeSourceTab === "live"
-                  ? "Berita terkini pasar saham Indonesia dari RSS publik (CNBC Indonesia, ANTARA Ekonomi & Google News IDX)."
-                  : "Skenario transmisi kebijakan ekonomi moneter dan fiskal terhadap kinerja sektoral saham."}
-              </p>
-            </div>
-
-            {provider === "yahoo" && (
-              <div className="flex items-center bg-[#EFEFEA] p-0.5 rounded-lg border border-[#D8D8CF] text-xs self-start">
+            <div className="flex flex-wrap items-center gap-2">
+              {watchlistSet.size > 0 ? (
                 <button
                   type="button"
                   onClick={() => {
-                    setSourceTabPref("live");
-                    if (selectedCategory === "CORPORATE") setSelectedCategory("ALL");
-                  }}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-md font-medium transition ${
-                    activeSourceTab === "live"
-                      ? "bg-[#1E7B85] text-white shadow-sm"
-                      : "text-[#5A6068] hover:text-[#1A1C1E]"
-                  }`}
-                >
-                  Berita Pasar Terkini
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSourceTabPref("scenario");
-                    if (selectedCategory === "CORPORATE") setSelectedCategory("ALL");
-                  }}
-                  className={`min-h-[36px] px-3 py-1.5 rounded-md font-medium transition ${
-                    activeSourceTab === "scenario"
-                      ? "bg-[#1E7B85] text-white shadow-sm"
-                      : "text-[#5A6068] hover:text-[#1A1C1E]"
-                  }`}
-                >
-                  Skenario Contoh
-                </button>
-              </div>
-            )}
-          </div>
-
-          {activeSourceTab === "live" && (
-            <MarketTicker
-              provider={provider}
-              tickers={macroTickers}
-              isMacroFallback={isMacroFallback}
-              isLoading={isMacroLoading}
-              theme="light"
-              embedded
-            />
-          )}
-
-          {activeSourceTab === "live" && liveNewsItems.length > 0 && (
-            <div className="rounded-lg border border-[#E5E5DC] bg-[#F3F3ED]/60 px-3.5 py-3 space-y-2 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar hari ini</span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium border ${
-                      activeBrief.source === "gemini"
-                        ? "bg-[#1E7B85]/10 text-[#1E7B85] border-[#1E7B85]/30"
-                        : "bg-[#EFEFEA] text-[#5A6068] border-[#D8D8CF]"
-                    }`}
-                  >
-                    {activeBrief.source === "gemini"
-                      ? `Ringkasan AI (${activeBrief.model || "flash"})`
-                      : "Sintesis otomatis"}
-                  </span>
-                  <span className="text-[11px] text-[#5A6068] tnum">
-                    {activeBrief.sentimentCounts.bullish} positif &bull;{" "}
-                    {activeBrief.sentimentCounts.bearish} negatif &bull;{" "}
-                    {activeBrief.sentimentCounts.neutral} netral
-                  </span>
-                </div>
-
-                {onRequestAiBrief && activeBrief.source !== "gemini" && (
-                  <button
-                    type="button"
-                    onClick={() => onRequestAiBrief(liveNewsItems, macroTickers)}
-                    disabled={isAiBriefLoading}
-                    className="min-h-[32px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1E7B85] border border-[#D8D8CF] font-medium transition disabled:opacity-60"
-                  >
-                    <Sparkles className={`w-3 h-3 ${isAiBriefLoading ? "animate-pulse" : ""}`} />
-                    <span>{isAiBriefLoading ? "Meringkas..." : "Ringkas dengan AI"}</span>
-                  </button>
-                )}
-              </div>
-
-              <div
-                className={`text-xs sm:text-sm text-[#3E4349] leading-relaxed ${
-                  !isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""
-                }`}
-              >
-                {activeBrief.summary}
-              </div>
-
-              {activeBrief.topTickers.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-[#5A6068]">
-                  <span>Banyak disorot:</span>
-                  <div className="flex flex-wrap items-center gap-1 font-mono tnum">
-                    {activeBrief.topTickers.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => onSelectStockFromNews(t, "", activeBrief.headline)}
-                        className="px-1.5 py-0.5 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D8D8CF] font-semibold transition"
-                        title={`Buka ${t} di Terminal`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {aiBriefNotice && (
-                <p className="text-[11px] text-[#7A8088]">{aiBriefNotice}</p>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setIsMarketSummaryExpanded(!isMarketSummaryExpanded)}
-                className="sm:hidden text-xs text-[#1E7B85] hover:underline font-medium min-h-[36px] inline-flex items-center"
-              >
-                {isMarketSummaryExpanded ? "Tutup ringkasan" : "Selengkapnya"}
-              </button>
-            </div>
-          )}
-
-          {activeSourceTab === "scenario" && (
-            <div className="text-xs sm:text-sm text-[#3E4349] leading-relaxed border-b border-[#E5E5DC] pb-3">
-              <div className={!isMarketSummaryExpanded ? "line-clamp-2 sm:line-clamp-none" : ""}>
-                <span className="font-semibold text-[#1A1C1E]">Ringkasan pasar (data contoh): </span>
-                {MACRO_MARKET_SUMMARY.summaryBrief}
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsMarketSummaryExpanded(!isMarketSummaryExpanded)}
-                className="sm:hidden text-xs text-[#1E7B85] hover:underline font-medium min-h-[44px] inline-flex items-center"
-              >
-                {isMarketSummaryExpanded ? "Tutup ringkasan" : "Selengkapnya"}
-              </button>
-            </div>
-          )}
-
-          {/* Baris Kontrol */}
-          <div className="space-y-3 border-b border-[#E5E5DC] pb-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              {activeSourceTab === "scenario" ? (
-                <div className="flex items-center space-x-4 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPeriod("1W")}
-                    className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
-                      selectedPeriod === "1W"
-                        ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
-                        : "text-[#5A6068] hover:text-[#1A1C1E]"
-                    }`}
-                  >
-                    1 Minggu terakhir
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPeriod("1M")}
-                    className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
-                      selectedPeriod === "1M"
-                        ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
-                        : "text-[#5A6068] hover:text-[#1A1C1E]"
-                    }`}
-                  >
-                    1 Bulan terakhir
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-[#5A6068]">
-                  <span className="w-2 h-2 rounded-full bg-[#2EB886] shrink-0"></span>
-                  <span>
-                    CNBC, ANTARA &amp; Google News BEI ({filteredLiveNews.length} berita)
-                    {liveNewsUpdatedAtWib ? ` • Diperbarui ${liveNewsUpdatedAtWib}` : ""}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleRetryLiveNews}
-                    disabled={isLiveNewsLoading}
-                    className="min-h-[32px] inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] font-medium transition disabled:opacity-50"
-                    title="Muat ulang berita pasar terkini"
-                  >
-                    <RotateCcw
-                      className={`w-3 h-3 text-[#1E7B85] ${isLiveNewsLoading ? "animate-spin" : ""}`}
-                    />
-                    <span>Segarkan</span>
-                  </button>
-                </div>
-              )}
-
-              <div className="relative w-full sm:w-64">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#7A8088]" />
-                <input
-                  type="text"
-                  placeholder="Cari berita atau kode saham..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
+                    setOnlyWatchlist((prev) => !prev);
                     setShowAllLiveSidebar(false);
                   }}
-                  className="w-full h-[44px] pl-9 pr-3 bg-transparent border border-[#D8D8CF] rounded text-xs text-[#1A1C1E] placeholder-[#7A8088] focus:outline-none focus:border-[#1E7B85]"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-                {[
-                  { id: "ALL", label: "Semua" },
-                  ...(activeSourceTab === "live"
-                    ? [{ id: "CORPORATE", label: "Korporasi & bursa" }]
-                    : []),
-                  { id: "MONETARY_CURRENCY", label: "Moneter dan FX" },
-                  { id: "GLOBAL_MACRO", label: "Makro global" },
-                  { id: "DOMESTIC_POLITICS", label: "Politik dan fiskal" },
-                  { id: "COMMODITIES", label: "Komoditas dan energi" },
-                ].map((cat) => (
+                  className={`min-h-[34px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition ${
+                    onlyWatchlist
+                      ? "bg-[#1E7B85] text-white border-[#1E7B85] shadow-sm"
+                      : "bg-[#EFEFEA] text-[#5A6068] hover:text-[#1A1C1E] border-[#D8D8CF]"
+                  }`}
+                  title="Saring hanya berita saham Watchlist Saya"
+                >
+                  <Bookmark className="w-3 h-3" />
+                  <span>Watchlist saya ({liveWatchlistCount})</span>
+                </button>
+              ) : (
+                onOpenTerminalWatchlist && (
                   <button
-                    key={cat.id}
+                    type="button"
+                    onClick={onOpenTerminalWatchlist}
+                    className="min-h-[34px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border border-[#D8D8CF] bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#5A6068] hover:text-[#1E7B85] text-[11px] font-medium transition"
+                    title="Pilih saham favorit di Watchlist Terminal agar beritanya diprioritaskan di sini"
+                  >
+                    <Star className="w-3 h-3 text-[#1E7B85]" />
+                    <span>Atur Watchlist</span>
+                  </button>
+                )
+              )}
+
+              <div className="flex items-center bg-[#EFEFEA] p-0.5 rounded-lg border border-[#D8D8CF] text-[11px]">
+                {[
+                  { id: "ALL", label: "Semua sentimen" },
+                  { id: "BULLISH", label: "Positif" },
+                  { id: "BEARISH", label: "Negatif" },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
                     type="button"
                     onClick={() => {
-                      setSelectedCategory(cat.id as NewsFilterCategory);
+                      setSelectedSentiment(opt.id as NewsFilterSentiment);
                       setShowAllLiveSidebar(false);
                     }}
-                    className={`min-h-[44px] inline-flex items-center px-1 transition font-medium ${
-                      selectedCategory === cat.id
-                        ? "text-[#1A1C1E] border-b-2 border-[#1E7B85]"
+                    className={`min-h-[32px] px-2.5 py-1 rounded-md font-medium transition ${
+                      selectedSentiment === opt.id
+                        ? "bg-[#1E7B85] text-white shadow-sm"
                         : "text-[#5A6068] hover:text-[#1A1C1E]"
                     }`}
                   >
-                    {cat.label}
+                    {opt.label}
                   </button>
                 ))}
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {watchlistSet.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOnlyWatchlist((prev) => !prev);
-                      setShowAllLiveSidebar(false);
-                    }}
-                    className={`min-h-[34px] inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-medium transition ${
-                      onlyWatchlist
-                        ? "bg-[#1E7B85] text-white border-[#1E7B85] shadow-sm"
-                        : "bg-[#EFEFEA] text-[#5A6068] hover:text-[#1A1C1E] border-[#D8D8CF]"
-                    }`}
-                    title="Saring berita yang menyebut saham di watchlist Terminal"
-                  >
-                    <Bookmark className="w-3 h-3" />
-                    <span>Watchlist saya ({activeWatchlistMatchCount})</span>
-                  </button>
-                )}
-
-                <div className="flex items-center bg-[#EFEFEA] p-0.5 rounded-lg border border-[#D8D8CF] text-[11px]">
-                  {[
-                    { id: "ALL", label: "Semua sentimen" },
-                    { id: "BULLISH", label: "Positif" },
-                    { id: "BEARISH", label: "Negatif" },
-                  ].map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedSentiment(opt.id as NewsFilterSentiment);
-                        setShowAllLiveSidebar(false);
-                      }}
-                      className={`min-h-[32px] px-2.5 py-1 rounded-md font-medium transition ${
-                        selectedSentiment === opt.id
-                          ? "bg-[#1E7B85] text-white shadow-sm"
-                          : "text-[#5A6068] hover:text-[#1A1C1E]"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
+        </div>
 
-          {/* KONTEN TAB 1: BERITA PASAR TERKINI (RSS NYATA) */}
-          {activeSourceTab === "live" ? (
-            isLiveNewsLoading && liveNewsItems.length === 0 ? (
-              <div className="py-12 text-center text-xs text-[#5A6068] animate-pulse">
-                Mengambil berita pasar modal Indonesia terkini...
-              </div>
-            ) : filteredLiveNews.length === 0 ? (
-              <div className="py-12 text-center space-y-3 text-xs text-[#5A6068]">
-                <p>
-                  {liveNewsItems.length === 0
-                    ? "Berita pasar terkini belum dapat dimuat dari sumber RSS saat ini."
-                    : "Tidak ada berita terkini yang cocok dengan filter pencarian Anda."}
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {liveNewsItems.length === 0 ? (
-                    <button
-                      type="button"
-                      onClick={handleRetryLiveNews}
-                      className="min-h-[40px] inline-flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] transition"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-[#1E7B85]" />
-                      <span>Coba Lagi</span>
-                    </button>
-                  ) : (
-                    hasActiveFilters && (
-                      <button
-                        type="button"
-                        onClick={resetFilters}
-                        className="min-h-[40px] inline-flex items-center px-3 py-1.5 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] transition"
-                      >
-                        Reset filter
-                      </button>
-                    )
-                  )}
+        {/* KONTEN BERITA PASAR TERKINI (RSS NYATA) */}
+        {provider !== "yahoo" ? (
+          <div className="py-12 px-4 text-center space-y-2 text-xs text-[#5A6068] rounded-lg border border-[#E5E5DC] bg-[#F3F3ED]/60">
+            <p className="font-semibold text-[#1A1C1E]">
+              Mode data ilustrasi sedang aktif
+            </p>
+            <p className="max-w-md mx-auto">
+              Feed berita RSS pasar modal real-time (CNBC Indonesia, ANTARA Ekonomi &amp; Google News IDX) aktif ketika penyedia data Yahoo Finance diaktifkan.
+            </p>
+          </div>
+        ) : isLiveNewsLoading && liveNewsItems.length === 0 ? (
+          <div className="py-12 text-center text-xs text-[#5A6068] animate-pulse">
+            Mengambil berita pasar modal Indonesia terkini...
+          </div>
+        ) : filteredLiveNews.length === 0 ? (
+          <div className="py-12 text-center space-y-3 text-xs text-[#5A6068]">
+            <p>
+              {liveNewsItems.length === 0
+                ? "Berita pasar terkini belum dapat dimuat dari sumber RSS saat ini."
+                : "Tidak ada berita terkini yang cocok dengan filter pencarian Anda."}
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {liveNewsItems.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={handleRetryLiveNews}
+                  className="min-h-[40px] inline-flex items-center space-x-1.5 px-3 py-1.5 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] transition"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-[#1E7B85]" />
+                  <span>Coba Lagi</span>
+                </button>
+              ) : (
+                hasActiveFilters && (
                   <button
                     type="button"
-                    onClick={() => setSourceTabPref("scenario")}
-                    className="min-h-[40px] inline-flex items-center px-3 py-1.5 rounded bg-[#1E7B85] text-white transition"
+                    onClick={resetFilters}
+                    className="min-h-[40px] inline-flex items-center px-3 py-1.5 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] transition"
                   >
-                    Buka Skenario Contoh
+                    Reset filter
                   </button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
-                {leadLiveStory && (
-                  <div
-                    className={`${
-                      allSidebarLiveStories.length > 0 ? "lg:col-span-7" : "lg:col-span-12 max-w-4xl"
-                    } space-y-6`}
+                )
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
+            {leadLiveStory && (
+              <div
+                className={`${
+                  allSidebarLiveStories.length > 0 ? "lg:col-span-7" : "lg:col-span-12 max-w-4xl"
+                } space-y-6`}
+              >
+                <div className="space-y-3">
+                  {leadLiveStory.imageUrl && (
+                    <NewsArticleImage
+                      src={leadLiveStory.imageUrl}
+                      alt={leadLiveStory.title}
+                      href={leadLiveStory.link}
+                      publisher={leadLiveStory.publisher}
+                      sourceDomain={leadLiveStory.sourceDomain}
+                      variant="lead"
+                    />
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#5A6068]">
+                    <PublisherBadge
+                      publisher={leadLiveStory.publisher}
+                      sourceDomain={leadLiveStory.sourceDomain}
+                      emphasis
+                    />
+                    {isLeadWatchlistMatch && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1E7B85]/12 text-[#1E7B85] border border-[#1E7B85]/35 text-[10px] font-semibold">
+                        <Star className="w-2.5 h-2.5 fill-[#1E7B85]" />
+                        <span>Watchlist Anda</span>
+                      </span>
+                    )}
+                    <span className="text-[#D8D8CF]">|</span>
+                    <span>{formatNewsCategoryLabel(leadLiveStory.category)}</span>
+                    <span className="text-[#D8D8CF]">|</span>
+                    {renderSentimentText(leadLiveStory.sentiment || "NEUTRAL")}
+                    <span className="text-[#D8D8CF]">|</span>
+                    <span>{leadLiveStory.publishedWib}</span>
+                  </div>
+
+                  <h2
+                    className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E] leading-snug"
+                    style={{ textWrap: "balance" }}
                   >
-                    <div className="space-y-3">
-                      {leadLiveStory.imageUrl && (
-                        <NewsArticleImage
-                          src={leadLiveStory.imageUrl}
-                          alt={leadLiveStory.title}
-                          href={leadLiveStory.link}
-                          publisher={leadLiveStory.publisher}
-                          sourceDomain={leadLiveStory.sourceDomain}
-                          variant="lead"
-                        />
+                    <a
+                      href={leadLiveStory.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-[#1E7B85] transition"
+                    >
+                      {leadLiveStory.title}
+                    </a>
+                  </h2>
+
+                  {leadLiveStory.summary && (
+                    <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
+                      {leadLiveStory.summary}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[#5A6068] border-t border-[#E5E5DC]">
+                    <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
+                      {leadLiveStory.tickers.length > 0 && (
+                        <>
+                          <span className="font-sans">Emiten terkait:</span>
+                          {leadLiveStory.tickers.map((t) => {
+                            const isMatched = watchlistSet.has(t);
+                            return (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() =>
+                                  onSelectStockFromNews(t, "", leadLiveStory.title, leadLiveStory)
+                                }
+                                className={`min-h-[36px] px-2 py-0.5 rounded border font-semibold transition ${
+                                  isMatched
+                                    ? "bg-[#1E7B85]/15 hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border-[#1E7B85]/50"
+                                    : "bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border-[#D8D8CF]"
+                                }`}
+                                title={
+                                  isMatched
+                                    ? `${t} ada di Watchlist Anda • Buka di Terminal`
+                                    : `Buka ${t} di Terminal`
+                                }
+                              >
+                                {t}
+                              </button>
+                            );
+                          })}
+                        </>
                       )}
-
-                      <div className="flex flex-wrap items-center gap-x-2 text-xs text-[#5A6068]">
-                        <PublisherBadge
-                          publisher={leadLiveStory.publisher}
-                          sourceDomain={leadLiveStory.sourceDomain}
-                          emphasis
-                        />
-                        <span className="text-[#D8D8CF]">|</span>
-                        <span>{formatNewsCategoryLabel(leadLiveStory.category)}</span>
-                        <span className="text-[#D8D8CF]">|</span>
-                        {renderSentimentText(leadLiveStory.sentiment || "NEUTRAL")}
-                        <span className="text-[#D8D8CF]">|</span>
-                        <span>{leadLiveStory.publishedWib}</span>
-                      </div>
-
-                      <h2
-                        className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E] leading-snug"
-                        style={{ textWrap: "balance" }}
-                      >
-                        <a
-                          href={leadLiveStory.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:text-[#1E7B85] transition"
-                        >
-                          {leadLiveStory.title}
-                        </a>
-                      </h2>
-
-                      {leadLiveStory.summary && (
-                        <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
-                          {leadLiveStory.summary}
-                        </p>
-                      )}
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[#5A6068] border-t border-[#E5E5DC]">
-                        <div className="flex flex-wrap items-center gap-1.5 font-mono tnum">
-                          {leadLiveStory.tickers.length > 0 && (
-                            <>
-                              <span className="font-sans">Emiten terkait:</span>
-                              {leadLiveStory.tickers.map((t) => (
-                                <button
-                                  key={t}
-                                  type="button"
-                                  onClick={() =>
-                                    onSelectStockFromNews(t, "", leadLiveStory.title, leadLiveStory)
-                                  }
-                                  className="min-h-[36px] px-2 py-0.5 rounded bg-[#EFEFEA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D8D8CF] font-semibold transition"
-                                  title={`Buka ${t} di Terminal`}
-                                >
-                                  {t}
-                                </button>
-                              ))}
-                            </>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          {onAskAiLiveNews && (
-                            <button
-                              type="button"
-                              onClick={() => onAskAiLiveNews(leadLiveStory)}
-                              className="min-h-[40px] inline-flex items-center space-x-1 text-[#1E7B85] hover:underline font-medium"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              <span>Bedah dengan AI</span>
-                            </button>
-                          )}
-                          <a
-                            href={leadLiveStory.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="min-h-[40px] inline-flex items-center space-x-1 text-[#2A2E33] hover:text-[#1E7B85] hover:underline font-medium"
-                          >
-                            <span>Sumber asli</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
-                      </div>
                     </div>
 
-                    {featuredLiveStories.length > 0 && (
-                      <div className="space-y-4 pt-2">
-                        <span className="text-xs font-semibold text-[#5A6068] block">
-                          Sorotan pasar pilihan
-                        </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
-                          {featuredLiveStories.map((story) => (
-                            <LiveStoryCard
-                              key={story.id}
-                              story={story}
-                              variant="grid"
-                              onSelectStockFromNews={onSelectStockFromNews}
-                              onAskAiLiveNews={onAskAiLiveNews}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {onAskAiLiveNews && (
+                        <button
+                          type="button"
+                          onClick={() => onAskAiLiveNews(leadLiveStory)}
+                          className="min-h-[40px] inline-flex items-center space-x-1 text-[#1E7B85] hover:underline font-medium"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Bedah dengan AI</span>
+                        </button>
+                      )}
+                      <a
+                        href={leadLiveStory.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-h-[40px] inline-flex items-center space-x-1 text-[#2A2E33] hover:text-[#1E7B85] hover:underline font-medium"
+                      >
+                        <span>Sumber asli</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
-                )}
+                </div>
 
-                {allSidebarLiveStories.length > 0 && (
-                  <div className="lg:col-span-5 space-y-4 lg:border-l lg:border-[#E5E5DC] lg:pl-8">
+                {featuredLiveStories.length > 0 && (
+                  <div className="space-y-4 pt-2">
                     <span className="text-xs font-semibold text-[#5A6068] block">
-                      Berita terbaru lainnya
+                      Sorotan pasar pilihan
                     </span>
-
-                    <div className="divide-y divide-[#E5E5DC]">
-                      {visibleSidebarLiveStories.map((story) => (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+                      {featuredLiveStories.map((story) => (
                         <LiveStoryCard
                           key={story.id}
                           story={story}
-                          variant="sidebar"
+                          variant="grid"
+                          watchlistSet={watchlistSet}
                           onSelectStockFromNews={onSelectStockFromNews}
                           onAskAiLiveNews={onAskAiLiveNews}
                         />
                       ))}
                     </div>
-
-                    {allSidebarLiveStories.length > 6 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAllLiveSidebar((prev) => !prev)}
-                        className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] text-xs font-medium transition"
-                      >
-                        {showAllLiveSidebar
-                          ? "Ringkas daftar berita"
-                          : `Tampilkan ${hiddenSidebarCount} berita lainnya`}
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
-            )
-          ) : /* KONTEN TAB 2: SKENARIO CONTOH */ filteredScenarioNews.length === 0 ? (
-            <div className="py-12 text-center space-y-3 text-xs text-[#5A6068]">
-              <p>Tidak ada skenario berita yang cocok dengan filter yang dipilih.</p>
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="min-h-[40px] inline-flex items-center px-3 py-1.5 rounded bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] transition"
-                >
-                  Reset filter
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start pt-2">
-              {leadStory && (
-                <div className="lg:col-span-7 space-y-3">
-                  <div className="flex items-center space-x-2 text-xs text-[#5A6068]">
-                    <span className="font-semibold text-[#1E7B85]">Berita utama</span>
-                    <span className="text-[#D8D8CF]">|</span>
-                    <span>{formatNewsCategoryLabel(leadStory.category)}</span>
-                    <span className="text-[#D8D8CF]">|</span>
-                    {renderSentimentText(leadStory.marketSentiment)}
-                  </div>
+            )}
 
-                  <h2
-                    onClick={() => setActiveArticle(leadStory.id)}
-                    className="text-2xl sm:text-3xl font-serif font-bold text-[#1A1C1E] leading-snug cursor-pointer hover:text-[#1E7B85] transition"
-                    style={{ textWrap: "balance" }}
-                  >
-                    {leadStory.title}
-                  </h2>
-
-                  <p className="text-xs sm:text-sm text-[#3E4349] leading-relaxed">
-                    {leadStory.summary}
-                  </p>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[#5A6068] border-t border-[#E5E5DC]">
-                    <div className="flex items-center space-x-2 font-mono tnum">
-                      <span className="font-sans">Emiten terkait:</span>
-                      {(() => {
-                        const supported = leadStory.sectorImpacts
-                          .flatMap((s) => s.tickers)
-                          .filter((t) => canOpenTickerInTerminal(t));
-                        const other = leadStory.sectorImpacts
-                          .flatMap((s) => s.tickers)
-                          .filter((t) => !canOpenTickerInTerminal(t));
-                        const combined = Array.from(new Set([...supported, ...other])).slice(0, 5);
-                        return combined.map((t) => (
-                          <span
-                            key={t}
-                            className={
-                              canOpenTickerInTerminal(t)
-                                ? "text-[#1E7B85] font-semibold"
-                                : "text-[#7A8088]"
-                            }
-                          >
-                            {t}
-                          </span>
-                        ));
-                      })()}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setActiveArticle(leadStory.id)}
-                      className="min-h-[44px] inline-flex items-center text-[#1E7B85] hover:underline font-medium"
-                    >
-                      Baca analisis lengkap →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="lg:col-span-5 space-y-5 lg:border-l lg:border-[#E5E5DC] lg:pl-8">
+            {allSidebarLiveStories.length > 0 && (
+              <div className="lg:col-span-5 space-y-4 lg:border-l lg:border-[#E5E5DC] lg:pl-8">
                 <span className="text-xs font-semibold text-[#5A6068] block">
-                  Warta lainnya
+                  Berita terbaru lainnya
                 </span>
 
                 <div className="divide-y divide-[#E5E5DC]">
-                  {secondaryStories.map((story) => (
-                    <div key={story.id} className="py-4 first:pt-0 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs text-[#5A6068]">
-                        <span>{formatNewsCategoryLabel(story.category)}</span>
-                        <span>{story.date}</span>
-                      </div>
-
-                      <h3
-                        onClick={() => setActiveArticle(story.id)}
-                        className="text-base sm:text-lg font-serif font-bold text-[#1A1C1E] leading-snug cursor-pointer hover:text-[#1E7B85] transition"
-                        style={{ textWrap: "balance" }}
-                      >
-                        {story.title}
-                      </h3>
-
-                      <p className="text-xs text-[#3E4349] line-clamp-2 leading-relaxed">
-                        {story.summary}
-                      </p>
-
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <div className="flex items-center space-x-2 font-mono tnum text-[#5A6068]">
-                          {story.sectorImpacts.flatMap((s) => s.tickers).slice(0, 3).map((t) => (
-                            <span
-                              key={t}
-                              className={
-                                canOpenTickerInTerminal(t)
-                                  ? "text-[#1E7B85] font-semibold"
-                                  : "text-[#9CA3AF]"
-                              }
-                            >
-                              {t}
-                            </span>
-                          ))}
-                        </div>
-                        {renderSentimentText(story.marketSentiment)}
-                      </div>
-                    </div>
+                  {visibleSidebarLiveStories.map((story) => (
+                    <LiveStoryCard
+                      key={story.id}
+                      story={story}
+                      variant="sidebar"
+                      watchlistSet={watchlistSet}
+                      onSelectStockFromNews={onSelectStockFromNews}
+                      onAskAiLiveNews={onAskAiLiveNews}
+                    />
                   ))}
                 </div>
+
+                {allSidebarLiveStories.length > 6 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllLiveSidebar((prev) => !prev)}
+                    className="w-full min-h-[40px] px-3 py-2 rounded-lg bg-[#EFEFEA] hover:bg-[#E5E5DC] text-[#1A1C1E] border border-[#D8D8CF] text-xs font-medium transition"
+                  >
+                    {showAllLiveSidebar
+                      ? "Ringkas daftar berita"
+                      : `Tampilkan ${hiddenSidebarCount} berita lainnya`}
+                  </button>
+                )}
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

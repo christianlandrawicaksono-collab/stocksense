@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, Suspense } from "react";
+import React, { useState, useMemo, useSyncExternalStore, Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Navbar, AppMode } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
@@ -12,9 +12,18 @@ import { useMarketData } from "@/hooks/useMarketData";
 import { useLiveNews } from "@/hooks/useLiveNews";
 import { useAiChat } from "@/hooks/useAiChat";
 import { STOCKS_DATA } from "@/data/stocksData";
-import { MACRO_NEWS_DATA } from "@/data/macroData";
+import {
+  MAX_CUSTOM_WATCHLIST,
+  addTickerToWatchlist,
+  getWatchlistServerSnapshot,
+  parseWatchlistJson,
+  readWatchlistStorageSnapshot,
+  subscribeWatchlistStorage,
+  toggleTickerInWatchlist,
+  writeCustomWatchlistStorage,
+} from "@/lib/watchlist";
 import type { AiArticleContext, AiMarketContext } from "@/app/api/ai/analyze/route";
-import type { LiveMarketNewsItem, MacroNewsItem } from "@/types/market";
+import type { LiveMarketNewsItem } from "@/types/market";
 import { formatRupiah } from "@/lib/format";
 
 function buildLiveNewsArticleContext(item: LiveMarketNewsItem): AiArticleContext {
@@ -35,16 +44,7 @@ function buildLiveNewsArticleContext(item: LiveMarketNewsItem): AiArticleContext
   };
 }
 
-function buildScenarioArticleContext(article: MacroNewsItem): AiArticleContext {
-  return {
-    title: article.title,
-    category: article.category,
-    catalyst: article.catalyst,
-    summary: article.summary,
-    overallImpact: article.overallImpact,
-    isLive: false,
-  };
-}
+const emptySubscribe = () => () => {};
 
 function HomeContent() {
   const searchParams = useSearchParams();
@@ -57,13 +57,23 @@ function HomeContent() {
   const currentMode: AppMode =
     rawMode === "terminal" || (!rawMode && !!rawSaham) ? "terminal" : "berita";
   const selectedTicker = rawSaham || "BBCA";
-  const originNewsId = searchParams.get("berita") || null;
-  const activeArticleId = searchParams.get("artikel") || null;
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
-  const [customTickers, setCustomTickers] = useState<string[]>([]);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
   const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
+
+  const watchlistJson = useSyncExternalStore(
+    subscribeWatchlistStorage,
+    readWatchlistStorageSnapshot,
+    getWatchlistServerSnapshot
+  );
+  const isHydrated = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
+  const customWatchlist = useMemo(() => parseWatchlistJson(watchlistJson), [watchlistJson]);
+  const isWatchlistFull = customWatchlist.length >= MAX_CUSTOM_WATCHLIST;
 
   const {
     messages: aiMessages,
@@ -76,27 +86,27 @@ function HomeContent() {
   } = useAiChat();
 
   const trackedTickers = useMemo(
-    () => [selectedTicker, ...customTickers],
-    [selectedTicker, customTickers]
+    () => [selectedTicker, ...customWatchlist],
+    [selectedTicker, customWatchlist]
   );
 
   const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } =
     useMarketData(trackedTickers);
 
-  const liveNews = useLiveNews(provider);
+  const liveNews = useLiveNews(provider, customWatchlist, isHydrated);
 
-  const watchlistTickers = useMemo(
-    () =>
-      Array.from(
-        new Set([...STOCKS_DATA.map((s) => s.ticker), ...customTickers, selectedTicker])
-      ),
-    [customTickers, selectedTicker]
-  );
+  const handleAddToWatchlist = (ticker: string) => {
+    const updated = addTickerToWatchlist(customWatchlist, ticker);
+    if (updated !== customWatchlist) {
+      writeCustomWatchlistStorage(updated);
+    }
+  };
 
-  const handleAddCustomTicker = (ticker: string) => {
-    const clean = ticker.trim().toUpperCase();
-    if (!/^[A-Z]{4}$/.test(clean)) return;
-    setCustomTickers((prev) => (prev.includes(clean) ? prev : [clean, ...prev]));
+  const handleToggleWatchlist = (ticker: string) => {
+    const updated = toggleTickerInWatchlist(customWatchlist, ticker);
+    if (updated !== customWatchlist) {
+      writeCustomWatchlistStorage(updated);
+    }
   };
 
   const activeAiContext: AiMarketContext = useMemo(() => {
@@ -144,16 +154,9 @@ function HomeContent() {
       };
     });
 
-    const targetNewsId = currentMode === "berita" ? activeArticleId : originNewsId;
-    const matchedScenarioArticle = targetNewsId
-      ? MACRO_NEWS_DATA.find((n) => n.id === targetNewsId)
-      : undefined;
-
     const articleContext =
       currentMode === "berita" && activeLiveNewsForAi
         ? buildLiveNewsArticleContext(activeLiveNewsForAi)
-        : matchedScenarioArticle
-        ? buildScenarioArticleContext(matchedScenarioArticle)
         : currentMode === "terminal" && originLiveNews
         ? buildLiveNewsArticleContext(originLiveNews)
         : undefined;
@@ -194,8 +197,6 @@ function HomeContent() {
     provider,
     selectedTicker,
     quotes,
-    activeArticleId,
-    originNewsId,
     originLiveNews,
     macroTickers,
     activeLiveNewsForAi,
@@ -213,10 +214,10 @@ function HomeContent() {
   const updateUrlParams = (updates: {
     mode?: AppMode;
     saham?: string | null;
-    berita?: string | null;
-    artikel?: string | null;
   }) => {
     const params = new URLSearchParams(searchParams.toString());
+    params.delete("berita");
+    params.delete("artikel");
 
     if (updates.mode !== undefined) {
       params.set("mode", updates.mode);
@@ -226,20 +227,6 @@ function HomeContent() {
         params.set("saham", updates.saham);
       } else {
         params.delete("saham");
-      }
-    }
-    if (updates.berita !== undefined) {
-      if (updates.berita) {
-        params.set("berita", updates.berita);
-      } else {
-        params.delete("berita");
-      }
-    }
-    if (updates.artikel !== undefined) {
-      if (updates.artikel) {
-        params.set("artikel", updates.artikel);
-      } else {
-        params.delete("artikel");
       }
     }
 
@@ -253,42 +240,27 @@ function HomeContent() {
       updateUrlParams({
         mode: "terminal",
         saham: selectedTicker,
-        artikel: null,
       });
     } else {
       setOriginLiveNews(null);
       updateUrlParams({
         mode: "berita",
-        berita: null,
       });
     }
   };
 
-  // Navigate from News ticker link to Terminal
+  // Navigate from News ticker link to Terminal without altering custom watchlist unexpectedly
   const handleSelectStockFromNews = (
     ticker: string,
-    newsId: string,
+    _newsId: string,
     _newsTitle: string,
     liveItem?: LiveMarketNewsItem
   ) => {
-    handleAddCustomTicker(ticker);
-    if (liveItem) {
-      setOriginLiveNews(liveItem);
-      updateUrlParams({
-        mode: "terminal",
-        saham: ticker,
-        berita: null,
-        artikel: null,
-      });
-    } else {
-      setOriginLiveNews(null);
-      updateUrlParams({
-        mode: "terminal",
-        saham: ticker,
-        berita: newsId || null,
-        artikel: null,
-      });
-    }
+    setOriginLiveNews(liveItem || null);
+    updateUrlParams({
+      mode: "terminal",
+      saham: ticker,
+    });
     setTimeout(() => {
       document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 60);
@@ -305,22 +277,10 @@ function HomeContent() {
     }, 40);
   };
 
-  // Back from Terminal to the exact same News article
-  const handleBackToArticle = (newsId: string) => {
-    setOriginLiveNews(null);
-    updateUrlParams({
-      mode: "berita",
-      artikel: newsId,
-      berita: null,
-    });
-  };
-
   const handleBackToLiveNews = () => {
     setOriginLiveNews(null);
     updateUrlParams({
       mode: "berita",
-      artikel: null,
-      berita: null,
     });
   };
 
@@ -376,15 +336,17 @@ function HomeContent() {
         {currentMode === "terminal" ? (
           /* TAMPILAN TERMINAL GELAP */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-            {/* Kolom Kiri: Watchlist & Penyaring */}
+            {/* Kolom Kiri: Watchlist Terpisah & Penyaring */}
             <div id="terminal-watchlist-section" className="lg:col-span-5 xl:col-span-4 h-[550px] lg:h-[750px]">
               <TerminalWatchlist
                 selectedTicker={selectedTicker}
                 onSelectTicker={handleSelectTicker}
                 quotes={quotes}
                 provider={provider}
-                customTickers={customTickers}
-                onAddCustomTicker={handleAddCustomTicker}
+                customWatchlist={customWatchlist}
+                onToggleWatchlist={handleToggleWatchlist}
+                onAddToWatchlist={handleAddToWatchlist}
+                maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
               />
             </div>
 
@@ -411,16 +373,11 @@ function HomeContent() {
 
               <TerminalMainPane
                 selectedTicker={selectedTicker}
-                originNewsId={originNewsId}
                 originLiveNews={originLiveNews}
                 liveNewsItems={liveNews.items}
                 onSelectTicker={handleSelectTicker}
-                onBackToArticle={handleBackToArticle}
                 onBackToLiveNews={handleBackToLiveNews}
-                onCloseOriginPanel={() => {
-                  setOriginLiveNews(null);
-                  updateUrlParams({ berita: null });
-                }}
+                onCloseOriginPanel={() => setOriginLiveNews(null)}
                 onAskAiStock={(t) => {
                   setActiveLiveNewsForAi(null);
                   const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
@@ -433,6 +390,9 @@ function HomeContent() {
                     buildLiveNewsArticleContext(item)
                   );
                 }}
+                isInWatchlist={customWatchlist.includes(selectedTicker)}
+                isWatchlistFull={isWatchlistFull}
+                onToggleWatchlist={handleToggleWatchlist}
                 quote={quotes[selectedTicker]}
                 provider={provider}
                 marketStatus={marketStatus}
@@ -440,7 +400,7 @@ function HomeContent() {
             </div>
           </div>
         ) : (
-          /* TAMPILAN BERITA TERANG PENUH (tanpa bingkai/tepi gelap) */
+          /* TAMPILAN BERITA TERANG PENUH */
           <div className="w-full">
             <NewsView
               provider={provider}
@@ -451,7 +411,8 @@ function HomeContent() {
               isLiveNewsLoading={liveNews.isLoading}
               liveNewsUpdatedAtWib={liveNews.updatedAtWib}
               onRefreshLiveNews={liveNews.refresh}
-              watchlistTickers={watchlistTickers}
+              watchlistTickers={customWatchlist}
+              onOpenTerminalWatchlist={() => handleModeChange("terminal")}
               aiMarketBrief={liveNews.aiBrief}
               aiBriefNotice={liveNews.aiBriefNotice}
               isAiBriefLoading={liveNews.isAiBriefLoading}
@@ -459,18 +420,6 @@ function HomeContent() {
                 void liveNews.requestAiBrief(items, tickers, aiCustomApiKey);
               }}
               onSelectStockFromNews={handleSelectStockFromNews}
-              activeArticleId={activeArticleId}
-              onOpenArticle={(id) => {
-                setActiveLiveNewsForAi(null);
-                updateUrlParams({ mode: "berita", artikel: id });
-              }}
-              onAskAiArticle={(article) => {
-                setActiveLiveNewsForAi(null);
-                runAiAnalysis(
-                  `Jelaskan transmisi ekonomi dan dampak saham dari skenario: "${article.title}"`,
-                  buildScenarioArticleContext(article)
-                );
-              }}
               onAskAiLiveNews={(item) => {
                 setActiveLiveNewsForAi(item);
                 runAiAnalysis(
@@ -497,7 +446,7 @@ function HomeContent() {
               StocksSense
             </span>
             <span>|</span>
-            <span>Riset transmisi makro dan simulasi emiten saham</span>
+            <span>Riset pasar modal dan simulasi emiten saham</span>
           </div>
 
           <div className="text-center sm:text-right">

@@ -11,6 +11,7 @@ import {
   analyzeNewsSentiment,
   parseRssItems,
   getTickerNewsServer,
+  getLiveMarketNewsWithWatchlistServer,
 } from "@/lib/news-server";
 import { fetchRssTextCached } from "@/lib/yahoo-cache";
 
@@ -173,5 +174,38 @@ describe("news-server RSS helpers", () => {
     expect(results).toHaveLength(1);
     expect(results[0].title).toBe("Unilever Indonesia Bagikan Dividen Interim");
     expect(results[0].tickers).toContain("UNVR");
+  });
+
+  it("enriches main feed with watchlist-specific articles while preserving general market stories", async () => {
+    const mockedFetch = vi.mocked(fetchRssTextCached);
+    mockedFetch.mockImplementation(async (url: string) => {
+      if (url.includes("saham+ACES")) {
+        return `
+          <rss version="2.0"><channel>
+            <item>
+              <title>Aspirasi Hidup Indonesia (ACES) Perluas Gerai Baru - Kontan</title>
+              <link>https://news.google.com/rss/articles/aces-exp</link>
+              <pubDate>Thu, 26 Nov 2026 03:30:00 GMT</pubDate>
+              <description><![CDATA[ACES menambah gerai baru pada kuartal ini.]]></description>
+            </item>
+          </channel></rss>
+        `;
+      }
+      return `
+        <rss version="2.0"><channel>
+          <item>
+            <title>IHSG Menguat Tipis Jelang Penutupan</title>
+            <link>https://www.cnbcindonesia.com/market/ihsg-tipis</link>
+            <pubDate>Thu, 26 Nov 2026 05:00:00 GMT</pubDate>
+            <description><![CDATA[Indeks bergerak di zona hijau.]]></description>
+          </item>
+        </channel></rss>
+      `;
+    });
+
+    const combined = await getLiveMarketNewsWithWatchlistServer(["ACES"]);
+    const titles = combined.map((i) => i.title);
+    expect(titles).toContain("Aspirasi Hidup Indonesia (ACES) Perluas Gerai Baru");
+    expect(titles).toContain("IHSG Menguat Tipis Jelang Penutupan");
   });
 });

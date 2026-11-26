@@ -269,7 +269,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
           {messages.length === 0 ? (
             <div className="space-y-3">
               <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 text-slate-300 leading-relaxed">
-                Pilih skenario di bawah atau ajukan pertanyaan apa saja. Di desktop, Anda tetap bisa klik saham lain di Watchlist sambil panel ini terbuka.
+                Pilih pertanyaan contoh di bawah atau ajukan pertanyaan apa saja. Di desktop, Anda tetap bisa klik saham lain di Watchlist sambil panel ini terbuka.
               </div>
               <div>
                 <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider block mb-2">

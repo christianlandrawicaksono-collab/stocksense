@@ -149,3 +149,27 @@ export function filterNewsByTicker(
     );
   });
 }
+
+/**
+ * Mengurutkan berita dengan menempatkan item yang menyinggung saham di custom watchlist di urutan teratas,
+ * namun tetap mempertahankan seluruh berita pasar lainnya di urutan berikutnya (terbaru terlebih dahulu).
+ */
+export function prioritizeWatchlistNews(
+  items: LiveMarketNewsItem[],
+  watchlistSet: ReadonlySet<string>
+): LiveMarketNewsItem[] {
+  if (items.length <= 1 || watchlistSet.size === 0) return items;
+
+  const matched: LiveMarketNewsItem[] = [];
+  const others: LiveMarketNewsItem[] = [];
+
+  for (const item of items) {
+    if (item.tickers.some((t) => watchlistSet.has(t))) {
+      matched.push(item);
+    } else {
+      others.push(item);
+    }
+  }
+
+  return [...matched, ...others];
+}

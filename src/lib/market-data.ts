@@ -12,6 +12,7 @@ import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksDa
 import { LIVE_MARKET_TICKERS } from "@/data/macroData";
 import { LiveMarketNewsItem, MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus, MarketStatus } from "./market-hours";
+import { MAX_NEWS_WATCHLIST_ENRICHMENT, sanitizeWatchlistTickers } from "./watchlist";
 
 export type MarketProvider = "illustrative" | "yahoo";
 export type HistoryRange = "1Th" | "3Th" | "5Th" | "Semua";
@@ -325,18 +326,26 @@ export async function getStockProfile(ticker: string): Promise<StockProfileData 
 }
 
 /**
- * Mengambil berita pasar modal Indonesia terkini (RSS CNBC Indonesia, ANTARA Ekonomi & Google News IDX)
- * atau berita spesifik per emiten apabila parameter ticker diberikan.
+ * Mengambil berita pasar modal Indonesia terkini (RSS CNBC Indonesia, ANTARA Ekonomi & Google News IDX),
+ * berita spesifik per emiten apabila parameter ticker diberikan, atau feed gabungan + pengayaan watchlist.
  */
-export async function getLiveMarketNews(ticker?: string): Promise<{
+export async function getLiveMarketNews(
+  ticker?: string,
+  watchlistTickers?: string[]
+): Promise<{
   provider: MarketProvider;
   items: LiveMarketNewsItem[];
   isFallback: boolean;
 }> {
   try {
     const cleanTicker = ticker?.trim().toUpperCase() || "";
+    const cleanWatchlist = watchlistTickers
+      ? sanitizeWatchlistTickers(watchlistTickers, MAX_NEWS_WATCHLIST_ENRICHMENT)
+      : [];
     const url = cleanTicker
       ? `/api/news?ticker=${encodeURIComponent(cleanTicker)}`
+      : cleanWatchlist.length > 0
+      ? `/api/news?watchlist=${encodeURIComponent(cleanWatchlist.join(","))}`
       : "/api/news";
     const res = await fetch(url, {
       method: "GET",
