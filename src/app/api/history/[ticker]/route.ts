@@ -6,6 +6,7 @@ import {
   getIllustrativeHistory,
   isValidIdxTickerFormat,
 } from "@/lib/market-server";
+import { normalizeHistoryRange } from "@/lib/market-data";
 import { getIdxMarketStatus } from "@/lib/market-hours";
 
 export async function GET(
@@ -31,7 +32,7 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    const range = searchParams.get("range") || "Semua";
+    const range = normalizeHistoryRange(searchParams.get("range"), "Semua");
     const marketStatus = getIdxMarketStatus();
 
     let points: ServerHistoryPoint[] = [];

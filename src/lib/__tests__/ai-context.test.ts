@@ -70,4 +70,63 @@ describe("ai-context helpers", () => {
     expect(reply).not.toContain("COMMODITIES");
     expect(reply).toContain("Kontan");
   });
+
+  it("includes custom watchlist peers in context summary and supports watchlist comparison without zero division", () => {
+    const context = {
+      mode: "terminal" as const,
+      provider: "yahoo" as const,
+      customWatchlist: ["ACES", "BRIS"],
+      stock: {
+        ticker: "ACES",
+        name: "Aspirasi Hidup Indonesia Tbk",
+        sector: "Consumer Cyclicals",
+        price: 820,
+        changePercent: 1.2,
+        peRatio: 15.2,
+        historicalPeMean: 0,
+        pbvRatio: 2.1,
+        dividendYield: 3.4,
+        isLive: true,
+        isCurated: false,
+      },
+      watchlistPeers: [
+        {
+          ticker: "ACES",
+          sector: "Consumer Cyclicals",
+          price: 820,
+          changePercent: 1.2,
+          peRatio: 15.2,
+          pbvRatio: 2.1,
+          dividendYield: 3.4,
+          isLive: true,
+          isInCustomWatchlist: true,
+        },
+        {
+          ticker: "BRIS",
+          sector: "Financials",
+          price: 2950,
+          changePercent: -0.5,
+          peRatio: 19.4,
+          pbvRatio: 3.2,
+          dividendYield: 0.9,
+          isLive: true,
+          isInCustomWatchlist: true,
+        },
+      ],
+    };
+
+    const summary = buildContextSummary(context);
+    expect(summary).toContain("Watchlist Custom Pengguna (2 emiten):");
+    expect(summary).toContain("ACES");
+    expect(summary).toContain("BRIS");
+
+    const watchlistCompare = buildBuiltinSynthesis("Bandingkan saham di watchlist saya", context);
+    expect(watchlistCompare).toContain("Ringkasan Komparasi Watchlist Saya");
+    expect(watchlistCompare).toContain("**ACES**");
+    expect(watchlistCompare).toContain("**BRIS**");
+
+    const stockEval = buildBuiltinSynthesis("Evaluasi saham ini", context);
+    expect(stockEval).not.toContain("NaN");
+    expect(stockEval).not.toContain("Infinity");
+  });
 });

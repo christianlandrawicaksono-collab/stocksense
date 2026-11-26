@@ -6,6 +6,7 @@
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import { MarketTickerItem } from "@/types/market";
 import { getIdxMarketStatus } from "./market-hours";
+import { normalizeHistoryRange, sliceIllustrativeSeries } from "./market-data";
 import { formatDesimal, formatNumber } from "./format";
 import {
   fetchYahooQuotesCached,
@@ -176,11 +177,9 @@ export function getIllustrativeHistory(
   ticker: string,
   range: string = "Semua"
 ): ServerHistoryPoint[] {
+  const safeRange = normalizeHistoryRange(range, "Semua");
   const quarterly = ticker === "IHSG" ? IHSG_HISTORICAL : HISTORICAL_SERIES[ticker] || [];
-  let sliced = quarterly;
-  if (range === "1Th") sliced = quarterly.slice(-5);
-  else if (range === "3Th") sliced = quarterly.slice(-13);
-  else if (range === "5Th") sliced = quarterly.slice(-21);
+  const sliced = sliceIllustrativeSeries(quarterly, safeRange);
 
   return sliced.map((item) => ({
     time: `${item.date}-01`,
@@ -464,8 +463,9 @@ export async function getMacroTickersServer(): Promise<{
  */
 export async function getHistoryServer(
   ticker: string,
-  range: string = "Semua"
+  rawRange: string = "Semua"
 ): Promise<{ points: ServerHistoryPoint[]; isFallback: boolean }> {
+  const range = normalizeHistoryRange(rawRange, "Semua");
   const todayWib = toWibDateString(new Date());
   const cacheKey = `${ticker}_${range}_${todayWib}`;
   const now = Date.now();
@@ -490,7 +490,13 @@ export async function getHistoryServer(
   let startDate = new Date();
   let interval: "1d" | "1wk" = "1d";
 
-  if (range === "1Th") {
+  if (range === "1Bl") {
+    startDate.setMonth(today.getMonth() - 1);
+  } else if (range === "3Bl") {
+    startDate.setMonth(today.getMonth() - 3);
+  } else if (range === "6Bl") {
+    startDate.setMonth(today.getMonth() - 6);
+  } else if (range === "1Th") {
     startDate.setFullYear(today.getFullYear() - 1);
   } else if (range === "3Th") {
     startDate.setFullYear(today.getFullYear() - 3);

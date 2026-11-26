@@ -11,9 +11,10 @@ export interface AiStockContext {
   targetMeanPrice?: number;
   pbvRatio: number;
   dividendYield: number;
-  roe: number;
-  der: number;
+  roe?: number;
+  der?: number;
   isLive?: boolean;
+  isCurated?: boolean;
   strengths?: string[];
   risks?: string[];
 }
@@ -27,6 +28,7 @@ export interface AiPeerContextItem {
   pbvRatio: number;
   dividendYield: number;
   isLive?: boolean;
+  isInCustomWatchlist?: boolean;
 }
 
 export interface AiArticleContext {
@@ -53,6 +55,7 @@ export interface AiMarketContext {
   provider?: "illustrative" | "yahoo";
   stock?: AiStockContext;
   watchlistPeers?: AiPeerContextItem[];
+  customWatchlist?: string[];
   article?: AiArticleContext;
   macroTickers?: AiMacroContextItem[];
 }
@@ -79,17 +82,30 @@ export function buildContextSummary(context?: AiMarketContext): string {
     const s = context.stock;
     if (s.isLive) {
       liveLines.push(
-        `Saham Aktif (${s.ticker} - ${s.name}, ${s.sector}): Harga ${formatRupiah(s.price)} (${formatPersen(s.changePercent, 2, true)}), P/E TTM ${formatMultiple(s.peRatio, 1)}, PBV ${formatMultiple(s.pbvRatio, 2)}, Dividend Yield ${formatPersen(s.dividendYield, 1)}${s.targetMeanPrice ? `, Target P/E Mean Historis ${formatRupiah(s.targetMeanPrice)}` : ""}.`
+        `Saham Aktif (${s.ticker} - ${s.name}, ${s.sector}): Harga ${formatRupiah(s.price)} (${formatPersen(s.changePercent, 2, true)}), P/E TTM ${formatMultiple(s.peRatio, 1)}, PBV ${formatMultiple(s.pbvRatio, 2)}, Dividend Yield ${formatPersen(s.dividendYield, 1)}${s.targetMeanPrice ? `, Target Harga Wajar (${s.isCurated === false ? "Estimasi 5Th" : "P/E Mean Historis"}) ${formatRupiah(s.targetMeanPrice)}` : ""}.`
       );
+      if (s.isCurated === false && s.historicalPeMean > 0) {
+        liveLines.push(
+          `Estimasi Band 5Th ${s.ticker}: Rerata historis ${formatMultiple(s.historicalPeMean, 1)}${s.roe !== undefined ? `, ROE ${formatPersen(s.roe, 1)}` : ""}${s.der !== undefined ? `, DER ${formatMultiple(s.der, 2)}` : ""}.`
+        );
+      }
     } else {
       illustrativeLines.push(
         `Saham Aktif (${s.ticker} - ${s.name}, ${s.sector}): Harga acuan ${formatRupiah(s.price)} (${formatPersen(s.changePercent, 2, true)}), P/E ${formatMultiple(s.peRatio, 1)}, PBV ${formatMultiple(s.pbvRatio, 2)}, Div Yield ${formatPersen(s.dividendYield, 1)}${s.targetMeanPrice ? `, Target P/E Mean ${formatRupiah(s.targetMeanPrice)}` : ""}.`
       );
     }
 
-    illustrativeLines.push(
-      `Profil Acuan Riset ${s.ticker}: Rerata P/E historis 5th ${formatMultiple(s.historicalPeMean, 1)}, ROE ${formatPersen(s.roe, 1)}, DER ${formatMultiple(s.der, 2)}.`
-    );
+    if (s.isCurated !== false) {
+      const profileFragments: string[] = [];
+      if (s.historicalPeMean > 0) {
+        profileFragments.push(`Rerata P/E historis 5th ${formatMultiple(s.historicalPeMean, 1)}`);
+      }
+      if (s.roe !== undefined) profileFragments.push(`ROE ${formatPersen(s.roe, 1)}`);
+      if (s.der !== undefined) profileFragments.push(`DER ${formatMultiple(s.der, 2)}`);
+      if (profileFragments.length > 0) {
+        illustrativeLines.push(`Profil Acuan Riset ${s.ticker}: ${profileFragments.join(", ")}.`);
+      }
+    }
     if (s.strengths && s.strengths.length > 0) {
       illustrativeLines.push(`Kekuatan profil: ${s.strengths.join("; ")}`);
     }
@@ -99,15 +115,28 @@ export function buildContextSummary(context?: AiMarketContext): string {
   }
 
   if (context.watchlistPeers && context.watchlistPeers.length > 0) {
-    const peerList = context.watchlistPeers
-      .map(
-        (p) =>
-          `${p.ticker} (${p.sector}): ${formatRupiah(p.price)}, P/E ${formatMultiple(p.peRatio, 1)}, PBV ${formatMultiple(p.pbvRatio, 2)}, Div ${formatPersen(p.dividendYield, 1)}`
-      )
-      .join(" | ");
-    const hasAnyLivePeer = context.watchlistPeers.some((p) => p.isLive);
-    const targetArr = hasAnyLivePeer ? liveLines : illustrativeLines;
-    targetArr.push(`Ringkasan 9 Emiten Watchlist: ${peerList}`);
+    const formatPeer = (p: AiPeerContextItem) =>
+      `${p.ticker} (${p.sector}): ${formatRupiah(p.price)}, P/E ${formatMultiple(p.peRatio, 1)}, PBV ${formatMultiple(p.pbvRatio, 2)}, Div ${formatPersen(p.dividendYield, 1)}`;
+
+    const customPeers = context.watchlistPeers.filter((p) => p.isInCustomWatchlist);
+    const curatedOnlyPeers = context.watchlistPeers.filter((p) => !p.isInCustomWatchlist);
+
+    if (customPeers.length > 0) {
+      const targetCustom = customPeers.some((p) => p.isLive) ? liveLines : illustrativeLines;
+      targetCustom.push(
+        `Watchlist Custom Pengguna (${customPeers.length} emiten): ${customPeers.map(formatPeer).join(" | ")}`
+      );
+    }
+
+    if (curatedOnlyPeers.length > 0) {
+      const targetCurated = curatedOnlyPeers.some((p) => p.isLive) ? liveLines : illustrativeLines;
+      targetCurated.push(
+        `Emiten Kurasi Lainnya: ${curatedOnlyPeers.map(formatPeer).join(" | ")}`
+      );
+    }
+  } else if (context.customWatchlist && context.customWatchlist.length > 0) {
+    const targetArr = context.provider === "yahoo" ? liveLines : illustrativeLines;
+    targetArr.push(`Watchlist Custom Pengguna: ${context.customWatchlist.join(", ")}`);
   }
 
   if (context.article) {
@@ -153,44 +182,53 @@ export function buildBuiltinSynthesis(prompt: string, context?: AiMarketContext)
           .join(" • ")
       : null;
 
-  // 1. Cek perbandingan beberapa ticker apabila pengguna meminta komparasi
+  // 1. Cek perbandingan beberapa ticker atau permintaan evaluasi Watchlist Saya
+  const customWatchlistPeers = peers.filter((p) => p.isInCustomWatchlist && p.price > 0);
   const mentionedPeers = peers.filter((p) => q.includes(p.ticker.toLowerCase()));
+  const wantsCustomWatchlistReview =
+    (q.includes("watchlist") || q.includes("daftar pantau")) && customWatchlistPeers.length >= 2;
+
   if (
+    wantsCustomWatchlistReview ||
     mentionedPeers.length >= 2 ||
     (mentionedPeers.length === 1 && s && mentionedPeers[0].ticker !== s.ticker && (q.includes("banding") || q.includes("vs") || q.includes("mana")))
   ) {
-    const listToCompare =
-      mentionedPeers.length >= 2
-        ? mentionedPeers.slice(0, 3)
-        : [
-            {
-              ticker: s!.ticker,
-              sector: s!.sector,
-              price: s!.price,
-              changePercent: s!.changePercent,
-              peRatio: s!.peRatio,
-              pbvRatio: s!.pbvRatio,
-              dividendYield: s!.dividendYield,
-              isLive: s!.isLive,
-            },
-            mentionedPeers[0],
-          ];
+    const listToCompare = wantsCustomWatchlistReview
+      ? customWatchlistPeers.slice(0, 4)
+      : mentionedPeers.length >= 2
+      ? mentionedPeers.slice(0, 3)
+      : [
+          {
+            ticker: s!.ticker,
+            sector: s!.sector,
+            price: s!.price,
+            changePercent: s!.changePercent,
+            peRatio: s!.peRatio,
+            pbvRatio: s!.pbvRatio,
+            dividendYield: s!.dividendYield,
+            isLive: s!.isLive,
+          },
+          mentionedPeers[0],
+        ];
 
     const rows = listToCompare
       .map(
         (p) =>
-          `* **${p.ticker}** (${p.isLive ? "Live" : "Ilustrasi"}): Harga **${formatRupiah(p.price)}**, P/E **${formatMultiple(p.peRatio, 1)}**, PBV **${formatMultiple(p.pbvRatio, 2)}**, Div Yield **${formatPersen(p.dividendYield, 1)}**.`
+          `* **${p.ticker}** (${p.isLive ? "Live" : "Ilustrasi"}): Harga **${formatRupiah(p.price)}**, P/E **${p.peRatio > 0 ? formatMultiple(p.peRatio, 1) : "-"}**, PBV **${p.pbvRatio > 0 ? formatMultiple(p.pbvRatio, 2) : "-"}**, Div Yield **${formatPersen(p.dividendYield, 1)}**.`
       )
       .join("\n");
 
-    const lowestPe = [...listToCompare].sort((x, y) => x.peRatio - y.peRatio)[0];
+    const validPePeers = listToCompare.filter((p) => p.peRatio > 0);
+    const lowestPe =
+      validPePeers.length > 0
+        ? [...validPePeers].sort((x, y) => x.peRatio - y.peRatio)[0]
+        : null;
     const highestDiv = [...listToCompare].sort((x, y) => y.dividendYield - x.dividendYield)[0];
 
-    return `### Perbandingan Valuasi Emiten
+    return `### ${wantsCustomWatchlistReview ? "Ringkasan Komparasi Watchlist Saya" : "Perbandingan Valuasi Emiten"}
 ${rows}
 
-* **P/E paling rendah:** **${lowestPe.ticker}** (${formatMultiple(lowestPe.peRatio, 1)}).
-* **Imbal hasil dividen tertinggi:** **${highestDiv.ticker}** (${formatPersen(highestDiv.dividendYield, 1)}).${macroLine ? `\n* **Latar makro:** ${macroLine}.` : ""}`;
+${lowestPe ? `* **P/E paling rendah:** **${lowestPe.ticker}** (${formatMultiple(lowestPe.peRatio, 1)}).\n` : ""}* **Imbal hasil dividen tertinggi:** **${highestDiv.ticker}** (${formatPersen(highestDiv.dividendYield, 1)}).${macroLine ? `\n* **Latar makro:** ${macroLine}.` : ""}`;
   }
 
   // 2. Prioritaskan analisis artikel apabila pertanyaan merujuk ke berita atau mode berita aktif
@@ -237,21 +275,32 @@ ${rows}
 
   // 4. Default kontekstual saham aktif
   if (s) {
-    const peDiffPct = ((s.peRatio - s.historicalPeMean) / s.historicalPeMean) * 100;
-    const valPosText =
-      peDiffPct <= -15
-        ? `${formatPersen(Math.abs(peDiffPct), 1)} di bawah rerata historis profil (${formatMultiple(s.historicalPeMean, 1)})`
+    const hasBandRef = s.historicalPeMean > 0 && s.peRatio > 0;
+    const peDiffPct = hasBandRef
+      ? ((s.peRatio - s.historicalPeMean) / s.historicalPeMean) * 100
+      : 0;
+    const valPosText = hasBandRef
+      ? peDiffPct <= -15
+        ? `${formatPersen(Math.abs(peDiffPct), 1)} di bawah rerata historis (${formatMultiple(s.historicalPeMean, 1)})`
         : peDiffPct >= 15
-        ? `${formatPersen(peDiffPct, 1)} di atas rerata historis profil (${formatMultiple(s.historicalPeMean, 1)})`
-        : `mendekati rerata historis profil (${formatMultiple(s.historicalPeMean, 1)})`;
+        ? `${formatPersen(peDiffPct, 1)} di atas rerata historis (${formatMultiple(s.historicalPeMean, 1)})`
+        : `mendekati rerata historis (${formatMultiple(s.historicalPeMean, 1)})`
+      : null;
+
+    const metricExtras: string[] = [];
+    if (s.roe !== undefined && (s.isCurated !== false || s.roe > 0)) {
+      metricExtras.push(`**ROE ${formatPersen(s.roe, 1)}**`);
+    }
+    if (s.der !== undefined && (s.isCurated !== false || s.der > 0)) {
+      metricExtras.push(`**DER ${formatMultiple(s.der, 2)}**`);
+    }
 
     return `### Ringkasan Kontekstual ${s.ticker} (${s.name})
 
 1. **Valuasi (${s.isLive ? "Harga & Rasio Live Yahoo" : "Data Ilustrasi"}):**
-* Harga **${formatRupiah(s.price)}** (${formatPersen(s.changePercent, 2, true)}), **P/E ${formatMultiple(s.peRatio, 1)}** (${valPosText}${s.targetMeanPrice ? `, target wajar P/E Mean ${formatRupiah(s.targetMeanPrice)}` : ""}).
-* **PBV ${formatMultiple(s.pbvRatio, 2)}** | **Dividend Yield ${formatPersen(s.dividendYield, 1)}**.
-* *Profil acuan ilustrasi:* **ROE ${formatPersen(s.roe, 1)}**, **DER ${formatMultiple(s.der, 2)}**.${macroLine ? `\n* *Latar makro:* ${macroLine}.` : ""}
-2. **Kekuatan Utama:** ${s.strengths?.[0] || "Fundamental operasional stabil."}
+* Harga **${formatRupiah(s.price)}** (${formatPersen(s.changePercent, 2, true)}), **P/E ${s.peRatio > 0 ? formatMultiple(s.peRatio, 1) : "-"}**${valPosText ? ` (${valPosText}${s.targetMeanPrice ? `, target wajar Mean ${formatRupiah(s.targetMeanPrice)}` : ""})` : ""}.
+* **PBV ${s.pbvRatio > 0 ? formatMultiple(s.pbvRatio, 2) : "-"}** | **Dividend Yield ${formatPersen(s.dividendYield, 1)}**.${metricExtras.length > 0 ? `\n* *${s.isCurated !== false ? "Profil acuan ilustrasi" : "Metrik profil"}:* ${metricExtras.join(", ")}.` : ""}${macroLine ? `\n* *Latar makro:* ${macroLine}.` : ""}
+2. **Kekuatan Utama:** ${s.strengths?.[0] || "Fundamental operasional terpantau pada metrik TTM terkini."}
 3. **Risiko Dicermati:** ${s.risks?.[0] || "Volatilitas pasar dan arah suku bunga."}`;
   }
 
