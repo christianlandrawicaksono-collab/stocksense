@@ -1,6 +1,7 @@
 /**
  * Server-side Indonesian Capital Market & Macroeconomic RSS Fetcher & Parser.
- * Menggunakan feed RSS publik (CNBC Indonesia Market & Google News BEI/IHSG) melalui cache Next.js 16.
+ * Menggunakan feed RSS publik terpercaya (CNBC Indonesia, ANTARA, CNN Indonesia Ekonomi,
+ * Kontan Investasi/Keuangan, & Google News IDX) melalui cache Next.js 16.
  */
 
 import { createHash } from "node:crypto";
@@ -9,20 +10,92 @@ import { filterNewsByTicker } from "./news-brief";
 import { MAX_NEWS_WATCHLIST_ENRICHMENT, sanitizeWatchlistTickers } from "./watchlist";
 import { fetchRssTextCached } from "./yahoo-cache";
 
-const RSS_FEEDS = [
+export const MAX_NEWS_AGE_DAYS = 3;
+export const MAX_NEWS_AGE_MS = MAX_NEWS_AGE_DAYS * 24 * 60 * 60 * 1000;
+export const MAIN_MARKET_NEWS_LIMIT = 56;
+
+interface RssFeedConfig {
+  url: string;
+  defaultPublisher: string;
+  maxPerFeed: number;
+  requireMarketRelevance?: boolean;
+  requireTrustedPublisher?: boolean;
+}
+
+const RSS_FEEDS: readonly RssFeedConfig[] = [
   {
     url: "https://www.cnbcindonesia.com/market/rss",
     defaultPublisher: "CNBC Indonesia",
+    maxPerFeed: 24,
   },
   {
     url: "https://www.antaranews.com/rss/ekonomi-bursa.xml",
     defaultPublisher: "ANTARA Ekonomi",
+    maxPerFeed: 14,
   },
   {
-    url: "https://news.google.com/rss/search?q=IHSG+OR+saham+BEI+when:7d&hl=id&gl=ID&ceid=ID:id",
-    defaultPublisher: "Google News IDX",
+    url: "https://www.antaranews.com/rss/ekonomi-finansial.xml",
+    defaultPublisher: "ANTARA Finansial",
+    maxPerFeed: 12,
   },
-] as const;
+  {
+    url: "https://www.antaranews.com/rss/ekonomi.xml",
+    defaultPublisher: "ANTARA Ekonomi",
+    maxPerFeed: 10,
+    requireMarketRelevance: true,
+  },
+  {
+    url: "https://www.cnnindonesia.com/ekonomi/rss",
+    defaultPublisher: "CNN Indonesia",
+    maxPerFeed: 16,
+    requireMarketRelevance: true,
+  },
+  {
+    url: "https://investasi.kontan.co.id/rss",
+    defaultPublisher: "Kontan Investasi",
+    maxPerFeed: 12,
+  },
+  {
+    url: "https://keuangan.kontan.co.id/rss",
+    defaultPublisher: "Kontan Keuangan",
+    maxPerFeed: 10,
+    requireMarketRelevance: true,
+  },
+  {
+    url: "https://news.google.com/rss/search?q=IHSG+OR+saham+BEI+when:3d&hl=id&gl=ID&ceid=ID:id",
+    defaultPublisher: "Google News IDX",
+    maxPerFeed: 10,
+    requireTrustedPublisher: true,
+  },
+];
+
+const TRUSTED_PUBLISHER_PATTERN =
+  /cnbc indonesia|antara|cnn indonesia|kontan|bisnis indonesia|bisnis\.com|investor\.id|investor daily|investortrust|bloomberg technoz|katadata|detik|kompas|tempo|bareksa|idx\s*channel|idn\s*financials|pasardana|emitennews|emiten\s*news|infobank|warta ekonomi|reuters|liputan6|sindonews|okezone|republika|media indonesia|fortune indonesia|stockbit|ajaib|ipotonnews/i;
+
+export function isTrustedNewsPublisher(publisher: string, sourceDomain?: string): boolean {
+  const combined = `${publisher} ${sourceDomain || ""}`;
+  return TRUSTED_PUBLISHER_PATTERN.test(combined);
+}
+
+const MARKET_RELEVANCE_PATTERN =
+  /\b(ihsg|bei|idx|saham|emiten|bursa|ojk|bank indonesia|bi-rate|suku bunga|rupiah|kurs|dolar|inflasi|apbn|fiskal|pajak|obligasi|sbn|dividen|laba|ipo|rights issue|buyback|reksadana|pasar modal|bumn|danantara|perbankan|kredit|likuiditas|the fed|ekspor|impor|pdb|ekonomi|resesi|minyak|brent|batubara|batu bara|nikel|emas|cpo|komoditas|tambang|energi|tarif|wall street|investor|asing|net buy|net sell)\b/i;
+
+export function isMarketOrMacroRelevant(item: LiveMarketNewsItem): boolean {
+  if (item.tickers.length > 0) return true;
+  return MARKET_RELEVANCE_PATTERN.test(`${item.title} ${item.summary}`);
+}
+
+export function isWithinMaxNewsAge(
+  publishedAt: string,
+  nowMs: number = Date.now(),
+  maxAgeMs: number = MAX_NEWS_AGE_MS
+): boolean {
+  const ts = Date.parse(publishedAt);
+  if (!Number.isFinite(ts)) return false;
+  const ageMs = nowMs - ts;
+  // Izinkan sedikit clock skew ke depan (maks 6 jam), namun buang artikel lebih tua dari maxAgeMs (default 3 hari)
+  return ageMs <= maxAgeMs && ageMs >= -6 * 60 * 60 * 1000;
+}
 
 const KNOWN_IDX_TICKERS = new Set([
   "BBCA", "BBRI", "BMRI", "BBNI", "BBTN", "BRIS", "BNGA", "NISP", "MEGA",
@@ -129,7 +202,8 @@ export function decodeHtmlEntities(input: string): string {
     .replace(/&#8216;|&#8217;/g, "'")
     .replace(/&#8220;|&#8221;/g, '"')
     .replace(/&#8211;|&#8212;/g, "-")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&#8203;|&#x200b;|&#65279;|&#xfeff;|[\u200B-\u200D\uFEFF]/gi, "")
+    .replace(/&nbsp;|&#160;/g, " ");
   // Bersihkan tag HTML ter-encode ganda (seperti &lt;a href=...&gt;) sambil tetap mempertahankan "<10%"
   return decoded
     .replace(/<\/?[a-zA-Z][^>]*>/g, " ")
@@ -473,15 +547,21 @@ function dedupeAndSortNews(items: LiveMarketNewsItem[], maxItems?: number): Live
  */
 async function fetchSingleTickerFeedServer(
   ticker: string,
-  maxItems: number = 5
+  maxItems: number = 5,
+  windowDays: "3d" | "30d" = "30d",
+  nowMs: number = Date.now()
 ): Promise<LiveMarketNewsItem[]> {
   const tickerFeedUrl = `https://news.google.com/rss/search?q=saham+${encodeURIComponent(
     ticker
-  )}+BEI+when:30d&hl=id&gl=ID&ceid=ID:id`;
+  )}+BEI+when:${windowDays}&hl=id&gl=ID&ceid=ID:id`;
 
   const xml = await fetchRssTextCached(tickerFeedUrl);
   const parsed = filterTickerRelevantServer(parseRssItems(xml, "Google News IDX"), ticker);
-  return dedupeAndSortNews(parsed, maxItems).map((item) =>
+  const ageFiltered =
+    windowDays === "3d"
+      ? parsed.filter((item) => isWithinMaxNewsAge(item.publishedAt, nowMs))
+      : parsed;
+  return dedupeAndSortNews(ageFiltered, maxItems).map((item) =>
     item.tickers.includes(ticker)
       ? item
       : { ...item, tickers: [ticker, ...item.tickers].slice(0, 6) }
@@ -489,13 +569,27 @@ async function fetchSingleTickerFeedServer(
 }
 
 /**
- * Mengambil dan menggabungkan berita pasar modal Indonesia terkini dari RSS publik.
+ * Mengambil dan menggabungkan berita pasar modal Indonesia terkini (maksimal 3 hari) dari RSS publik terpercaya.
  */
-export async function getLiveMarketNewsServer(): Promise<LiveMarketNewsItem[]> {
+export async function getLiveMarketNewsServer(
+  nowMs: number = Date.now()
+): Promise<LiveMarketNewsItem[]> {
   const results = await Promise.allSettled(
     RSS_FEEDS.map(async (feed) => {
       const xml = await fetchRssTextCached(feed.url);
-      return parseRssItems(xml, feed.defaultPublisher);
+      const parsed = parseRssItems(xml, feed.defaultPublisher);
+      const filtered = parsed.filter((item) => {
+        if (!isWithinMaxNewsAge(item.publishedAt, nowMs)) return false;
+        if (feed.requireMarketRelevance && !isMarketOrMacroRelevant(item)) return false;
+        if (
+          feed.requireTrustedPublisher &&
+          !isTrustedNewsPublisher(item.publisher, item.sourceDomain)
+        ) {
+          return false;
+        }
+        return true;
+      });
+      return dedupeAndSortNews(filtered, feed.maxPerFeed);
     })
   );
 
@@ -510,24 +604,25 @@ export async function getLiveMarketNewsServer(): Promise<LiveMarketNewsItem[]> {
     return [];
   }
 
-  return dedupeAndSortNews(combined, 20);
+  return dedupeAndSortNews(combined, MAIN_MARKET_NEWS_LIMIT);
 }
 
 /**
- * Menggabungkan 20 berita pasar utama dengan berita spesifik untuk daftar emiten watchlist (maks 5 ticker)
+ * Menggabungkan berita pasar utama (maks 3 hari) dengan berita spesifik emiten watchlist (maks 5 ticker, maks 3 hari)
  * sehingga berita watchlist selalu kaya tanpa menghilangkan berita pasar di luar watchlist.
  */
 export async function getLiveMarketNewsWithWatchlistServer(
-  rawWatchlistTickers: string[] = []
+  rawWatchlistTickers: string[] = [],
+  nowMs: number = Date.now()
 ): Promise<LiveMarketNewsItem[]> {
   const watchlist = sanitizeWatchlistTickers(rawWatchlistTickers, MAX_NEWS_WATCHLIST_ENRICHMENT);
   if (watchlist.length === 0) {
-    return getLiveMarketNewsServer();
+    return getLiveMarketNewsServer(nowMs);
   }
 
   const [mainRes, ...tickerResults] = await Promise.allSettled([
-    getLiveMarketNewsServer(),
-    ...watchlist.map((t) => fetchSingleTickerFeedServer(t, 4)),
+    getLiveMarketNewsServer(nowMs),
+    ...watchlist.map((t) => fetchSingleTickerFeedServer(t, 4, "3d", nowMs)),
   ]);
 
   const generalItems = mainRes.status === "fulfilled" ? mainRes.value : [];
@@ -543,10 +638,14 @@ export async function getLiveMarketNewsWithWatchlistServer(
   // Merge ticker tags onto general items if they overlap, and cap purely-extra items so general news stays intact
   const extraOnly = dedupeAndSortNews(
     extraWatchlistItems.filter((item) => !generalKeys.has(normalizeTitleDedupeKey(item.title))),
-    15
+    16
   );
 
-  return dedupeAndSortNews([...generalItems, ...extraWatchlistItems.filter((item) => generalKeys.has(normalizeTitleDedupeKey(item.title))), ...extraOnly]);
+  return dedupeAndSortNews([
+    ...generalItems,
+    ...extraWatchlistItems.filter((item) => generalKeys.has(normalizeTitleDedupeKey(item.title))),
+    ...extraOnly,
+  ]);
 }
 
 /**
@@ -558,7 +657,7 @@ export async function getTickerNewsServer(rawTicker: string): Promise<LiveMarket
 
   const [mainRes, tickerRes] = await Promise.allSettled([
     getLiveMarketNewsServer(),
-    fetchSingleTickerFeedServer(ticker, 10),
+    fetchSingleTickerFeedServer(ticker, 10, "30d"),
   ]);
 
   const fromMain =

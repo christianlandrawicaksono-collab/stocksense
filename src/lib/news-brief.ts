@@ -1,4 +1,4 @@
-import { formatNewsCategoryLabel, formatPersen } from "@/lib/format";
+import { formatNewsCategoryLabel, formatPersen, getJakartaDateKey } from "@/lib/format";
 import type {
   LiveMarketNewsItem,
   LiveNewsCategory,
@@ -179,6 +179,42 @@ export function prioritizeWatchlistNews(
   return [...matched, ...others];
 }
 
+export type NewsTimeRange = "ALL" | "TODAY";
+export type NewsPublisherGroup = "ALL" | "CNBC" | "ANTARA" | "CNN" | "KONTAN" | "OTHER";
+
+export function classifyNewsPublisherGroup(
+  publisher: string
+): Exclude<NewsPublisherGroup, "ALL"> {
+  const norm = publisher.toLowerCase();
+  if (norm.includes("cnbc")) return "CNBC";
+  if (norm.includes("antara")) return "ANTARA";
+  if (norm.includes("cnn")) return "CNN";
+  if (norm.includes("kontan")) return "KONTAN";
+  return "OTHER";
+}
+
+export function isNewsFromToday(
+  item: Pick<LiveMarketNewsItem, "publishedAt">,
+  todayWibKey?: string
+): boolean {
+  if (!todayWibKey || !item.publishedAt) return false;
+  const parsed = new Date(item.publishedAt);
+  if (isNaN(parsed.getTime())) return false;
+  return getJakartaDateKey(parsed) === todayWibKey;
+}
+
+export function countTodayNewsItems(
+  items: LiveMarketNewsItem[],
+  todayWibKey?: string
+): number {
+  if (!todayWibKey) return 0;
+  let count = 0;
+  for (const item of items) {
+    if (isNewsFromToday(item, todayWibKey)) count += 1;
+  }
+  return count;
+}
+
 export interface NewsFilterOptions {
   category?: "ALL" | LiveNewsCategory;
   sentiment?: "ALL" | SentimentType;
@@ -186,6 +222,9 @@ export interface NewsFilterOptions {
   watchlistSet?: ReadonlySet<string>;
   searchQuery?: string;
   tickerFilter?: string | null;
+  timeRange?: NewsTimeRange;
+  todayWibKey?: string;
+  publisherGroup?: NewsPublisherGroup;
 }
 
 export function matchesNewsBaseFilters(
@@ -198,7 +237,18 @@ export function matchesNewsBaseFilters(
     watchlistSet,
     searchQuery = "",
     tickerFilter = null,
+    timeRange = "ALL",
+    todayWibKey,
+    publisherGroup = "ALL",
   } = options;
+
+  if (timeRange === "TODAY" && todayWibKey && !isNewsFromToday(item, todayWibKey)) {
+    return false;
+  }
+
+  if (publisherGroup !== "ALL" && classifyNewsPublisherGroup(item.publisher) !== publisherGroup) {
+    return false;
+  }
 
   if (sentiment !== "ALL" && (item.sentiment || "NEUTRAL") !== sentiment) {
     return false;
@@ -254,6 +304,152 @@ export function computeNewsCategoryCounts(
   }
 
   return counts;
+}
+
+export function computeNewsPublisherCounts(
+  items: LiveMarketNewsItem[],
+  options: Omit<NewsFilterOptions, "publisherGroup">
+): Record<NewsPublisherGroup, number> {
+  const { category = "ALL" } = options;
+  const counts: Record<NewsPublisherGroup, number> = {
+    ALL: 0,
+    CNBC: 0,
+    ANTARA: 0,
+    CNN: 0,
+    KONTAN: 0,
+    OTHER: 0,
+  };
+
+  for (const item of items) {
+    if (category !== "ALL" && item.category !== category) continue;
+    if (!matchesNewsBaseFilters(item, { ...options, publisherGroup: "ALL" })) continue;
+    counts.ALL += 1;
+    const group = classifyNewsPublisherGroup(item.publisher);
+    counts[group] += 1;
+  }
+
+  return counts;
+}
+
+export interface MarketQaItem {
+  id: string;
+  eyebrow: string;
+  question: string;
+  answer: string;
+  tickers?: string[];
+  relatedStory?: LiveMarketNewsItem;
+}
+
+/**
+ * Menyusun 4 poin Tanya-Jawab konteks pasar deterministik langsung dari feed berita & indikator makro
+ * tanpa latensi API tambahan.
+ */
+export function buildMarketQaInsights(
+  items: LiveMarketNewsItem[],
+  macroTickers: MarketTickerItem[] = []
+): MarketQaItem[] {
+  if (items.length === 0) return [];
+
+  const brief = buildLiveMarketBrief(items, macroTickers);
+  const total = items.length;
+  const posPct = Math.round((brief.sentimentCounts.bullish / total) * 100);
+  const negPct = Math.round((brief.sentimentCounts.bearish / total) * 100);
+
+  const topBullish = items.find((i) => i.sentiment === "BULLISH");
+  const topBearish = items.find((i) => i.sentiment === "BEARISH");
+
+  // Hitung 2 kategori teratas
+  const catCounts = new Map<LiveNewsCategory, number>();
+  for (const item of items) {
+    catCounts.set(item.category, (catCounts.get(item.category) ?? 0) + 1);
+  }
+  const sortedCats = Array.from(catCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const topCat1 = sortedCats[0];
+  const topCat2 = sortedCats[1];
+  const topCatStory = topCat1 ? items.find((i) => i.category === topCat1[0]) : items[0];
+
+  // Emiten paling banyak disorot
+  const topTickerStory =
+    brief.topTickers.length > 0
+      ? items.find((i) => i.tickers.includes(brief.topTickers[0]))
+      : undefined;
+
+  // Indikator makro kunci
+  const ihsg = macroTickers.find((m) => m.symbol === "IHSG");
+  const usdIdr = macroTickers.find((m) => m.symbol === "USD/IDR");
+  const gold = macroTickers.find((m) => m.symbol === "GOLD");
+  const brent = macroTickers.find((m) => m.symbol === "BRENT");
+  const macroParts: string[] = [];
+  if (ihsg) macroParts.push(`IHSG di ${ihsg.value} (${formatPersen(ihsg.change, 2, true)})`);
+  if (usdIdr) macroParts.push(`USD/IDR di ${usdIdr.value} (${formatPersen(usdIdr.change, 2, true)})`);
+  if (brent) macroParts.push(`Minyak Brent ${brent.value} (${formatPersen(brent.change, 2, true)})`);
+  if (gold) macroParts.push(`Emas ${gold.value} (${formatPersen(gold.change, 2, true)})`);
+  const macroStory = items.find(
+    (i) => i.category === "MONETARY_CURRENCY" || i.category === "GLOBAL_MACRO"
+  );
+
+  const sentimentDetail =
+    topBullish && topBearish
+      ? `Salah satu katalis positif utama: "${topBullish.title}" (${topBullish.publisher}), sementara sisi kehati-hatian datang dari "${topBearish.title}" (${topBearish.publisher}).`
+      : topBullish
+      ? `Sorotan positif utama saat ini: "${topBullish.title}" (${topBullish.publisher}).`
+      : topBearish
+      ? `Sorotan tekanan utama saat ini: "${topBearish.title}" (${topBearish.publisher}).`
+      : "Mayoritas pemberitaan bersifat informatif dan berimbang.";
+
+  const qa: MarketQaItem[] = [
+    {
+      id: "qa-sentiment",
+      eyebrow: "Sentimen",
+      question: "Bagaimana arah sentimen pemberitaan pasar modal saat ini?",
+      answer: `Dari ${total} berita terkini, ${brief.sentimentCounts.bullish} bernada positif (${posPct}%), ${brief.sentimentCounts.bearish} negatif (${negPct}%), dan ${brief.sentimentCounts.neutral} netral. ${sentimentDetail}`,
+      relatedStory: topBullish || topBearish || items[0],
+    },
+    {
+      id: "qa-sector",
+      eyebrow: "Dominasi Topik",
+      question: "Topik dan kanal berita apa yang paling ramai dibahas?",
+      answer: topCat1
+        ? `Kanal ${formatNewsCategoryLabel(topCat1[0])} memimpin dengan ${topCat1[1]} berita (${Math.round(
+            (topCat1[1] / total) * 100
+          )}% dari total feed)${
+            topCat2
+              ? `, disusul ${formatNewsCategoryLabel(topCat2[0])} sebanyak ${topCat2[1]} berita`
+              : ""
+          }. Fokus bacaan di kanal ini menjadi penggerak narasi utama pasar.`
+        : "Berita tersebar merata lintas sektor pasar modal Indonesia.",
+      relatedStory: topCatStory,
+    },
+    {
+      id: "qa-tickers",
+      eyebrow: "Emiten Disorot",
+      question: "Saham BEI apa saja yang paling sering disebut di berita?",
+      answer:
+        brief.topTickers.length > 0
+          ? `Emiten dengan frekuensi liputan tertinggi saat ini adalah ${brief.topTickers.join(
+              ", "
+            )}. Klik kode saham di bawah untuk langsung membuka valuasi, grafik, dan analisisnya di Terminal.`
+          : "Pemberitaan saat ini lebih banyak menyoroti isu makroekonomi, kebijakan moneter, dan indeks secara luas dibanding emiten tunggal.",
+      tickers: brief.topTickers,
+      relatedStory: topTickerStory,
+    },
+    {
+      id: "qa-macro",
+      eyebrow: "Makro & Kurs",
+      question: "Bagaimana posisi indikator makro kunci (IHSG, Rupiah, komoditas)?",
+      answer:
+        macroParts.length > 0
+          ? `Pantauan indikator makro terkini mencatat ${macroParts.join(", ")}.${
+              macroStory
+                ? ` Berita makro relevan terbaru: "${macroStory.title}" (${macroStory.publisher}).`
+                : ""
+            }`
+          : "Indikator makro live sedang disinkronkan. Pantau strip indikator di atas untuk pembaruan IHSG, USD/IDR, dan komoditas energi.",
+      relatedStory: macroStory,
+    },
+  ];
+
+  return qa;
 }
 
 export function filterLiveNewsItems(

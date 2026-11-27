@@ -147,13 +147,14 @@ export async function fetchYahooSearchCached(query: string): Promise<
 
 export async function fetchRssTextCached(url: string): Promise<string> {
   "use cache";
-  cacheLife({ stale: 120, revalidate: 300, expire: 1800 });
+  cacheLife({ stale: 60, revalidate: 120, expire: 900 });
 
   const res = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; StocksSense/1.0)",
-      Accept: "application/rss+xml, application/xml, text/xml",
+      Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
     },
+    signal: AbortSignal.timeout(8000),
   });
 
   if (!res.ok) {

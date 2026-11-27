@@ -10,15 +10,20 @@ import {
   categorizeNewsItem,
   analyzeNewsSentiment,
   parseRssItems,
+  isMarketOrMacroRelevant,
+  isTrustedNewsPublisher,
+  isWithinMaxNewsAge,
+  getLiveMarketNewsServer,
   getTickerNewsServer,
   getLiveMarketNewsWithWatchlistServer,
 } from "@/lib/news-server";
 import { fetchRssTextCached } from "@/lib/yahoo-cache";
 
 describe("news-server RSS helpers", () => {
-  it("decodes HTML entities and strips CDATA/HTML tags cleanly", () => {
-    const raw = "<![CDATA[<p>Laba &amp; Dividen &quot;BBCA&quot; Naik &lt;10%&gt;</p>]]>";
-    expect(decodeHtmlEntities(raw)).toBe('Laba & Dividen "BBCA" Naik <10%>');
+  it("decodes HTML entities and strips CDATA/HTML tags and zero-width spaces cleanly", () => {
+    const raw =
+      "<![CDATA[<p>Laba &amp; Dividen &quot;BBCA&quot; Naik &lt;10%&gt; &#8203; &nbsp;selesai.</p>]]>";
+    expect(decodeHtmlEntities(raw)).toBe('Laba & Dividen "BBCA" Naik <10%> selesai.');
   });
 
   it("extracts real IDX tickers while ignoring uppercase stop words and lowercase words", () => {
@@ -224,5 +229,96 @@ describe("news-server RSS helpers", () => {
     const titles = combined.map((i) => i.title);
     expect(titles).toContain("Aspirasi Hidup Indonesia (ACES) Perluas Gerai Baru");
     expect(titles).toContain("IHSG Menguat Tipis Jelang Penutupan");
+  });
+
+  it("enforces the 3-day maximum age window and filters non-market fluff from general feeds", async () => {
+    const fixedNow = Date.parse("2026-11-27T12:00:00.000Z");
+    expect(isWithinMaxNewsAge("2026-11-27T10:00:00.000Z", fixedNow)).toBe(true);
+    expect(isWithinMaxNewsAge("2026-11-24T13:00:00.000Z", fixedNow)).toBe(true);
+    expect(isWithinMaxNewsAge("2026-11-24T11:00:00.000Z", fixedNow)).toBe(false);
+
+    expect(
+      isMarketOrMacroRelevant({
+        id: "rel-1",
+        title: "Bank Indonesia Pertahankan Suku Bunga Acuan",
+        link: "https://example.com/bi",
+        publisher: "CNN Indonesia",
+        publishedAt: "2026-11-27T10:00:00.000Z",
+        publishedWib: "27 Nov 2026, 17.00 WIB",
+        summary: "",
+        category: "MONETARY_CURRENCY",
+        sentiment: "NEUTRAL",
+        tickers: [],
+      })
+    ).toBe(true);
+    expect(
+      isMarketOrMacroRelevant({
+        id: "rel-2",
+        title: "Resep Kue Kering Populer untuk Liburan Akhir Pekan",
+        link: "https://example.com/kue",
+        publisher: "CNN Indonesia",
+        publishedAt: "2026-11-27T10:00:00.000Z",
+        publishedWib: "27 Nov 2026, 17.00 WIB",
+        summary: "Tips membuat kue sederhana di rumah.",
+        category: "CORPORATE",
+        sentiment: "NEUTRAL",
+        tickers: [],
+      })
+    ).toBe(false);
+
+    const mockedFetch = vi.mocked(fetchRssTextCached);
+    mockedFetch.mockImplementation(async (url: string) => {
+      if (url.includes("cnnindonesia.com/ekonomi/rss")) {
+        return `
+          <rss version="2.0"><channel>
+            <item>
+              <title>Resep Kue Kering Viral Akhir Pekan</title>
+              <link>https://www.cnnindonesia.com/ekonomi/kue-viral</link>
+              <pubDate>Fri, 27 Nov 2026 10:00:00 GMT</pubDate>
+              <description><![CDATA[Tips kuliner akhir pekan untuk keluarga.]]></description>
+            </item>
+            <item>
+              <title>BI Pertahankan Suku Bunga, Rupiah Stabil</title>
+              <link>https://www.cnnindonesia.com/ekonomi/bi-rupiah</link>
+              <pubDate>Fri, 27 Nov 2026 09:00:00 GMT</pubDate>
+              <enclosure url="https://akcdn.detik.net.id/visual/2026/11/27/bi.jpg" type="image/jpeg" />
+              <description><![CDATA[Bank Indonesia menjaga stabilitas kurs rupiah di pasar keuangan.]]></description>
+            </item>
+          </channel></rss>
+        `;
+      }
+      if (url.includes("cnbcindonesia.com/market/rss")) {
+        return `
+          <rss version="2.0"><channel>
+            <item>
+              <title>Berita Lama IHSG 5 Hari Lalu</title>
+              <link>https://www.cnbcindonesia.com/market/ihsg-lama</link>
+              <pubDate>Sun, 22 Nov 2026 05:00:00 GMT</pubDate>
+              <description><![CDATA[Berita lima hari lalu yang harus tersaring keluar.]]></description>
+            </item>
+            <item>
+              <title>Saham BBCA Menguat Didorong Net Buy Asing</title>
+              <link>https://www.cnbcindonesia.com/market/bbca-naik</link>
+              <pubDate>Tue, 24 Nov 2026 15:00:00 GMT</pubDate>
+              <enclosure url="https://awsimages.detik.net.id/visual/bbca.jpg" type="image/jpeg" />
+              <description><![CDATA[Arus beli bersih investor asing menopang saham perbankan besar.]]></description>
+            </item>
+          </channel></rss>
+        `;
+      }
+      return `<rss version="2.0"><channel></channel></rss>`;
+    });
+
+    expect(isTrustedNewsPublisher("Kontan Investasi", "investasi.kontan.co.id")).toBe(true);
+    expect(isTrustedNewsPublisher("Bloomberg Technoz", "bloombergtechnoz.com")).toBe(true);
+    expect(isTrustedNewsPublisher("roompi.id", "roompi.id")).toBe(false);
+    expect(isTrustedNewsPublisher("cwibc.co.id", "cwibc.co.id")).toBe(false);
+
+    const freshItems = await getLiveMarketNewsServer(fixedNow);
+    const titles = freshItems.map((item) => item.title);
+    expect(titles).toContain("BI Pertahankan Suku Bunga, Rupiah Stabil");
+    expect(titles).toContain("Saham BBCA Menguat Didorong Net Buy Asing");
+    expect(titles).not.toContain("Berita Lama IHSG 5 Hari Lalu");
+    expect(titles).not.toContain("Resep Kue Kering Viral Akhir Pekan");
   });
 });
