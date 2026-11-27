@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
   LiveMarketNewsItem,
   MacroCategory,
@@ -38,6 +38,8 @@ import {
   ChevronUp,
   Quote,
   X,
+  ArrowUp,
+  ArrowRight,
 } from "lucide-react";
 
 type NewsFilterCategory = "ALL" | MacroCategory | "CORPORATE";
@@ -724,9 +726,29 @@ export const NewsView: React.FC<NewsViewProps> = ({
   const [selectedSentiment, setSelectedSentiment] = useState<NewsFilterSentiment>("ALL");
   const [onlyWatchlist, setOnlyWatchlist] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedTickerFilter, setSelectedTickerFilter] = useState<string | null>(null);
   const [isMarketSummaryExpanded, setIsMarketSummaryExpanded] = useState<boolean>(false);
   const [showAllCompactStories, setShowAllCompactStories] = useState<boolean>(false);
+  const [showScrollTop, setShowScrollTop] = useState<boolean>(false);
   const [todayWibKey] = useState<string>(() => getJakartaDateKey(new Date()));
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 480);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const handleScrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const handleToggleBriefTicker = useCallback((ticker: string) => {
+    setSelectedTickerFilter((prev) => (prev === ticker ? null : ticker));
+    setShowAllCompactStories(false);
+  }, []);
 
   const handleRetryLiveNews = useCallback(() => {
     setShowAllCompactStories(false);
@@ -738,6 +760,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
     setSelectedSentiment("ALL");
     setOnlyWatchlist(false);
     setSearchQuery("");
+    setSelectedTickerFilter(null);
     setShowAllCompactStories(false);
   }, []);
 
@@ -750,6 +773,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
     selectedCategory !== "ALL" ||
     selectedSentiment !== "ALL" ||
     onlyWatchlist ||
+    selectedTickerFilter !== null ||
     searchQuery.trim().length > 0;
 
   const liveWatchlistCount = useMemo(() => {
@@ -764,8 +788,9 @@ export const NewsView: React.FC<NewsViewProps> = ({
         onlyWatchlist,
         watchlistSet,
         searchQuery,
+        tickerFilter: selectedTickerFilter,
       }),
-    [liveNewsItems, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]
+    [liveNewsItems, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery, selectedTickerFilter]
   );
 
   const filteredLiveNews = useMemo(
@@ -776,8 +801,17 @@ export const NewsView: React.FC<NewsViewProps> = ({
         onlyWatchlist,
         watchlistSet,
         searchQuery,
+        tickerFilter: selectedTickerFilter,
       }),
-    [liveNewsItems, selectedCategory, selectedSentiment, onlyWatchlist, watchlistSet, searchQuery]
+    [
+      liveNewsItems,
+      selectedCategory,
+      selectedSentiment,
+      onlyWatchlist,
+      watchlistSet,
+      searchQuery,
+      selectedTickerFilter,
+    ]
   );
 
   const deterministicBrief = useMemo(
@@ -913,17 +947,29 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 {!isMarketSummaryExpanded && activeBrief.topTickers.length > 0 && (
                   <div className="hidden md:flex items-center gap-1 font-mono tnum">
                     <span className="text-[11px] text-[#676E7E] font-sans mr-0.5">Disorot:</span>
-                    {activeBrief.topTickers.slice(0, 4).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => onSelectStockFromNews(t, "", activeBrief.headline)}
-                        className="px-1.5 py-0.5 bg-[#FBFBFA] hover:bg-[#1E7B85] text-[#1D1F23] hover:text-white border border-[#D5D7DC] text-[11px] font-semibold transition"
-                        title={`Buka ${t} di Terminal`}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                    {activeBrief.topTickers.slice(0, 4).map((t) => {
+                      const isActive = selectedTickerFilter === t;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => handleToggleBriefTicker(t)}
+                          aria-pressed={isActive}
+                          className={`px-1.5 py-0.5 border text-[11px] font-semibold transition ${
+                            isActive
+                              ? "bg-[#1E7B85] text-white border-[#1E7B85]"
+                              : "bg-[#FBFBFA] hover:bg-[#1E7B85] text-[#1D1F23] hover:text-white border-[#D5D7DC]"
+                          }`}
+                          title={
+                            isActive
+                              ? `Hapus filter berita ${t}`
+                              : `Saring berita terkait ${t}`
+                          }
+                        >
+                          {t}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -965,19 +1011,31 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
                 {activeBrief.topTickers.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#676E7E]">
-                    <span>Banyak disorot hari ini:</span>
+                    <span>Banyak disorot (klik untuk saring):</span>
                     <div className="flex flex-wrap items-center gap-1 font-mono tnum">
-                      {activeBrief.topTickers.map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => onSelectStockFromNews(t, "", activeBrief.headline)}
-                          className="px-1.5 py-0.5 bg-[#FBFBFA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border border-[#D5D7DC] font-semibold transition"
-                          title={`Buka ${t} di Terminal`}
-                        >
-                          {t}
-                        </button>
-                      ))}
+                      {activeBrief.topTickers.map((t) => {
+                        const isActive = selectedTickerFilter === t;
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => handleToggleBriefTicker(t)}
+                            aria-pressed={isActive}
+                            className={`px-1.5 py-0.5 border font-semibold transition ${
+                              isActive
+                                ? "bg-[#1E7B85] text-white border-[#1E7B85]"
+                                : "bg-[#FBFBFA] hover:bg-[#1E7B85] text-[#1E7B85] hover:text-white border-[#D5D7DC]"
+                            }`}
+                            title={
+                              isActive
+                                ? `Hapus filter berita ${t}`
+                                : `Saring berita terkait ${t}`
+                            }
+                          >
+                            {t}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1096,6 +1154,47 @@ export const NewsView: React.FC<NewsViewProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Active Ticker Filter Banner from "Disorot" */}
+        {selectedTickerFilter && (
+          <div className="bg-[#1E7B85]/[0.06] border border-[#1E7B85]/35 px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[#676E7E]">Menyaring berita emiten:</span>
+              <button
+                type="button"
+                onClick={() => setSelectedTickerFilter(null)}
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-[#1E7B85] hover:bg-[#166068] text-white font-mono font-semibold text-[11px] transition"
+                title={`Hapus filter ${selectedTickerFilter}`}
+              >
+                <span>{selectedTickerFilter}</span>
+                <X className="w-3 h-3" />
+              </button>
+              <span className="text-[11px] text-[#676E7E]">
+                ({filteredLiveNews.length} berita)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3 text-[11px]">
+              <button
+                type="button"
+                onClick={() =>
+                  onSelectStockFromNews(selectedTickerFilter, "", activeBrief.headline)
+                }
+                className="inline-flex items-center space-x-1 font-semibold text-[#1E7B85] hover:underline"
+              >
+                <span>Buka {selectedTickerFilter} di Terminal</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTickerFilter(null)}
+                className="text-[#676E7E] hover:text-[#1D1F23] hover:underline"
+              >
+                Tampilkan semua
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* KONTEN BERITA BROADSHEET */}
         {provider !== "yahoo" ? (
@@ -1250,16 +1349,27 @@ export const NewsView: React.FC<NewsViewProps> = ({
                       ))}
                     </div>
 
-                    {editorialBuckets.compactStories.length > 8 && (
-                      <div className="flex justify-center pt-1">
+                    {(editorialBuckets.compactStories.length > 8 ||
+                      editorialBuckets.stackedStories.length > 0) && (
+                      <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                        {editorialBuckets.compactStories.length > 8 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllCompactStories((prev) => !prev)}
+                            className="px-6 py-2.5 border border-[#1D1F23] bg-[#FBFBFA] hover:bg-[#1D1F23] text-[#1D1F23] hover:text-white text-xs font-semibold tracking-wide transition"
+                          >
+                            {showAllCompactStories
+                              ? "Ringkas daftar berita"
+                              : `Tampilkan ${hiddenCompactCount} berita lainnya`}
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setShowAllCompactStories((prev) => !prev)}
-                          className="px-6 py-2.5 border border-[#1D1F23] bg-[#FBFBFA] hover:bg-[#1D1F23] text-[#1D1F23] hover:text-white text-xs font-semibold tracking-wide transition"
+                          onClick={handleScrollToTop}
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 border border-[#D5D7DC] hover:border-[#1D1F23] bg-[#FBFBFA] text-[#1D1F23] hover:text-[#1E7B85] text-xs font-semibold transition"
                         >
-                          {showAllCompactStories
-                            ? "Ringkas daftar berita"
-                            : `Tampilkan ${hiddenCompactCount} berita lainnya`}
+                          <ArrowUp className="w-3.5 h-3.5" />
+                          <span>Kembali ke atas</span>
                         </button>
                       </div>
                     )}
@@ -1267,6 +1377,21 @@ export const NewsView: React.FC<NewsViewProps> = ({
                 )}
               </section>
             )}
+          </div>
+        )}
+
+        {showScrollTop && (
+          <div className="sticky bottom-5 z-20 flex justify-end pointer-events-none pt-1">
+            <button
+              type="button"
+              onClick={handleScrollToTop}
+              aria-label="Kembali ke atas"
+              title="Kembali ke atas"
+              className="pointer-events-auto inline-flex items-center gap-1.5 px-3 py-2 bg-[#1D1F23] hover:bg-[#1E7B85] text-white border border-[#1D1F23] hover:border-[#1E7B85] shadow-md text-xs font-semibold transition"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+              <span>Ke atas</span>
+            </button>
           </div>
         )}
       </div>
