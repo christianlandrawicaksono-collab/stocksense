@@ -40,7 +40,10 @@ import {
   Target,
   GitCompareArrows,
   StickyNote,
+  Copy,
+  Check,
 } from "lucide-react";
+import { buildStockResearchMarkdown } from "@/lib/research-export";
 import { LightweightPriceChart } from "./LightweightPriceChart";
 import { StockCompareTab } from "./StockCompareTab";
 import {
@@ -531,6 +534,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     priceStr: string;
     noteStr: string;
   }>({ isOpen: false, ticker: "", priceStr: "", noteStr: "" });
+  const [copiedResearchTicker, setCopiedResearchTicker] = useState<string | null>(null);
 
   const isTargetEditorOpen =
     targetEditorState.isOpen && targetEditorState.ticker === selectedTicker;
@@ -656,6 +660,55 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
       };
     }
   }, [effectiveBands, stock.ticker, activePe, activePbv, activePrice, isLiveValuation]);
+
+  const handleCopyResearch = async () => {
+    if (activePrice <= 0) return;
+    const targetTicker = stock.ticker;
+    const markdown = buildStockResearchMarkdown({
+      ticker: stock.ticker,
+      name: stock.name,
+      sector: stock.sector,
+      price: activePrice,
+      changePercent: quote?.changePercent ?? stock.change1D,
+      sourceLabel: isLiveValuation ? "Yahoo Finance" : "Data Ilustrasi",
+      updatedAt: quote?.lastUpdated || marketStatus?.formattedTime,
+      valuationLabel: valuationDiagnosis.label,
+      valuationVerdict: valuationDiagnosis.verdict,
+      peRatio: activePe,
+      pbvRatio: activePbv,
+      dividendYield: activeDivYield,
+      roe: stock.roe,
+      der: stock.der,
+      marketCapTrillion: quote?.marketCapTrillion ?? stock.marketCapTrillion,
+      payoutRatio: hasCuratedBands ? stock.payoutRatio : undefined,
+      grahamNumber,
+      grahamUpsidePct: grahamNumber > 0 && activePrice > 0 ? grahamUpside : undefined,
+      bands: effectiveBands
+        ? {
+            kind: effectiveBands.kind,
+            historicalPeMean: effectiveBands.historicalPeMean,
+            peSd1Minus: effectiveBands.peSd1Minus,
+            peSd2Minus: effectiveBands.peSd2Minus,
+            targetMeanPrice,
+            targetSd1MinusPrice,
+            targetSd2MinusPrice,
+            meanUpsidePct: meanUpside,
+          }
+        : null,
+      targetBuyPrice: activeEntryMeta?.targetBuyPrice,
+      note: activeEntryMeta?.note,
+    });
+
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopiedResearchTicker(targetTicker);
+      setTimeout(() => {
+        setCopiedResearchTicker((cur) => (cur === targetTicker ? null : cur));
+      }, 2000);
+    } catch {
+      // Abaikan jika Clipboard API tidak tersedia di lingkungan terbatas
+    }
+  };
 
   // Handle Money Inputs with Thousand Separator
   const handleDcaChange = (valStr: string) => {
@@ -1008,6 +1061,30 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 >
                   <Sparkles className="w-3 h-3" />
                   <span>Tanya AI</span>
+                </button>
+              )}
+              {activePrice > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleCopyResearch()}
+                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans border transition ${
+                    copiedResearchTicker === stock.ticker
+                      ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
+                      : "bg-[#171F2C] hover:bg-[#1E2736] border-[#25354A] text-slate-300 hover:text-white"
+                  }`}
+                  title={`Salin ringkasan riset & valuasi ${selectedTicker} (Markdown)`}
+                >
+                  {copiedResearchTicker === stock.ticker ? (
+                    <>
+                      <Check className="w-3 h-3" />
+                      <span>Tersalin</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Salin Riset</span>
+                    </>
+                  )}
                 </button>
               )}
             </div>

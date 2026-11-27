@@ -300,3 +300,71 @@ export function saveWatchlistEntryMetaStorage(
   notifyNotesListeners();
   return next;
 }
+
+export interface WatchlistBuySignalItem {
+  ticker: string;
+  price: number;
+  targetBuyPrice: number;
+  diffPercent: number;
+  status: "hit" | "near";
+}
+
+export interface WatchlistTargetSummary {
+  hitItems: WatchlistBuySignalItem[];
+  nearItems: WatchlistBuySignalItem[];
+  totalActionable: number;
+}
+
+/**
+ * Evaluates active custom watchlist stocks against saved Target Harga Beli prices.
+ * Only evaluates tickers currently in customWatchlist so deleted items' stale notes do not alert.
+ */
+export function summarizeWatchlistBuySignals(
+  customWatchlist: string[],
+  watchlistNotes: Record<string, WatchlistEntryMeta>,
+  priceByTicker: Record<string, number>
+): WatchlistTargetSummary {
+  const hitItems: WatchlistBuySignalItem[] = [];
+  const nearItems: WatchlistBuySignalItem[] = [];
+  const seen = new Set<string>();
+
+  for (const rawTicker of customWatchlist) {
+    const ticker = normalizeIdxTicker(rawTicker);
+    if (!ticker || seen.has(ticker)) continue;
+    seen.add(ticker);
+
+    const targetBuyPrice = watchlistNotes[ticker]?.targetBuyPrice;
+    const price = priceByTicker[ticker] ?? 0;
+    if (!targetBuyPrice || targetBuyPrice <= 0 || !Number.isFinite(price) || price <= 0) {
+      continue;
+    }
+
+    const evalRes = evaluateTargetBuyStatus(price, targetBuyPrice);
+    if (evalRes.status === "hit") {
+      hitItems.push({
+        ticker,
+        price,
+        targetBuyPrice,
+        diffPercent: evalRes.diffPercent,
+        status: "hit",
+      });
+    } else if (evalRes.status === "near") {
+      nearItems.push({
+        ticker,
+        price,
+        targetBuyPrice,
+        diffPercent: evalRes.diffPercent,
+        status: "near",
+      });
+    }
+  }
+
+  hitItems.sort((a, b) => a.diffPercent - b.diffPercent);
+  nearItems.sort((a, b) => a.diffPercent - b.diffPercent);
+
+  return {
+    hitItems,
+    nearItems,
+    totalActionable: hitItems.length + nearItems.length,
+  };
+}
