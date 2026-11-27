@@ -1,4 +1,5 @@
 import { formatMultiple, formatNewsCategoryLabel, formatPersen, formatRupiah } from "@/lib/format";
+import { evaluateTargetBuyStatus } from "@/lib/watchlist";
 
 export interface AiStockContext {
   ticker: string;
@@ -15,6 +16,9 @@ export interface AiStockContext {
   der?: number;
   isLive?: boolean;
   isCurated?: boolean;
+  isInWatchlist?: boolean;
+  targetBuyPrice?: number;
+  watchlistNote?: string;
   strengths?: string[];
   risks?: string[];
 }
@@ -29,6 +33,8 @@ export interface AiPeerContextItem {
   dividendYield: number;
   isLive?: boolean;
   isInCustomWatchlist?: boolean;
+  targetBuyPrice?: number;
+  watchlistNote?: string;
 }
 
 export interface AiArticleContext {
@@ -112,11 +118,32 @@ export function buildContextSummary(context?: AiMarketContext): string {
     if (s.risks && s.risks.length > 0) {
       illustrativeLines.push(`Risiko profil: ${s.risks.join("; ")}`);
     }
+
+    if ((s.targetBuyPrice && s.targetBuyPrice > 0) || s.watchlistNote) {
+      const noteDest = s.isLive ? liveLines : illustrativeLines;
+      const fragments: string[] = [];
+      if (s.targetBuyPrice && s.targetBuyPrice > 0) {
+        const evalRes = evaluateTargetBuyStatus(s.price, s.targetBuyPrice);
+        const statusDesc =
+          evalRes.status === "hit"
+            ? `SUDAH MASUK AREA BELI (${formatPersen(evalRes.diffPercent, 1, true)} dari target)`
+            : evalRes.status === "near"
+            ? `MENDEKATI TARGET (+${formatPersen(evalRes.diffPercent, 1)})`
+            : evalRes.status === "above"
+            ? `${formatPersen(evalRes.diffPercent, 1, true)} di atas target`
+            : "status menunggu harga";
+        fragments.push(`Target Harga Beli ${formatRupiah(s.targetBuyPrice)} — ${statusDesc}`);
+      }
+      if (s.watchlistNote) {
+        fragments.push(`Catatan riset: "${s.watchlistNote}"`);
+      }
+      noteDest.push(`Rencana Watchlist Pengguna (${s.ticker}): ${fragments.join(" | ")}.`);
+    }
   }
 
   if (context.watchlistPeers && context.watchlistPeers.length > 0) {
     const formatPeer = (p: AiPeerContextItem) =>
-      `${p.ticker} (${p.sector}): ${formatRupiah(p.price)}, P/E ${formatMultiple(p.peRatio, 1)}, PBV ${formatMultiple(p.pbvRatio, 2)}, Div ${formatPersen(p.dividendYield, 1)}`;
+      `${p.ticker} (${p.sector}): ${formatRupiah(p.price)}, P/E ${formatMultiple(p.peRatio, 1)}, PBV ${formatMultiple(p.pbvRatio, 2)}, Div ${formatPersen(p.dividendYield, 1)}${p.targetBuyPrice && p.targetBuyPrice > 0 ? `, Target Beli ${formatRupiah(p.targetBuyPrice)}` : ""}`;
 
     const customPeers = context.watchlistPeers.filter((p) => p.isInCustomWatchlist);
     const curatedOnlyPeers = context.watchlistPeers.filter((p) => !p.isInCustomWatchlist);
@@ -295,11 +322,28 @@ ${lowestPe ? `* **P/E paling rendah:** **${lowestPe.ticker}** (${formatMultiple(
       metricExtras.push(`**DER ${formatMultiple(s.der, 2)}**`);
     }
 
+    const targetEval =
+      s.targetBuyPrice && s.targetBuyPrice > 0
+        ? evaluateTargetBuyStatus(s.price, s.targetBuyPrice)
+        : null;
+    const watchlistLine =
+      targetEval && s.targetBuyPrice
+        ? `\n* *Target Beli Watchlist:* **${formatRupiah(s.targetBuyPrice)}** — ${
+            targetEval.status === "hit"
+              ? `**SUDAH MASUK AREA BELI** (${formatPersen(targetEval.diffPercent, 1, true)})`
+              : targetEval.status === "near"
+              ? `**Mendekati target** (${formatPersen(targetEval.diffPercent, 1, true)})`
+              : `${formatPersen(targetEval.diffPercent, 1, true)} di atas target`
+          }.${s.watchlistNote ? ` *Catatan pribadi:* "${s.watchlistNote}".` : ""}`
+        : s.watchlistNote
+        ? `\n* *Catatan riset Watchlist:* "${s.watchlistNote}".`
+        : "";
+
     return `### Ringkasan Kontekstual ${s.ticker} (${s.name})
 
 1. **Valuasi (${s.isLive ? "Harga & Rasio Live Yahoo" : "Data Ilustrasi"}):**
 * Harga **${formatRupiah(s.price)}** (${formatPersen(s.changePercent, 2, true)}), **P/E ${s.peRatio > 0 ? formatMultiple(s.peRatio, 1) : "-"}**${valPosText ? ` (${valPosText}${s.targetMeanPrice ? `, target wajar Mean ${formatRupiah(s.targetMeanPrice)}` : ""})` : ""}.
-* **PBV ${s.pbvRatio > 0 ? formatMultiple(s.pbvRatio, 2) : "-"}** | **Dividend Yield ${formatPersen(s.dividendYield, 1)}**.${metricExtras.length > 0 ? `\n* *${s.isCurated !== false ? "Profil acuan ilustrasi" : "Metrik profil"}:* ${metricExtras.join(", ")}.` : ""}${macroLine ? `\n* *Latar makro:* ${macroLine}.` : ""}
+* **PBV ${s.pbvRatio > 0 ? formatMultiple(s.pbvRatio, 2) : "-"}** | **Dividend Yield ${formatPersen(s.dividendYield, 1)}**.${metricExtras.length > 0 ? `\n* *${s.isCurated !== false ? "Profil acuan ilustrasi" : "Metrik profil"}:* ${metricExtras.join(", ")}.` : ""}${watchlistLine}${macroLine ? `\n* *Latar makro:* ${macroLine}.` : ""}
 2. **Kekuatan Utama:** ${s.strengths?.[0] || "Fundamental operasional terpantau pada metrik TTM terkini."}
 3. **Risiko Dicermati:** ${s.risks?.[0] || "Volatilitas pasar dan arah suku bunga."}`;
   }

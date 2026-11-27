@@ -1,29 +1,55 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo, useSyncExternalStore } from "react";
 import type { AiMarketContext, AiTurnInput } from "@/app/api/ai/analyze/route";
 import type { AiChatMessage } from "@/components/ai/GeminiAiModal";
+import {
+  getAiChatServerSnapshot,
+  getSessionApiKeyServerSnapshot,
+  parseAiChatHistoryJson,
+  readAiChatStorageSnapshot,
+  readSessionApiKeySnapshot,
+  subscribeAiChatStorage,
+  subscribeSessionApiKey,
+  writeAiChatStorage,
+  writeSessionApiKey,
+} from "@/lib/ai-storage";
 
 let messageSeq = 0;
 function createMessageId(prefix: "u" | "a"): string {
   messageSeq += 1;
-  return `${prefix}-${messageSeq}`;
+  return `${prefix}-${Date.now()}-${messageSeq}`;
 }
 
 export function useAiChat() {
-  const [messages, setMessages] = useState<AiChatMessage[]>([]);
-  const [customApiKey, setCustomApiKey] = useState<string>("");
+  const chatJson = useSyncExternalStore(
+    subscribeAiChatStorage,
+    readAiChatStorageSnapshot,
+    getAiChatServerSnapshot
+  );
+  const customApiKey = useSyncExternalStore(
+    subscribeSessionApiKey,
+    readSessionApiKeySnapshot,
+    getSessionApiKeyServerSnapshot
+  );
+
+  const messages: AiChatMessage[] = useMemo(() => parseAiChatHistoryJson(chatJson), [chatJson]);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const isLoadingRef = useRef(false);
+
+  const setCustomApiKey = useCallback((key: string) => {
+    writeSessionApiKey(key);
+  }, []);
 
   const sendMessage = useCallback(
     async (userPrompt: string, context: AiMarketContext) => {
       const trimmed = userPrompt.trim();
       if (!trimmed || isLoadingRef.current) return;
 
-      const historyPayload: AiTurnInput[] = messages.map((m) => ({
+      const latestMessages = parseAiChatHistoryJson(readAiChatStorageSnapshot());
+      const historyPayload: AiTurnInput[] = latestMessages.map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -35,7 +61,7 @@ export function useAiChat() {
       };
 
       isLoadingRef.current = true;
-      setMessages((prev) => [...prev, userMsg]);
+      writeAiChatStorage([...latestMessages, userMsg]);
       setIsLoading(true);
       setWarningMsg(null);
 
@@ -46,7 +72,7 @@ export function useAiChat() {
           body: JSON.stringify({
             prompt: trimmed,
             messages: historyPayload,
-            customApiKey: customApiKey.trim() || undefined,
+            customApiKey: readSessionApiKeySnapshot().trim() || undefined,
             context,
           }),
         });
@@ -71,7 +97,10 @@ export function useAiChat() {
           model: data.model || null,
         };
 
-        setMessages((prev) => [...prev, assistantMsg]);
+        const currentStored = parseAiChatHistoryJson(readAiChatStorageSnapshot());
+        if (currentStored.some((m) => m.id === userMsg.id)) {
+          writeAiChatStorage([...currentStored, assistantMsg]);
+        }
         setWarningMsg(data.warning || null);
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -81,11 +110,11 @@ export function useAiChat() {
         setIsLoading(false);
       }
     },
-    [customApiKey, messages]
+    []
   );
 
   const clearMessages = useCallback(() => {
-    setMessages([]);
+    writeAiChatStorage([]);
     setWarningMsg(null);
   }, []);
 

@@ -1117,7 +1117,10 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         {isTargetEditorOpen ? (
           <div className="px-4 py-3 border-b border-[#1E2736] bg-[#0B1018] flex flex-col lg:flex-row lg:items-end gap-2.5 text-xs">
             <div className="w-full lg:w-48">
-              <label className="text-[11px] text-slate-400 block mb-1">
+              <label
+                htmlFor="watchlist-target-price"
+                className="text-[11px] text-slate-400 block mb-1"
+              >
                 Target Harga Beli (Rp)
               </label>
               <div className="relative">
@@ -1125,6 +1128,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   Rp
                 </span>
                 <input
+                  id="watchlist-target-price"
+                  name="targetBuyPrice"
                   type="text"
                   value={targetEditorState.priceStr}
                   onChange={(e) => handleTargetPriceInput(e.target.value)}
@@ -1135,10 +1140,15 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             </div>
 
             <div className="flex-1">
-              <label className="text-[11px] text-slate-400 block mb-1">
+              <label
+                htmlFor="watchlist-target-note"
+                className="text-[11px] text-slate-400 block mb-1"
+              >
                 Catatan Riset Pribadi (maks. {MAX_WATCHLIST_NOTE_LENGTH} karakter)
               </label>
               <input
+                id="watchlist-target-note"
+                name="targetNote"
                 type="text"
                 maxLength={MAX_WATCHLIST_NOTE_LENGTH}
                 value={targetEditorState.noteStr}
@@ -1493,12 +1503,17 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             {/* Input Controls with Thousand Separators */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-[#0C1017] rounded-xl border border-[#1E2736] text-xs">
               <div>
-                <label className="text-slate-400 block mb-1">
+                <label
+                  htmlFor="dca-quarterly-input"
+                  className="text-slate-400 block mb-1"
+                >
                   Investasi per kuartal (3 bulan):
                 </label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono">Rp</span>
                   <input
+                    id="dca-quarterly-input"
+                    name="dcaQuarterly"
                     type="text"
                     value={dcaInputStr}
                     onChange={(e) => handleDcaChange(e.target.value)}
@@ -1511,12 +1526,17 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">
+                <label
+                  htmlFor="dca-lumpsum-input"
+                  className="text-slate-400 block mb-1"
+                >
                   Modal awal / lump-sum:
                 </label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono">Rp</span>
                   <input
+                    id="dca-lumpsum-input"
+                    name="dcaLumpSum"
                     type="text"
                     value={lumpSumInputStr}
                     onChange={(e) => handleLumpSumChange(e.target.value)}
@@ -1526,10 +1546,15 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">
+                <label
+                  htmlFor="dca-start-year"
+                  className="text-slate-400 block mb-1"
+                >
                   Tahun mulai simulasi:
                 </label>
                 <select
+                  id="dca-start-year"
+                  name="dcaStartYear"
                   value={effectiveSimStartYear}
                   onChange={(e) => setSimStartYear(e.target.value)}
                   className="w-full bg-[#111622] border border-[#20293A] rounded px-2.5 py-1.5 text-slate-100 font-mono tnum focus:outline-none focus:border-[#1E7B85]"

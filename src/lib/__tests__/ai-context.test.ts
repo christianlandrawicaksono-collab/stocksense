@@ -129,4 +129,39 @@ describe("ai-context helpers", () => {
     expect(stockEval).not.toContain("NaN");
     expect(stockEval).not.toContain("Infinity");
   });
+
+  it("includes user watchlist target buy price and note in context summary and builtin synthesis", () => {
+    const context = {
+      mode: "terminal" as const,
+      provider: "yahoo" as const,
+      stock: {
+        ticker: "BBCA",
+        name: "Bank Central Asia Tbk",
+        sector: "Financials",
+        price: 5900,
+        changePercent: 1.3,
+        peRatio: 12.2,
+        historicalPeMean: 21.8,
+        targetMeanPrice: 10540,
+        pbvRatio: 2.56,
+        dividendYield: 6.5,
+        isLive: true,
+        isCurated: true,
+        isInWatchlist: true,
+        targetBuyPrice: 6000,
+        watchlistNote: "Akumulasi bertahap saat diskon -2 SD",
+      },
+    };
+
+    const summary = buildContextSummary(context);
+    expect(summary).toContain("Rencana Watchlist Pengguna (BBCA):");
+    expect(summary).toContain("Target Harga Beli Rp 6.000");
+    expect(summary).toContain("SUDAH MASUK AREA BELI");
+    expect(summary).toContain('Catatan riset: "Akumulasi bertahap saat diskon -2 SD"');
+
+    const reply = buildBuiltinSynthesis("Evaluasi target beli BBCA", context);
+    expect(reply).toContain("*Target Beli Watchlist:* **Rp 6.000**");
+    expect(reply).toContain("SUDAH MASUK AREA BELI");
+    expect(reply).toContain("Akumulasi bertahap saat diskon -2 SD");
+  });
 });

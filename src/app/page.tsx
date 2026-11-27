@@ -199,6 +199,8 @@ function HomeContent() {
               : s?.dividendYield ?? 0,
           isLive: peerLive,
           isInCustomWatchlist: customSet.has(ticker),
+          targetBuyPrice: watchlistNotes[ticker]?.targetBuyPrice,
+          watchlistNote: watchlistNotes[ticker]?.note,
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -209,6 +211,8 @@ function HomeContent() {
         : currentMode === "terminal" && originLiveNews
         ? buildLiveNewsArticleContext(originLiveNews)
         : undefined;
+
+    const activeEntryMeta = watchlistNotes[selectedTicker];
 
     return {
       mode: currentMode,
@@ -235,6 +239,9 @@ function HomeContent() {
               der: curatedMeta?.der ?? activeQuote?.der ?? customMetrics?.der,
               isLive,
               isCurated: Boolean(curatedMeta),
+              isInWatchlist: customSet.has(selectedTicker),
+              targetBuyPrice: activeEntryMeta?.targetBuyPrice,
+              watchlistNote: activeEntryMeta?.note,
               strengths: curatedMeta?.strengths ?? [],
               risks: curatedMeta?.risks ?? [],
             }
@@ -253,6 +260,7 @@ function HomeContent() {
     selectedTicker,
     quotes,
     customWatchlist,
+    watchlistNotes,
     customAiMetrics,
     originLiveNews,
     macroTickers,

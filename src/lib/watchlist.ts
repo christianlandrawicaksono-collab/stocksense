@@ -368,3 +368,228 @@ export function summarizeWatchlistBuySignals(
     totalActionable: hitItems.length + nearItems.length,
   };
 }
+
+// --- Watchlist JSON Backup Export & Import Helpers ---
+
+export type WatchlistImportMode = "merge" | "replace";
+
+export interface WatchlistBackupPayload {
+  version: 1;
+  exportedAt: string;
+  tickers: string[];
+  notes: Record<string, WatchlistEntryMeta>;
+}
+
+export type WatchlistBackupParseResult =
+  | {
+      ok: true;
+      tickers: string[];
+      notes: Record<string, WatchlistEntryMeta>;
+      ignoredCount: number;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export interface WatchlistImportOutcome {
+  tickers: string[];
+  notes: Record<string, WatchlistEntryMeta>;
+  addedCount: number;
+  updatedCount: number;
+  skippedDueToLimit: number;
+}
+
+export function buildWatchlistBackupPayload(
+  tickers: string[],
+  notes: Record<string, WatchlistEntryMeta>,
+  exportedAt: string = new Date().toISOString()
+): WatchlistBackupPayload {
+  const cleanTickers = sanitizeWatchlistTickers(tickers, MAX_CUSTOM_WATCHLIST);
+  const tickerSet = new Set(cleanTickers);
+  const cleanNotes = sanitizeWatchlistNotes(notes);
+  const scopedNotes: Record<string, WatchlistEntryMeta> = {};
+
+  for (const [t, meta] of Object.entries(cleanNotes)) {
+    if (tickerSet.has(t)) {
+      scopedNotes[t] = meta;
+    }
+  }
+
+  return {
+    version: 1,
+    exportedAt,
+    tickers: cleanTickers,
+    notes: scopedNotes,
+  };
+}
+
+export function buildWatchlistBackupJson(
+  tickers: string[],
+  notes: Record<string, WatchlistEntryMeta>,
+  exportedAt?: string
+): string {
+  return JSON.stringify(buildWatchlistBackupPayload(tickers, notes, exportedAt), null, 2);
+}
+
+export function parseWatchlistBackupInput(rawInput: string): WatchlistBackupParseResult {
+  const trimmed = rawInput.trim();
+  if (!trimmed) {
+    return { ok: false, error: "Isi JSON backup watchlist masih kosong." };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return {
+      ok: false,
+      error: "Format JSON tidak valid. Pastikan memakai file hasil ekspor StocksSense (.json).",
+    };
+  }
+
+  let rawTickers: unknown[] = [];
+  let rawNotes: unknown = {};
+
+  if (Array.isArray(parsed)) {
+    rawTickers = parsed;
+  } else if (parsed && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    if (!Array.isArray(obj.tickers)) {
+      return {
+        ok: false,
+        error: "Struktur JSON tidak sesuai: field array \"tickers\" tidak ditemukan.",
+      };
+    }
+    rawTickers = obj.tickers;
+    rawNotes = obj.notes;
+  } else {
+    return { ok: false, error: "Format JSON harus berupa objek backup atau array kode saham BEI." };
+  }
+
+  const normalizedUnique: string[] = [];
+  const seen = new Set<string>();
+  let invalidOrDupCount = 0;
+
+  for (const item of rawTickers) {
+    if (typeof item !== "string") {
+      invalidOrDupCount += 1;
+      continue;
+    }
+    const clean = normalizeIdxTicker(item);
+    if (!clean || seen.has(clean)) {
+      invalidOrDupCount += 1;
+      continue;
+    }
+    seen.add(clean);
+    normalizedUnique.push(clean);
+  }
+
+  if (normalizedUnique.length === 0) {
+    return {
+      ok: false,
+      error: "Tidak ada kode saham BEI 4 huruf yang valid di file backup.",
+    };
+  }
+
+  const cleanTickers = normalizedUnique.slice(0, MAX_CUSTOM_WATCHLIST);
+  const cappedCount = Math.max(0, normalizedUnique.length - cleanTickers.length);
+  const cleanTickerSet = new Set(cleanTickers);
+  const allSanitizedNotes = sanitizeWatchlistNotes(rawNotes);
+  const scopedNotes: Record<string, WatchlistEntryMeta> = {};
+
+  for (const [t, meta] of Object.entries(allSanitizedNotes)) {
+    if (cleanTickerSet.has(t)) {
+      scopedNotes[t] = meta;
+    }
+  }
+
+  return {
+    ok: true,
+    tickers: cleanTickers,
+    notes: scopedNotes,
+    ignoredCount: invalidOrDupCount + cappedCount,
+  };
+}
+
+export function applyWatchlistImport(params: {
+  currentTickers: string[];
+  currentNotes: Record<string, WatchlistEntryMeta>;
+  importedTickers: string[];
+  importedNotes: Record<string, WatchlistEntryMeta>;
+  mode: WatchlistImportMode;
+}): WatchlistImportOutcome {
+  const cleanImportedTickers = sanitizeWatchlistTickers(params.importedTickers, MAX_CUSTOM_WATCHLIST);
+  const cleanImportedNotes = sanitizeWatchlistNotes(params.importedNotes);
+
+  if (params.mode === "replace") {
+    const tickerSet = new Set(cleanImportedTickers);
+    const nextNotes: Record<string, WatchlistEntryMeta> = {};
+    for (const [t, meta] of Object.entries(cleanImportedNotes)) {
+      if (tickerSet.has(t)) {
+        nextNotes[t] = meta;
+      }
+    }
+    return {
+      tickers: cleanImportedTickers,
+      notes: nextNotes,
+      addedCount: cleanImportedTickers.length,
+      updatedCount: 0,
+      skippedDueToLimit: 0,
+    };
+  }
+
+  const nextTickers = sanitizeWatchlistTickers(params.currentTickers, MAX_CUSTOM_WATCHLIST);
+  const existingSet = new Set(nextTickers);
+  const nextNotes = sanitizeWatchlistNotes(params.currentNotes);
+  let addedCount = 0;
+  let updatedCount = 0;
+  let skippedDueToLimit = 0;
+
+  for (const ticker of cleanImportedTickers) {
+    if (existingSet.has(ticker)) {
+      if (cleanImportedNotes[ticker]) {
+        nextNotes[ticker] = cleanImportedNotes[ticker];
+        updatedCount += 1;
+      }
+    } else if (nextTickers.length < MAX_CUSTOM_WATCHLIST) {
+      nextTickers.push(ticker);
+      existingSet.add(ticker);
+      addedCount += 1;
+      if (cleanImportedNotes[ticker]) {
+        nextNotes[ticker] = cleanImportedNotes[ticker];
+      }
+    } else {
+      skippedDueToLimit += 1;
+    }
+  }
+
+  return {
+    tickers: nextTickers,
+    notes: nextNotes,
+    addedCount,
+    updatedCount,
+    skippedDueToLimit,
+  };
+}
+
+export function replaceWatchlistAndNotesStorage(
+  tickers: string[],
+  notes: Record<string, WatchlistEntryMeta>
+): { tickers: string[]; notes: Record<string, WatchlistEntryMeta> } {
+  const cleanTickers = sanitizeWatchlistTickers(tickers, MAX_CUSTOM_WATCHLIST);
+  const cleanNotes = sanitizeWatchlistNotes(notes);
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(CUSTOM_WATCHLIST_STORAGE_KEY, JSON.stringify(cleanTickers));
+      window.localStorage.setItem(WATCHLIST_NOTES_STORAGE_KEY, JSON.stringify(cleanNotes));
+    } catch {
+      // Ignore storage quota or private-mode errors
+    }
+  }
+
+  notifyWatchlistListeners();
+  notifyNotesListeners();
+  return { tickers: cleanTickers, notes: cleanNotes };
+}
