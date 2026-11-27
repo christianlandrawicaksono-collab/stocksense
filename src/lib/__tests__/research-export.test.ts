@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAllocationPlanMarkdown,
   buildComparisonResearchMarkdown,
   buildStockResearchMarkdown,
 } from "@/lib/research-export";
+import { simulatePortfolioAllocation } from "@/lib/portfolio-allocator";
 import { computeComparisonWinners, type ComparableStockMetrics } from "@/lib/compare";
 
 describe("research-export Markdown builders", () => {
@@ -128,5 +130,47 @@ describe("research-export Markdown builders", () => {
     expect(md).toContain("21,5% (Tertinggi)");
     expect(md).toContain("Rp 6.000 (Area Beli)");
     expect(md).toContain("Rp 3.000 (Dekat)");
+  });
+
+  it("formats Watchlist portfolio allocation plan Markdown cleanly", () => {
+    const summary = simulatePortfolioAllocation({
+      totalCapitalRp: 10_000_000,
+      candidates: [
+        {
+          ticker: "BBCA",
+          name: "Bank Central Asia Tbk",
+          sector: "Financials",
+          price: 6000,
+          peRatio: 12,
+          pbvRatio: 2.5,
+          dividendYield: 6.0,
+          targetStatus: "hit",
+        },
+        {
+          ticker: "TLKM",
+          name: "Telkom Indonesia Tbk",
+          sector: "Infrastructures",
+          price: 2500,
+          peRatio: 10,
+          pbvRatio: 1.8,
+          dividendYield: 8.0,
+          targetStatus: "above",
+        },
+      ],
+      weightsByTicker: { BBCA: 60, TLKM: 40 },
+    });
+
+    const md = buildAllocationPlanMarkdown({
+      summary,
+      presetLabel: "Bobot Kustom",
+      providerLabel: "Yahoo Finance",
+    });
+
+    expect(md).toContain("# Rencana Alokasi Modal Watchlist");
+    expect(md).toContain("Rp 10.000.000");
+    expect(md).toContain("10 lot");
+    expect(md).toContain("16 lot");
+    expect(md).toContain("Komposisi Sektor:");
+    expect(md).toContain("Financials (60,0%)");
   });
 });

@@ -67,6 +67,7 @@ function HomeContent() {
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
+  const [allocationAiSummary, setAllocationAiSummary] = useState<string | null>(null);
   const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
   const [customAiMetrics, setCustomAiMetrics] = useState<CustomStockAiMetrics | null>(null);
 
@@ -247,6 +248,7 @@ function HomeContent() {
             }
           : undefined,
       watchlistPeers,
+      ...(allocationAiSummary ? { allocationSummary: allocationAiSummary } : {}),
       article: articleContext,
       macroTickers: macroTickers.map((t) => ({
         symbol: t.symbol,
@@ -261,17 +263,24 @@ function HomeContent() {
     quotes,
     customWatchlist,
     watchlistNotes,
+    allocationAiSummary,
     customAiMetrics,
     originLiveNews,
     macroTickers,
     activeLiveNewsForAi,
   ]);
 
-  const runAiAnalysis = (prompt: string, overrideArticle?: AiArticleContext) => {
+  const runAiAnalysis = (
+    prompt: string,
+    overrideArticle?: AiArticleContext,
+    overrideAllocationSummary?: string
+  ) => {
     setIsAiModalOpen(true);
-    const ctx: AiMarketContext = overrideArticle
-      ? { ...activeAiContext, article: overrideArticle }
-      : activeAiContext;
+    const ctx: AiMarketContext = {
+      ...activeAiContext,
+      ...(overrideArticle ? { article: overrideArticle } : {}),
+      ...(overrideAllocationSummary ? { allocationSummary: overrideAllocationSummary } : {}),
+    };
     void sendAiMessage(prompt, ctx);
   };
 
@@ -465,11 +474,13 @@ function HomeContent() {
                 onCloseOriginPanel={() => setOriginLiveNews(null)}
                 onAskAiStock={(t) => {
                   setActiveLiveNewsForAi(null);
+                  setAllocationAiSummary(null);
                   const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
                   runAiAnalysis(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
                 }}
                 onAskAiTerminalNews={(item) => {
                   setActiveLiveNewsForAi(null);
+                  setAllocationAiSummary(null);
                   runAiAnalysis(
                     `Bedah dampak berita "${item.title}" terhadap prospek & valuasi saham ${selectedTicker}.`,
                     buildLiveNewsArticleContext(item)
@@ -477,8 +488,18 @@ function HomeContent() {
                 }}
                 onAskAiCompare={(tickers) => {
                   setActiveLiveNewsForAi(null);
+                  setAllocationAiSummary(null);
                   runAiAnalysis(
                     `Bandingkan saham ${tickers.join(" vs ")} dari sisi valuasi P/E, PBV, Dividend Yield, ROE, DER, dan prospek risikonya.`
+                  );
+                }}
+                onAskAiAllocation={(summaryText) => {
+                  setActiveLiveNewsForAi(null);
+                  setAllocationAiSummary(summaryText);
+                  runAiAnalysis(
+                    "Evaluasi rencana alokasi portofolio Watchlist ini dari sisi keseimbangan sektor, valuasi P/E-PBV, potensi dividen, dan risiko konsentrasinya.",
+                    undefined,
+                    summaryText
                   );
                 }}
                 onCustomAiMetrics={setCustomAiMetrics}
@@ -517,6 +538,7 @@ function HomeContent() {
               }}
               onSelectStockFromNews={handleSelectStockFromNews}
               onAskAiLiveNews={(item) => {
+                setAllocationAiSummary(null);
                 setActiveLiveNewsForAi(item);
                 runAiAnalysis(
                   `Bedah dampak pasar & saham terkait dari berita: "${item.title}"`,

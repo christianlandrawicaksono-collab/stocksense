@@ -164,4 +164,21 @@ describe("ai-context helpers", () => {
     expect(reply).toContain("SUDAH MASUK AREA BELI");
     expect(reply).toContain("Akumulasi bertahap saat diskon -2 SD");
   });
+
+  it("includes Watchlist allocation summary in context and builtin synthesis", () => {
+    const context = {
+      mode: "terminal" as const,
+      provider: "yahoo" as const,
+      allocationSummary:
+        "Modal Rp 10.000.000, teralokasi Rp 9.500.000 (95,0%). BBCA 6 lot, BBRI 13 lot. Peringatan: Konsentrasi tinggi Financials (78,9%).",
+    };
+
+    const summary = buildContextSummary(context);
+    expect(summary).toContain("Simulasi Alokasi Watchlist Pengguna:");
+    expect(summary).toContain("BBCA 6 lot");
+
+    const reply = buildBuiltinSynthesis("Bedah risiko alokasi portofolio watchlist ini", context);
+    expect(reply).toContain("### Evaluasi Rencana Alokasi Watchlist");
+    expect(reply).toContain("konsentrasi sektor cukup tinggi");
+  });
 });
