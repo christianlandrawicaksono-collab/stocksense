@@ -62,6 +62,7 @@ export interface AiMarketContext {
   stock?: AiStockContext;
   watchlistPeers?: AiPeerContextItem[];
   customWatchlist?: string[];
+  allocationSummary?: string;
   article?: AiArticleContext;
   macroTickers?: AiMacroContextItem[];
 }
@@ -185,6 +186,11 @@ export function buildContextSummary(context?: AiMarketContext): string {
     }
   }
 
+  if (context.allocationSummary) {
+    const dest = context.provider === "yahoo" ? liveLines : illustrativeLines;
+    dest.push(`Simulasi Alokasi Watchlist Pengguna:\n${context.allocationSummary}`);
+  }
+
   const sections: string[] = [];
   if (liveLines.length > 0) {
     sections.push(`DATA PASAR LIVE (Yahoo Finance & Berita RSS):\n${liveLines.join("\n")}`);
@@ -208,6 +214,23 @@ export function buildBuiltinSynthesis(prompt: string, context?: AiMarketContext)
           .map((m) => `${m.symbol} ${m.value} (${formatPersen(m.change, 2, true)})`)
           .join(" • ")
       : null;
+
+  // 0. Evaluasi simulasi alokasi modal Watchlist bila tersedia di konteks
+  if (
+    context?.allocationSummary &&
+    (q.includes("alokasi") || q.includes("portofolio") || q.includes("bobot") || q.includes("sektor") || q.includes("lot"))
+  ) {
+    const hasHighConc = context.allocationSummary.includes("Konsentrasi tinggi");
+    return `### Evaluasi Rencana Alokasi Watchlist
+${context.allocationSummary}
+
+* **Keseimbangan Sektor:** ${
+      hasHighConc
+        ? "Terdeteksi konsentrasi sektor cukup tinggi (≥ 60%). Pertimbangkan menyebar sebagian bobot ke sektor non-korelatif (seperti konsumer defensif, infrastruktur, atau komoditas) agar portofolio lebih tahan guncangan siklus."
+        : "Sebaran sektor sudah cukup berimbang untuk manajemen risiko awal."
+    }
+* **Eksekusi Lot & Kas:** Pastikan sisa kas dipertahankan untuk peluang *averaging* saat emiten Watchlist menyentuh batas **Target Beli** atau area valuasi diskon (${macroLine ? `latar makro: ${macroLine}` : "pantau volatilitas pasar"}).`;
+  }
 
   // 1. Cek perbandingan beberapa ticker atau permintaan evaluasi Watchlist Saya
   const customWatchlistPeers = peers.filter((p) => p.isInCustomWatchlist && p.price > 0);

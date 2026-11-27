@@ -42,10 +42,12 @@ import {
   StickyNote,
   Copy,
   Check,
+  PieChart,
 } from "lucide-react";
 import { buildStockResearchMarkdown } from "@/lib/research-export";
 import { LightweightPriceChart } from "./LightweightPriceChart";
 import { StockCompareTab } from "./StockCompareTab";
+import { StockAllocationTab } from "./StockAllocationTab";
 import {
   evaluateTargetBuyStatus,
   MAX_WATCHLIST_NOTE_LENGTH,
@@ -84,6 +86,7 @@ interface TerminalMainPaneProps {
   onAskAiStock?: (ticker: string) => void;
   onAskAiTerminalNews?: (item: LiveMarketNewsItem) => void;
   onAskAiCompare?: (tickers: string[]) => void;
+  onAskAiAllocation?: (allocationSummary: string) => void;
   onCustomAiMetrics?: (metrics: CustomStockAiMetrics | null) => void;
   isInWatchlist?: boolean;
   isWatchlistFull?: boolean;
@@ -97,7 +100,7 @@ interface TerminalMainPaneProps {
   marketStatus?: MarketStatus;
 }
 
-type TerminalTab = "valuation" | "simulator" | "fundamental" | "news" | "compare";
+type TerminalTab = "valuation" | "simulator" | "fundamental" | "news" | "compare" | "allocation";
 
 function renderDarkSentimentBadge(sentiment: SentimentType) {
   switch (sentiment) {
@@ -133,6 +136,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   onAskAiStock,
   onAskAiTerminalNews,
   onAskAiCompare,
+  onAskAiAllocation,
   onCustomAiMetrics,
   isInWatchlist = false,
   isWatchlistFull = false,
@@ -1311,6 +1315,20 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             <GitCompareArrows className="w-3.5 h-3.5" />
             <span>Bandingkan</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("allocation")}
+            title="Simulasi Alokasi Modal & Lot Watchlist"
+            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
+              activeTab === "allocation"
+                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <PieChart className="w-3.5 h-3.5" />
+            <span>Alokasi</span>
+          </button>
         </div>
 
         {/* TAB 1: VALUASI & P/E BAND */}
@@ -1982,6 +2000,18 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             watchlistNotes={watchlistNotes}
             onSelectTicker={onSelectTicker}
             onAskAiCompare={onAskAiCompare}
+          />
+        )}
+
+        {/* TAB 6: ALOKASI MODAL WATCHLIST (LOT BEI, DIVIDEN, SEKTOR) */}
+        {activeTab === "allocation" && (
+          <StockAllocationTab
+            quotes={allQuotes}
+            provider={provider}
+            customWatchlist={customWatchlist}
+            watchlistNotes={watchlistNotes}
+            onSelectTicker={onSelectTicker}
+            onAskAiAllocation={onAskAiAllocation}
           />
         )}
       </div>

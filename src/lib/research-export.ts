@@ -1,5 +1,6 @@
 import type { ComparableStockMetrics, ComparisonWinners, NormalizedComparisonSeries } from "./compare";
-import { formatDesimal, formatMultiple, formatPersen, formatRupiah } from "./format";
+import { formatDesimal, formatMultiple, formatNumber, formatPersen, formatRupiah } from "./format";
+import type { PortfolioAllocationSummary } from "./portfolio-allocator";
 import { evaluateTargetBuyStatus } from "./watchlist";
 
 export interface StockResearchExportInput {
@@ -227,5 +228,89 @@ export function buildComparisonResearchMarkdown(input: ComparisonResearchExportI
   lines.push("");
   lines.push("_Disalin dari StocksSense — bukan rekomendasi investasi._");
 
+  return lines.join("\n");
+}
+
+export interface AllocationPlanExportInput {
+  summary: PortfolioAllocationSummary;
+  presetLabel: string;
+  providerLabel: string;
+}
+
+/**
+ * Formats an IDX Watchlist capital allocation plan (lots, cash remainder, sector mix, weighted multiples) as Markdown.
+ */
+export function buildAllocationPlanMarkdown(input: AllocationPlanExportInput): string {
+  const { summary, presetLabel, providerLabel } = input;
+  const lines: string[] = [];
+
+  lines.push("# Rencana Alokasi Modal Watchlist");
+  lines.push(
+    `Modal: **${formatRupiah(summary.totalCapitalRp)}** • Strategi: ${presetLabel} • Sumber: ${providerLabel}`
+  );
+  lines.push("");
+  lines.push(
+    `Total Teralokasi: **${formatRupiah(summary.totalAllocatedRp)}** (${formatPersen(
+      summary.utilizationPct,
+      1
+    )}) • Sisa Kas: **${formatRupiah(summary.remainingCashRp)}** (${summary.totalLots} lot / ${formatNumber(
+      summary.totalShares
+    )} lbr)`
+  );
+  lines.push("");
+
+  const activeRows = summary.rows.filter((r) => r.inputWeightPct > 0 || r.lots > 0);
+  if (activeRows.length > 0) {
+    lines.push("| Saham | Harga | Bobot Target | Lot (100 lbr) | Alokasi | Bobot Aktual | Est. Dividen/Th |");
+    lines.push("|---|---:|---:|---:|---:|---:|---:|");
+    for (const r of activeRows) {
+      const lotText = r.insufficientForOneLot ? "0 lot (<1 lot)" : `${r.lots} lot`;
+      lines.push(
+        `| ${r.ticker} | ${formatRupiah(r.price)} | ${formatPersen(r.effectiveTargetPct, 1)} | ${lotText} | ${formatRupiah(
+          r.allocatedRp
+        )} | ${formatPersen(r.actualWeightPct, 1)} | ${
+          r.estimatedAnnualDividendRp > 0 ? formatRupiah(r.estimatedAnnualDividendRp) : "-"
+        } |`
+      );
+    }
+    lines.push("");
+  }
+
+  lines.push("## Metrik Portofolio Gabungan");
+  lines.push(
+    `- Estimasi Dividen Tahunan: ${
+      summary.estimatedAnnualDividendRp > 0 ? formatRupiah(summary.estimatedAnnualDividendRp) : "-"
+    } (Yield tertimbang: ${
+      summary.weightedDividendYieldPct > 0 ? formatPersen(summary.weightedDividendYieldPct, 1) : "-"
+    })`
+  );
+  lines.push(
+    `- P/E Tertimbang (Harmonic): ${
+      summary.weightedPeRatio > 0 ? formatMultiple(summary.weightedPeRatio, 1) : "-"
+    }`
+  );
+  lines.push(
+    `- PBV Tertimbang (Harmonic): ${
+      summary.weightedPbvRatio > 0 ? formatMultiple(summary.weightedPbvRatio, 2) : "-"
+    }`
+  );
+
+  if (summary.sectorBreakdown.length > 0) {
+    const sectorText = summary.sectorBreakdown
+      .map((s) => `${s.sector} (${formatPersen(s.sharePct, 1)})`)
+      .join(", ");
+    lines.push(`- Komposisi Sektor: ${sectorText}`);
+  }
+  if (summary.concentratedSector) {
+    lines.push(
+      `- Catatan Konsentrasi: Sektor ${summary.concentratedSector.sector} mendominasi ${formatPersen(
+        summary.concentratedSector.sharePct,
+        1
+      )} dari modal teralokasi.`
+    );
+  }
+
+  lines.push("");
+  lines.push("_Disalin dari StocksSense — bukan rekomendasi investasi._");
   return lines.join("\n");
 }
