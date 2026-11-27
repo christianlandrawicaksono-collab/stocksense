@@ -134,6 +134,20 @@ describe("news-brief & filterNewsByTicker helpers", () => {
       watchlistSet: new Set(["BBCA"]),
     });
     expect(filteredCorp.map((i) => i.id)).toEqual(["n2", "n1"]);
+
+    const countsForPtba = computeNewsCategoryCounts(SAMPLE_ITEMS, { tickerFilter: "ptba" });
+    expect(countsForPtba).toEqual({
+      ALL: 1,
+      CORPORATE: 0,
+      MONETARY_CURRENCY: 0,
+      GLOBAL_MACRO: 0,
+      DOMESTIC_POLITICS: 0,
+      COMMODITIES: 1,
+    });
+    expect(filterLiveNewsItems(SAMPLE_ITEMS, { tickerFilter: "BRIS" }).map((i) => i.id)).toEqual([
+      "n1",
+      "n2",
+    ]);
   });
 
   it("curates editorial grid slots to avoid duplicate images/topics while prioritizing diversity and watchlist", () => {

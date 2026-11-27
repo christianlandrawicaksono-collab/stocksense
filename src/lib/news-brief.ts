@@ -185,6 +185,7 @@ export interface NewsFilterOptions {
   onlyWatchlist?: boolean;
   watchlistSet?: ReadonlySet<string>;
   searchQuery?: string;
+  tickerFilter?: string | null;
 }
 
 export function matchesNewsBaseFilters(
@@ -196,6 +197,7 @@ export function matchesNewsBaseFilters(
     onlyWatchlist = false,
     watchlistSet,
     searchQuery = "",
+    tickerFilter = null,
   } = options;
 
   if (sentiment !== "ALL" && (item.sentiment || "NEUTRAL") !== sentiment) {
@@ -204,6 +206,16 @@ export function matchesNewsBaseFilters(
 
   if (onlyWatchlist && watchlistSet && watchlistSet.size > 0) {
     if (!item.tickers.some((t) => watchlistSet.has(t))) {
+      return false;
+    }
+  }
+
+  const normalizedTicker = tickerFilter?.trim().toUpperCase();
+  if (normalizedTicker && /^[A-Z]{4}$/.test(normalizedTicker)) {
+    const tickerMatch =
+      item.tickers.includes(normalizedTicker) ||
+      new RegExp(`\\b${normalizedTicker}\\b`, "i").test(`${item.title} ${item.summary}`);
+    if (!tickerMatch) {
       return false;
     }
   }
