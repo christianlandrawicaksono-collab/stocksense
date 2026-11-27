@@ -10,6 +10,7 @@ import {
   removeTickerFromWatchlist,
   sanitizeWatchlistNotes,
   sanitizeWatchlistTickers,
+  summarizeWatchlistBuySignals,
   toggleTickerInWatchlist,
 } from "@/lib/watchlist";
 
@@ -101,5 +102,29 @@ describe("watchlist helpers", () => {
     expect(cleanNotes).toEqual({
       BBCA: { targetBuyPrice: 8500, note: "Tunggu koreksi Q1" },
     });
+  });
+
+  it("summarizes watchlist buy signals for hit and near items while ignoring non-watchlist notes", () => {
+    const summary = summarizeWatchlistBuySignals(
+      ["BBCA", "ACES", "TLKM", "BBRI"],
+      {
+        BBCA: { targetBuyPrice: 6000 },
+        ACES: { targetBuyPrice: 500 },
+        TLKM: { targetBuyPrice: 2000 },
+        BBRI: { targetBuyPrice: 3000 },
+        ASII: { targetBuyPrice: 6000 }, // stale note outside active watchlist
+      },
+      {
+        BBCA: 5700, // hit (-5%)
+        ACES: 520,  // near (+4%)
+        TLKM: 2000, // hit (0%)
+        BBRI: 3500, // above (+16.7%)
+        ASII: 5000,
+      }
+    );
+
+    expect(summary.hitItems.map((i) => i.ticker)).toEqual(["BBCA", "TLKM"]);
+    expect(summary.nearItems.map((i) => i.ticker)).toEqual(["ACES"]);
+    expect(summary.totalActionable).toBe(3);
   });
 });

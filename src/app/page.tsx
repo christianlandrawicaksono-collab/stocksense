@@ -24,6 +24,7 @@ import {
   saveWatchlistEntryMetaStorage,
   subscribeWatchlistNotesStorage,
   subscribeWatchlistStorage,
+  summarizeWatchlistBuySignals,
   toggleTickerInWatchlist,
   writeCustomWatchlistStorage,
   type WatchlistEntryMeta,
@@ -342,6 +343,23 @@ function HomeContent() {
 
   const isLight = currentMode === "berita";
 
+  const watchlistBuySummary = useMemo(() => {
+    const curatedPrices = new Map(STOCKS_DATA.map((s) => [s.ticker, s.currentPrice]));
+    const priceByTicker: Record<string, number> = {};
+    for (const ticker of customWatchlist) {
+      const q = quotes[ticker];
+      if (q && q.price > 0) {
+        priceByTicker[ticker] = q.price;
+      } else if (provider !== "yahoo") {
+        const curatedPrice = curatedPrices.get(ticker);
+        if (curatedPrice && curatedPrice > 0) {
+          priceByTicker[ticker] = curatedPrice;
+        }
+      }
+    }
+    return summarizeWatchlistBuySignals(customWatchlist, watchlistNotes, priceByTicker);
+  }, [customWatchlist, watchlistNotes, quotes, provider]);
+
   return (
     <div
       className={`min-h-screen flex flex-col font-sans transition-[colors,padding] duration-200 ${
@@ -385,6 +403,8 @@ function HomeContent() {
         currentMode={currentMode}
         onModeChange={handleModeChange}
         onOpenAiModal={() => setIsAiModalOpen((prev) => !prev)}
+        watchlistBuySummary={watchlistBuySummary}
+        onSelectBuySignalTicker={handleSelectTicker}
       />
 
       {/* 4. Area Konten Utama */}

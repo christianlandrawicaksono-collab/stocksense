@@ -28,7 +28,8 @@ import {
   normalizeComparisonHistories,
 } from "@/lib/compare";
 import { evaluateTargetBuyStatus, type WatchlistEntryMeta } from "@/lib/watchlist";
-import { Plus, X, Sparkles, Search, Loader2, GitCompareArrows } from "lucide-react";
+import { buildComparisonResearchMarkdown } from "@/lib/research-export";
+import { Plus, X, Sparkles, Search, Loader2, GitCompareArrows, Copy, Check } from "lucide-react";
 
 interface StockCompareTabProps {
   primaryTicker: string;
@@ -70,6 +71,7 @@ export const StockCompareTab: React.FC<StockCompareTabProps> = ({
     key: string;
     data: Record<string, MarketHistoryPoint[]>;
   }>({ key: "", data: {} });
+  const [copiedCompareKey, setCopiedCompareKey] = useState<string | null>(null);
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -358,6 +360,29 @@ export const StockCompareTab: React.FC<StockCompareTabProps> = ({
     setPeerOverride({ baseTicker: primaryTicker, peers: nextPeers });
   };
 
+  const compareKey = comparedTickers.join(",");
+  const handleCopyComparison = async () => {
+    if (comparableMetrics.length < 2) return;
+    const targetKey = compareKey;
+    const markdown = buildComparisonResearchMarkdown({
+      metrics: comparableMetrics,
+      winners,
+      compareRange,
+      normalizedSeries,
+      providerLabel: provider === "yahoo" ? "Yahoo Finance" : "Data Ilustrasi",
+    });
+
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopiedCompareKey(targetKey);
+      setTimeout(() => {
+        setCopiedCompareKey((cur) => (cur === targetKey ? null : cur));
+      }, 2000);
+    } catch {
+      // Abaikan jika Clipboard API tidak tersedia
+    }
+  };
+
   return (
     <div className="p-4 md:p-5 space-y-5 text-xs">
       {/* Toolbar Pembanding: Ticker pills + Search BEI + AI Button */}
@@ -395,16 +420,43 @@ export const StockCompareTab: React.FC<StockCompareTabProps> = ({
             ))}
           </div>
 
-          {onAskAiCompare && comparedTickers.length >= 2 && (
-            <button
-              type="button"
-              onClick={() => onAskAiCompare(comparedTickers)}
-              className="shrink-0 inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#1E7B85]/20 hover:bg-[#1E7B85]/35 text-[#2DD4BF] border border-[#1E7B85]/40 font-medium transition self-start sm:self-auto"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Bedah Perbandingan AI</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+            {comparableMetrics.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => void handleCopyComparison()}
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border font-medium transition ${
+                  copiedCompareKey === compareKey
+                    ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
+                    : "bg-[#111622] hover:bg-[#171F2C] text-slate-200 border-[#232F42]"
+                }`}
+                title="Salin tabel perbandingan metrik & performa ke clipboard (Markdown)"
+              >
+                {copiedCompareKey === compareKey ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Tersalin</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Salin Tabel</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {onAskAiCompare && comparedTickers.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => onAskAiCompare(comparedTickers)}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#1E7B85]/20 hover:bg-[#1E7B85]/35 text-[#2DD4BF] border border-[#1E7B85]/40 font-medium transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Bedah Perbandingan AI</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Pilihan cepat & search ticker pembanding */}
