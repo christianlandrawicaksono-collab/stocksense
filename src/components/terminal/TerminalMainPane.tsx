@@ -17,6 +17,7 @@ import {
   formatNewsCategoryLabel,
   formatPersen,
   formatRupiah,
+  formatCompactVolume,
   parseFormattedNumber,
 } from "@/lib/format";
 import {
@@ -43,6 +44,7 @@ import {
   Copy,
   Check,
   PieChart,
+  PanelRight,
 } from "lucide-react";
 import { buildStockResearchMarkdown } from "@/lib/research-export";
 import { LightweightPriceChart } from "./LightweightPriceChart";
@@ -96,6 +98,8 @@ interface TerminalMainPaneProps {
   customWatchlist?: string[];
   watchlistNotes?: Record<string, WatchlistEntryMeta>;
   onSaveWatchlistMeta?: (ticker: string, meta: WatchlistEntryMeta | null) => void;
+  isQuickRailOpen?: boolean;
+  onToggleQuickRail?: () => void;
   provider?: MarketProvider;
   marketStatus?: MarketStatus;
 }
@@ -146,6 +150,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   customWatchlist = [],
   watchlistNotes = {},
   onSaveWatchlistMeta,
+  isQuickRailOpen = false,
+  onToggleQuickRail,
   provider = "illustrative",
   marketStatus,
 }) => {
@@ -1004,6 +1010,70 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             </div>
           </div>
 
+          {/* Grid Statistik Pasar Ringkas (Open / Low / High / 52W / Avg Vol / Mkt Cap / Div Yield) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2.5 border-t border-[#1A2230]">
+            {[
+              {
+                label: "Pembukaan",
+                value: quote?.open && quote.open > 0 ? formatRupiah(quote.open) : "-",
+              },
+              {
+                label: "Terendah",
+                value: quote?.dayLow && quote.dayLow > 0 ? formatRupiah(quote.dayLow) : "-",
+                tone: "text-[#DC525F]",
+              },
+              {
+                label: "Tertinggi",
+                value: quote?.dayHigh && quote.dayHigh > 0 ? formatRupiah(quote.dayHigh) : "-",
+                tone: "text-[#2EB886]",
+              },
+              {
+                label: "52W Rendah",
+                value:
+                  quote?.fiftyTwoWeekLow && quote.fiftyTwoWeekLow > 0
+                    ? formatRupiah(quote.fiftyTwoWeekLow)
+                    : "-",
+              },
+              {
+                label: "52W Tinggi",
+                value:
+                  quote?.fiftyTwoWeekHigh && quote.fiftyTwoWeekHigh > 0
+                    ? formatRupiah(quote.fiftyTwoWeekHigh)
+                    : "-",
+              },
+              {
+                label: "Avg Vol (3Bl)",
+                value: quote?.avgVolume3M ? formatCompactVolume(quote.avgVolume3M) : "-",
+              },
+              {
+                label: "Kap. Pasar",
+                value:
+                  ((quote?.marketCapTrillion ?? stock.marketCapTrillion) ?? 0) > 0
+                    ? `Rp ${formatDesimal((quote?.marketCapTrillion ?? stock.marketCapTrillion) ?? 0, 1)} T`
+                    : "-",
+              },
+              {
+                label: "Div Yield",
+                value: activeDivYield > 0 ? formatPersen(activeDivYield, 1) : "-",
+                tone: activeDivYield >= 5 ? "text-[#2EB886]" : undefined,
+              },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="px-2.5 py-1.5 rounded-lg bg-[#0A0E16]/80 border border-[#182030] flex flex-col justify-between"
+              >
+                <span className="text-[10px] text-slate-400 font-sans truncate">{stat.label}</span>
+                <span
+                  className={`text-xs font-mono font-semibold tnum truncate mt-0.5 ${
+                    stat.tone ?? "text-slate-200"
+                  }`}
+                >
+                  {stat.value}
+                </span>
+              </div>
+            ))}
+          </div>
+
           {/* Baris 2: Tombol Aksi Saham & Status Bursa */}
           <div className="pt-2.5 border-t border-[#1A2230] flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -1094,6 +1164,21 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+              {onToggleQuickRail && (
+                <button
+                  type="button"
+                  onClick={onToggleQuickRail}
+                  className={`hidden xl:inline-flex items-center space-x-1 px-2.5 py-1 rounded-md border transition ${
+                    isQuickRailOpen
+                      ? "bg-[#1E7B85]/20 border-[#1E7B85]/50 text-[#2DD4BF]"
+                      : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-white"
+                  }`}
+                  title={isQuickRailOpen ? "Sembunyikan panel riset kanan" : "Tampilkan panel Target & Lot Cepat di kanan"}
+                >
+                  <PanelRight className="w-3 h-3" />
+                  <span>Panel Kanan</span>
+                </button>
+              )}
               <div
                 className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-sans border ${
                   marketStatus?.isOpen

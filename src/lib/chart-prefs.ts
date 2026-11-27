@@ -7,6 +7,7 @@ export interface ChartPreferences {
   showVolume: boolean;
   showMa20: boolean;
   showMa50: boolean;
+  showRsi: boolean;
   showFairValue: boolean;
   showTargetBuy: boolean;
   timeframe: HistoryRange | null;
@@ -19,6 +20,7 @@ export const DEFAULT_CHART_PREFS: ChartPreferences = {
   showVolume: true,
   showMa20: false,
   showMa50: false,
+  showRsi: false,
   showFairValue: false,
   showTargetBuy: true,
   timeframe: null,
@@ -33,6 +35,7 @@ export function sanitizeChartPreferences(raw: unknown): ChartPreferences {
   const showVolume = typeof obj.showVolume === "boolean" ? obj.showVolume : DEFAULT_CHART_PREFS.showVolume;
   const showMa20 = typeof obj.showMa20 === "boolean" ? obj.showMa20 : DEFAULT_CHART_PREFS.showMa20;
   const showMa50 = typeof obj.showMa50 === "boolean" ? obj.showMa50 : DEFAULT_CHART_PREFS.showMa50;
+  const showRsi = typeof obj.showRsi === "boolean" ? obj.showRsi : DEFAULT_CHART_PREFS.showRsi;
   const showFairValue =
     typeof obj.showFairValue === "boolean" ? obj.showFairValue : DEFAULT_CHART_PREFS.showFairValue;
   const showTargetBuy =
@@ -45,6 +48,7 @@ export function sanitizeChartPreferences(raw: unknown): ChartPreferences {
     showVolume,
     showMa20,
     showMa50,
+    showRsi,
     showFairValue,
     showTargetBuy,
     timeframe:

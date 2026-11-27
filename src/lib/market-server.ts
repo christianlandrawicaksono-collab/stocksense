@@ -54,6 +54,23 @@ export interface ServerQuoteItem {
   sector?: string;
   roe?: number;
   der?: number;
+  open?: number;
+  dayHigh?: number;
+  dayLow?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  avgVolume3M?: number;
+}
+
+export const MACRO_HISTORY_YAHOO_SYMBOLS: Record<string, string> = {
+  IHSG: "^JKSE",
+  SP500: "^GSPC",
+  BRENT: "BZ=F",
+  GOLD: "GC=F",
+};
+
+export function isSupportedBenchmarkTicker(ticker: string): boolean {
+  return Object.prototype.hasOwnProperty.call(MACRO_HISTORY_YAHOO_SYMBOLS, ticker.toUpperCase());
 }
 
 export interface ServerHistoryPoint {
@@ -337,8 +354,14 @@ export async function getBatchQuotesServer(
 
         const rawMcap = readPositiveNum(qRec, "marketCap");
         const marketCapTrillion = rawMcap ? rawMcap / 1e12 : undefined;
+        const open = readPositiveNum(qRec, "regularMarketOpen");
+        const dayHigh = readPositiveNum(qRec, "regularMarketDayHigh");
+        const dayLow = readPositiveNum(qRec, "regularMarketDayLow");
+        const fiftyTwoWeekHigh = readPositiveNum(qRec, "fiftyTwoWeekHigh");
+        const fiftyTwoWeekLow = readPositiveNum(qRec, "fiftyTwoWeekLow");
+        const avgVolume3M = readPositiveNum(qRec, "averageDailyVolume3Month");
 
-          const item: ServerQuoteItem = {
+        const item: ServerQuoteItem = {
           ticker: cleanTicker,
           name: readStr(qRec, "shortName") || readStr(qRec, "longName") || stockMeta?.name || cleanTicker,
           price,
@@ -358,6 +381,12 @@ export async function getBatchQuotesServer(
           sector: stockMeta?.sector,
           roe: stockMeta?.roe,
           der: stockMeta?.der,
+          open,
+          dayHigh,
+          dayLow,
+          fiftyTwoWeekHigh,
+          fiftyTwoWeekLow,
+          avgVolume3M,
         };
         quotesCache.set(cleanTicker, { data: item, cachedAt: now });
         result[cleanTicker] = item;
@@ -565,8 +594,9 @@ export async function getHistoryServer(
   const period1 = startDate.toISOString().split("T")[0];
 
   try {
-    const symbol = ticker === "IHSG" ? "^JKSE" : `${ticker}.JK`;
-    const includeDividends = ticker !== "IHSG";
+    const benchmarkSymbol = MACRO_HISTORY_YAHOO_SYMBOLS[ticker.toUpperCase()];
+    const symbol = benchmarkSymbol || `${ticker}.JK`;
+    const includeDividends = !benchmarkSymbol;
     const chartResult = await fetchYahooChartCached(
       symbol,
       period1,

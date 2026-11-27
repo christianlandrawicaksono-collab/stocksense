@@ -4,6 +4,7 @@ import {
   ServerHistoryPoint,
   getHistoryServer,
   getIllustrativeHistory,
+  isSupportedBenchmarkTicker,
   isValidIdxTickerFormat,
 } from "@/lib/market-server";
 import { normalizeHistoryRange } from "@/lib/market-data";
@@ -19,10 +20,12 @@ export async function GET(
     const ticker = (rawTicker || "").toUpperCase();
     const providerEnv = process.env.MARKET_DATA_PROVIDER || "illustrative";
 
+    const isBenchmark = isSupportedBenchmarkTicker(ticker);
     const isCurated =
       (SUPPORTED_TICKERS as readonly string[]).includes(ticker) || ticker === "IHSG";
     const isAllowed =
-      isCurated || (providerEnv === "yahoo" && isValidIdxTickerFormat(ticker));
+      isCurated ||
+      (providerEnv === "yahoo" && (isBenchmark || isValidIdxTickerFormat(ticker)));
 
     if (!isAllowed) {
       return NextResponse.json(

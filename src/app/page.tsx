@@ -6,8 +6,19 @@ import { Navbar, AppMode } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
 import { TerminalMainPane, type CustomStockAiMetrics } from "@/components/terminal/TerminalMainPane";
+import { QuickResearchRail } from "@/components/terminal/QuickResearchRail";
+import { MarketOverviewPane } from "@/components/terminal/MarketOverviewPane";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
+import {
+  CandlestickChart,
+  Globe,
+  ListFilter,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRight,
+  Sparkles,
+} from "lucide-react";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useLiveNews } from "@/hooks/useLiveNews";
 import { useAiChat } from "@/hooks/useAiChat";
@@ -61,11 +72,15 @@ function HomeContent() {
   // Read state directly from URL query parameters (single source of truth for SSR and Client)
   const rawMode = searchParams.get("mode");
   const rawSaham = searchParams.get("saham");
+  const rawView = searchParams.get("view");
   const currentMode: AppMode =
     rawMode === "terminal" || (!rawMode && !!rawSaham) ? "terminal" : "berita";
+  const terminalView: "riset" | "pasar" = rawView === "pasar" ? "pasar" : "riset";
   const selectedTicker = rawSaham || "BBCA";
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [isWatchlistCollapsed, setIsWatchlistCollapsed] = useState<boolean>(false);
+  const [isQuickRailOpen, setIsQuickRailOpen] = useState<boolean>(true);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
   const [allocationAiSummary, setAllocationAiSummary] = useState<string | null>(null);
   const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
@@ -288,6 +303,7 @@ function HomeContent() {
   const updateUrlParams = (updates: {
     mode?: AppMode;
     saham?: string | null;
+    view?: "riset" | "pasar" | null;
   }) => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("berita");
@@ -301,6 +317,13 @@ function HomeContent() {
         params.set("saham", updates.saham);
       } else {
         params.delete("saham");
+      }
+    }
+    if (updates.view !== undefined) {
+      if (updates.view === "pasar") {
+        params.set("view", "pasar");
+      } else {
+        params.delete("view");
       }
     }
 
@@ -319,8 +342,17 @@ function HomeContent() {
       setOriginLiveNews(null);
       updateUrlParams({
         mode: "berita",
+        view: null,
       });
     }
+  };
+
+  const handleTerminalViewChange = (nextView: "riset" | "pasar") => {
+    updateUrlParams({
+      mode: "terminal",
+      saham: selectedTicker,
+      view: nextView,
+    });
   };
 
   // Navigate from News ticker link to Terminal without altering custom watchlist unexpectedly
@@ -334,6 +366,7 @@ function HomeContent() {
     updateUrlParams({
       mode: "terminal",
       saham: ticker,
+      view: "riset",
     });
     setTimeout(() => {
       document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -345,6 +378,7 @@ function HomeContent() {
     updateUrlParams({
       mode: "terminal",
       saham: ticker,
+      view: "riset",
     });
     setTimeout(() => {
       document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -376,6 +410,19 @@ function HomeContent() {
     }
     return summarizeWatchlistBuySignals(customWatchlist, watchlistNotes, priceByTicker);
   }, [customWatchlist, watchlistNotes, quotes, provider]);
+
+  const quickRailStockMeta = useMemo(() => {
+    const curated = STOCKS_DATA.find((s) => s.ticker === selectedTicker);
+    const q = quotes[selectedTicker];
+    const isLive = Boolean(provider === "yahoo" && q && !q.isFallback);
+    const price = q && q.price > 0 ? q.price : provider !== "yahoo" ? curated?.currentPrice ?? 0 : 0;
+    const dividendYield =
+      isLive && q?.dividendYield !== undefined && q.dividendYield >= 0
+        ? q.dividendYield
+        : curated?.dividendYield ?? 0;
+    const companyName = q?.name || curated?.name || selectedTicker;
+    return { price, dividendYield, companyName };
+  }, [selectedTicker, quotes, provider]);
 
   return (
     <div
@@ -425,96 +472,287 @@ function HomeContent() {
       />
 
       {/* 4. Area Konten Utama */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <main
+        className={`flex-1 w-full mx-auto px-4 sm:px-6 py-4 ${
+          currentMode === "terminal" ? "max-w-[1460px]" : "max-w-7xl lg:px-8"
+        }`}
+      >
         {currentMode === "terminal" ? (
-          /* TAMPILAN TERMINAL GELAP */
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-            {/* Kolom Kiri: Watchlist Terpisah & Penyaring */}
-            <div id="terminal-watchlist-section" className="lg:col-span-5 xl:col-span-4 h-[550px] lg:h-[750px]">
-              <TerminalWatchlist
-                selectedTicker={selectedTicker}
-                onSelectTicker={handleSelectTicker}
-                quotes={quotes}
-                provider={provider}
-                customWatchlist={customWatchlist}
-                watchlistNotes={watchlistNotes}
-                onToggleWatchlist={handleToggleWatchlist}
-                onAddToWatchlist={handleAddToWatchlist}
-                maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
-              />
-            </div>
-
-            {/* Kolom Kanan: Grafik + Panel Tab Analisis */}
-            <div id="terminal-chart-section" className="lg:col-span-7 xl:col-span-8 min-h-[750px]">
-              {/* Tombol navigasi kembali ke watchlist di HP */}
-              <div className="lg:hidden mb-3">
+          /* TAMPILAN WORKSTATION TERMINAL GELAP */
+          <div className="flex flex-col lg:flex-row gap-3 items-start">
+            {/* Bar Sub-Halaman Terminal Mobile/Tablet (< lg) */}
+            <div className="lg:hidden w-full flex items-center justify-between gap-2">
+              <div className="inline-flex bg-[#0E131C] p-1 rounded-xl border border-[#1E2736] text-xs">
                 <button
                   type="button"
-                  onClick={() => {
-                    document.getElementById("terminal-watchlist-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className="w-full min-h-[44px] px-3.5 py-2.5 bg-[#111622] hover:bg-[#161D2B] active:bg-[#1E2736] border border-[#1E2736] rounded-xl text-xs font-sans text-slate-300 hover:text-white flex items-center justify-between transition shadow-sm"
+                  onClick={() => handleTerminalViewChange("riset")}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition ${
+                    terminalView === "riset"
+                      ? "bg-[#1E7B85] text-white font-medium shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
                 >
-                  <div className="flex items-center space-x-2">
-                    <span className="text-slate-400">Saham aktif:</span>
-                    <span className="font-mono text-white font-bold text-sm">{selectedTicker}</span>
-                  </div>
-                  <span className="text-[#2DD4BF] font-medium flex items-center space-x-1.5">
-                    <span>↑ Ganti saham (ke daftar)</span>
-                  </span>
+                  <CandlestickChart className="w-3.5 h-3.5" />
+                  <span>Riset Saham</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleTerminalViewChange("pasar")}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition ${
+                    terminalView === "pasar"
+                      ? "bg-[#1E7B85] text-white font-medium shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Ikhtisar Pasar</span>
                 </button>
               </div>
-
-              <TerminalMainPane
-                selectedTicker={selectedTicker}
-                originLiveNews={originLiveNews}
-                liveNewsItems={liveNews.items}
-                onSelectTicker={handleSelectTicker}
-                onBackToLiveNews={handleBackToLiveNews}
-                onCloseOriginPanel={() => setOriginLiveNews(null)}
-                onAskAiStock={(t) => {
-                  setActiveLiveNewsForAi(null);
-                  setAllocationAiSummary(null);
-                  const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
-                  runAiAnalysis(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
-                }}
-                onAskAiTerminalNews={(item) => {
-                  setActiveLiveNewsForAi(null);
-                  setAllocationAiSummary(null);
-                  runAiAnalysis(
-                    `Bedah dampak berita "${item.title}" terhadap prospek & valuasi saham ${selectedTicker}.`,
-                    buildLiveNewsArticleContext(item)
-                  );
-                }}
-                onAskAiCompare={(tickers) => {
-                  setActiveLiveNewsForAi(null);
-                  setAllocationAiSummary(null);
-                  runAiAnalysis(
-                    `Bandingkan saham ${tickers.join(" vs ")} dari sisi valuasi P/E, PBV, Dividend Yield, ROE, DER, dan prospek risikonya.`
-                  );
-                }}
-                onAskAiAllocation={(summaryText) => {
-                  setActiveLiveNewsForAi(null);
-                  setAllocationAiSummary(summaryText);
-                  runAiAnalysis(
-                    "Evaluasi rencana alokasi portofolio Watchlist ini dari sisi keseimbangan sektor, valuasi P/E-PBV, potensi dividen, dan risiko konsentrasinya.",
-                    undefined,
-                    summaryText
-                  );
-                }}
-                onCustomAiMetrics={setCustomAiMetrics}
-                isInWatchlist={customWatchlist.includes(selectedTicker)}
-                isWatchlistFull={isWatchlistFull}
-                onToggleWatchlist={handleToggleWatchlist}
-                quote={quotes[selectedTicker]}
-                allQuotes={quotes}
-                customWatchlist={customWatchlist}
-                watchlistNotes={watchlistNotes}
-                onSaveWatchlistMeta={handleSaveWatchlistMeta}
-                provider={provider}
-                marketStatus={marketStatus}
-              />
+              {terminalView === "riset" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    document
+                      .getElementById("terminal-watchlist-section")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                  className="px-2.5 py-2 rounded-xl bg-[#111622] border border-[#1E2736] text-xs text-slate-300 inline-flex items-center space-x-1"
+                >
+                  <ListFilter className="w-3.5 h-3.5 text-[#2DD4BF]" />
+                  <span>Watchlist</span>
+                </button>
+              )}
             </div>
+
+            {/* Left Slim Icon Navigation Rail (Desktop lg+) */}
+            <aside
+              aria-label="Navigasi Workstation Terminal"
+              className="hidden lg:flex flex-col items-center justify-between w-12 shrink-0 py-2.5 px-1.5 bg-[#0E131C] border border-[#1E2736] rounded-xl min-h-[750px] sticky top-16"
+            >
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleTerminalViewChange("riset")}
+                  title="Riset Saham (Chart, Valuasi, DCA & Alokasi)"
+                  aria-label="Riset Saham"
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
+                    terminalView === "riset"
+                      ? "bg-[#1E7B85]/25 border-[#1E7B85] text-[#2DD4BF] shadow-sm"
+                      : "bg-[#111622] border-transparent text-slate-400 hover:text-white hover:border-[#232F42]"
+                  }`}
+                >
+                  <CandlestickChart className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleTerminalViewChange("pasar")}
+                  title="Ikhtisar Pasar (Indeks, Heat Map Kurasi & Penggerak)"
+                  aria-label="Ikhtisar Pasar"
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
+                    terminalView === "pasar"
+                      ? "bg-[#1E7B85]/25 border-[#1E7B85] text-[#2DD4BF] shadow-sm"
+                      : "bg-[#111622] border-transparent text-slate-400 hover:text-white hover:border-[#232F42]"
+                  }`}
+                >
+                  <Globe className="w-4 h-4" />
+                </button>
+
+                {terminalView === "riset" && (
+                  <>
+                    <div className="w-6 h-px bg-[#1E2736] my-1" />
+                    <button
+                      type="button"
+                      onClick={() => setIsWatchlistCollapsed((c) => !c)}
+                      title={isWatchlistCollapsed ? "Tampilkan Sidebar Watchlist" : "Sembunyikan Sidebar Watchlist"}
+                      aria-label={isWatchlistCollapsed ? "Tampilkan Watchlist" : "Sembunyikan Watchlist"}
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
+                        !isWatchlistCollapsed
+                          ? "bg-[#171F2C] border-[#25354A] text-slate-200 hover:text-white"
+                          : "bg-[#111622] border-transparent text-slate-500 hover:text-slate-200 hover:border-[#232F42]"
+                      }`}
+                    >
+                      {isWatchlistCollapsed ? (
+                        <PanelLeftOpen className="w-4 h-4" />
+                      ) : (
+                        <PanelLeftClose className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickRailOpen((o) => !o)}
+                      title={isQuickRailOpen ? "Sembunyikan Panel Kanan (Aksi & Lot)" : "Tampilkan Panel Kanan (Aksi & Lot)"}
+                      aria-label="Toggle Panel Riset Kanan"
+                      className={`hidden xl:flex w-9 h-9 rounded-lg items-center justify-center border transition ${
+                        isQuickRailOpen && !isAiModalOpen
+                          ? "bg-[#171F2C] border-[#25354A] text-[#2DD4BF]"
+                          : "bg-[#111622] border-transparent text-slate-500 hover:text-slate-200 hover:border-[#232F42]"
+                      }`}
+                    >
+                      <PanelRight className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAiModalOpen((prev) => !prev)}
+                title="Buka / Tutup Konsultasi AI"
+                aria-label="Konsultasi AI"
+                className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
+                  isAiModalOpen
+                    ? "bg-[#2EB886]/20 border-[#2EB886]/60 text-[#2EB886]"
+                    : "bg-[#111622] border-[#1E2736] text-slate-400 hover:text-[#2DD4BF] hover:border-[#1E7B85]/50"
+                }`}
+              >
+                <Sparkles className="w-4 h-4" />
+              </button>
+            </aside>
+
+            {terminalView === "pasar" ? (
+              <div className="flex-1 min-w-0 w-full">
+                <MarketOverviewPane
+                  provider={provider}
+                  quotes={quotes}
+                  macroTickers={macroTickers}
+                  customWatchlist={customWatchlist}
+                  watchlistNotes={watchlistNotes}
+                  liveNewsItems={liveNews.items}
+                  onSelectStock={handleSelectTicker}
+                  onSwitchToNews={() => handleModeChange("berita")}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 min-w-0 w-full flex flex-col lg:flex-row gap-3 items-start">
+                {/* Kolom Watchlist (Collapsible di desktop lg+) */}
+                <div
+                  id="terminal-watchlist-section"
+                  className={`w-full h-[550px] lg:h-[750px] shrink-0 ${
+                    isWatchlistCollapsed
+                      ? "lg:hidden"
+                      : "lg:w-[292px]"
+                  }`}
+                >
+                  <TerminalWatchlist
+                    selectedTicker={selectedTicker}
+                    onSelectTicker={handleSelectTicker}
+                    quotes={quotes}
+                    provider={provider}
+                    customWatchlist={customWatchlist}
+                    watchlistNotes={watchlistNotes}
+                    onToggleWatchlist={handleToggleWatchlist}
+                    onAddToWatchlist={handleAddToWatchlist}
+                    maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
+                  />
+                </div>
+
+                {/* Kolom Utama: Grafik + Stat Grid + Panel Tab Analisis */}
+                <div id="terminal-chart-section" className="flex-1 min-w-0 w-full min-h-[750px]">
+                  {/* Tombol navigasi kembali ke watchlist di HP */}
+                  <div className="lg:hidden mb-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        document.getElementById("terminal-watchlist-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      className="w-full min-h-[44px] px-3.5 py-2.5 bg-[#111622] hover:bg-[#161D2B] active:bg-[#1E2736] border border-[#1E2736] rounded-xl text-xs font-sans text-slate-300 hover:text-white flex items-center justify-between transition shadow-sm"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-400">Saham aktif:</span>
+                        <span className="font-mono text-white font-bold text-sm">{selectedTicker}</span>
+                      </div>
+                      <span className="text-[#2DD4BF] font-medium flex items-center space-x-1.5">
+                        <span>↑ Ganti saham (ke daftar)</span>
+                      </span>
+                    </button>
+                  </div>
+
+                  <TerminalMainPane
+                    selectedTicker={selectedTicker}
+                    originLiveNews={originLiveNews}
+                    liveNewsItems={liveNews.items}
+                    onSelectTicker={handleSelectTicker}
+                    onBackToLiveNews={handleBackToLiveNews}
+                    onCloseOriginPanel={() => setOriginLiveNews(null)}
+                    onAskAiStock={(t) => {
+                      setActiveLiveNewsForAi(null);
+                      setAllocationAiSummary(null);
+                      const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
+                      runAiAnalysis(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
+                    }}
+                    onAskAiTerminalNews={(item) => {
+                      setActiveLiveNewsForAi(null);
+                      setAllocationAiSummary(null);
+                      runAiAnalysis(
+                        `Bedah dampak berita "${item.title}" terhadap prospek & valuasi saham ${selectedTicker}.`,
+                        buildLiveNewsArticleContext(item)
+                      );
+                    }}
+                    onAskAiCompare={(tickers) => {
+                      setActiveLiveNewsForAi(null);
+                      setAllocationAiSummary(null);
+                      runAiAnalysis(
+                        `Bandingkan saham ${tickers.join(" vs ")} dari sisi valuasi P/E, PBV, Dividend Yield, ROE, DER, dan prospek risikonya.`
+                      );
+                    }}
+                    onAskAiAllocation={(summaryText) => {
+                      setActiveLiveNewsForAi(null);
+                      setAllocationAiSummary(summaryText);
+                      runAiAnalysis(
+                        "Evaluasi rencana alokasi portofolio Watchlist ini dari sisi keseimbangan sektor, valuasi P/E-PBV, potensi dividen, dan risiko konsentrasinya.",
+                        undefined,
+                        summaryText
+                      );
+                    }}
+                    onCustomAiMetrics={setCustomAiMetrics}
+                    isInWatchlist={customWatchlist.includes(selectedTicker)}
+                    isWatchlistFull={isWatchlistFull}
+                    onToggleWatchlist={handleToggleWatchlist}
+                    quote={quotes[selectedTicker]}
+                    allQuotes={quotes}
+                    customWatchlist={customWatchlist}
+                    watchlistNotes={watchlistNotes}
+                    onSaveWatchlistMeta={handleSaveWatchlistMeta}
+                    isQuickRailOpen={isQuickRailOpen && !isAiModalOpen}
+                    onToggleQuickRail={() => setIsQuickRailOpen((o) => !o)}
+                    provider={provider}
+                    marketStatus={marketStatus}
+                  />
+                </div>
+
+                {/* Kolom Kanan Opsional: Quick Research Rail (Hitung Lot & Sinyal/Berita) */}
+                {isQuickRailOpen && !isAiModalOpen && (
+                  <div className="hidden xl:block w-[256px] shrink-0">
+                    <QuickResearchRail
+                      ticker={selectedTicker}
+                      companyName={quickRailStockMeta.companyName}
+                      currentPrice={quickRailStockMeta.price}
+                      dividendYield={quickRailStockMeta.dividendYield}
+                      targetBuyPrice={watchlistNotes[selectedTicker]?.targetBuyPrice}
+                      note={watchlistNotes[selectedTicker]?.note}
+                      isInWatchlist={customWatchlist.includes(selectedTicker)}
+                      isWatchlistFull={isWatchlistFull}
+                      watchlistBuySummary={watchlistBuySummary}
+                      liveNewsItems={liveNews.items}
+                      onToggleWatchlist={handleToggleWatchlist}
+                      onSaveWatchlistMeta={handleSaveWatchlistMeta}
+                      onSelectTicker={handleSelectTicker}
+                      onAskAiStock={(t) => {
+                        setActiveLiveNewsForAi(null);
+                        setAllocationAiSummary(null);
+                        const p =
+                          quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
+                        runAiAnalysis(
+                          `Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`
+                        );
+                      }}
+                      onClose={() => setIsQuickRailOpen(false)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           /* TAMPILAN BERITA TERANG PENUH */

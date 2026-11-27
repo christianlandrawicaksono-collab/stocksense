@@ -75,13 +75,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div className="flex items-baseline space-x-2 min-w-0">
               <span
-                className={`font-mono font-bold text-sm sm:text-base tracking-tight truncate ${isLight ? "text-[#1A1C1E]" : "text-white"
+                className={`font-mono font-bold text-sm sm:text-base tracking-tight shrink-0 ${isLight ? "text-[#1A1C1E]" : "text-white"
                   }`}
               >
                 StocksSense
               </span>
               <span
-                className={`hidden lg:inline-block text-xs font-sans ${isLight ? "text-[#5A6068]" : "text-slate-400"
+                className={`hidden xl:inline-block truncate text-xs font-sans ${isLight ? "text-[#5A6068]" : "text-slate-400"
                   }`}
               >
                 Riset pasar modal Indonesia
