@@ -387,17 +387,17 @@ export const StockCompareTab: React.FC<StockCompareTabProps> = ({
     <div className="p-4 md:p-5 space-y-5 text-xs">
       {/* Toolbar Pembanding: Ticker pills + Search BEI + AI Button */}
       <div className="bg-[#0C1017] border border-[#1E2736] rounded-xl p-3 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-400 font-medium flex items-center space-x-1.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            <span className="text-slate-400 font-medium flex items-center space-x-1.5 mr-0.5 shrink-0">
               <GitCompareArrows className="w-3.5 h-3.5 text-[#1E7B85]" />
-              <span>Bandingkan (maks. 3 emiten):</span>
+              <span>Bandingkan (maks. 3):</span>
             </span>
 
             {comparedTickers.map((t, idx) => (
               <span
                 key={t}
-                className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#111622] border border-[#232F42] font-mono font-semibold text-slate-100"
+                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-[#111622] border border-[#232F42] font-mono font-semibold text-slate-100 text-[11px]"
               >
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -420,12 +420,12 @@ export const StockCompareTab: React.FC<StockCompareTabProps> = ({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 shrink-0 self-start lg:self-auto">
             {comparableMetrics.length >= 2 && (
               <button
                 type="button"
                 onClick={() => void handleCopyComparison()}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border font-medium transition ${
+                className={`inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium whitespace-nowrap transition ${
                   copiedCompareKey === compareKey
                     ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
                     : "bg-[#111622] hover:bg-[#171F2C] text-slate-200 border-[#232F42]"
@@ -450,7 +450,7 @@ export const StockCompareTab: React.FC<StockCompareTabProps> = ({
               <button
                 type="button"
                 onClick={() => onAskAiCompare(comparedTickers)}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#1E7B85]/20 hover:bg-[#1E7B85]/35 text-[#2DD4BF] border border-[#1E7B85]/40 font-medium transition"
+                className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-[#1E7B85]/20 hover:bg-[#1E7B85]/35 text-[#2DD4BF] border border-[#1E7B85]/40 text-[11px] font-medium whitespace-nowrap transition"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Bedah Perbandingan AI</span>
@@ -485,7 +485,10 @@ export const StockCompareTab: React.FC<StockCompareTabProps> = ({
             <div className="relative w-full md:w-56">
               <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
+                id="compare-ticker-search"
+                name="compareTickerSearch"
                 type="text"
+                aria-label="Cari kode BEI pembanding"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Cari kode BEI pembanding..."

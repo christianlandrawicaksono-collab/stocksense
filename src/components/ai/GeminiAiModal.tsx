@@ -89,6 +89,11 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
       items.push(
         `Evaluasi valuasi & risiko ${context.stock.ticker} pada harga ${formatRupiah(context.stock.price)} saat ini.`
       );
+      if (context.stock.targetBuyPrice && context.stock.targetBuyPrice > 0) {
+        items.push(
+          `Apakah Target Beli ${formatRupiah(context.stock.targetBuyPrice)} untuk ${context.stock.ticker} sudah ideal dibanding nilai wajarnya?`
+        );
+      }
       if (sameSectorPeer) {
         items.push(
           `Bandingkan ${context.stock.ticker} dengan ${sameSectorPeer.ticker} dari sisi P/E, PBV, dan Dividend Yield.`
@@ -246,6 +251,11 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
                 {context.stock.ticker} &bull; {formatRupiah(context.stock.price)} ({formatPersen(context.stock.changePercent, 1, true)}) &bull; P/E {formatMultiple(context.stock.peRatio, 1)}
               </span>
             )}
+            {context?.stock?.targetBuyPrice && context.stock.targetBuyPrice > 0 && (
+              <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono tnum">
+                Target {formatRupiah(context.stock.targetBuyPrice)}
+              </span>
+            )}
             {context?.article && (
               <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 truncate max-w-[260px]">
                 {context.article.isLive ? "Berita:" : "Skenario:"} {context.article.title}
@@ -257,12 +267,18 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
         {/* Optional Custom Gemini API Key Drawer */}
         {showKeyInput && (
           <div className="p-3 bg-slate-900 border-b border-slate-800 text-xs shrink-0">
-            <label className="block text-slate-400 mb-1 font-mono text-[11px]">
-              Gemini API Key Pribadi (Opsional — bila server sudah memiliki GEMINI_API_KEY, biarkan kosong):
+            <label
+              htmlFor="gemini-custom-api-key"
+              className="block text-slate-400 mb-1 font-mono text-[11px]"
+            >
+              Gemini API Key Pribadi (disimpan hanya di sesi tab ini, hilang saat tab ditutup):
             </label>
             <div className="flex space-x-2">
               <input
+                id="gemini-custom-api-key"
+                name="customApiKey"
                 type="password"
+                autoComplete="off"
                 placeholder="Masukkan API Key Google AI Studio..."
                 value={customApiKey}
                 onChange={(e) => onCustomApiKeyChange(e.target.value)}
@@ -393,7 +409,10 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
             className="flex items-center space-x-2"
           >
             <input
+              id="ai-chat-query"
+              name="aiQuery"
               type="text"
+              aria-label="Pertanyaan analisis saham atau perbandingan"
               placeholder="Tanyakan analisis atau perbandingan saham..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -408,7 +427,7 @@ export const GeminiAiModal: React.FC<GeminiAiModalProps> = ({
             </button>
           </form>
           <p className="text-[10px] text-slate-500 leading-tight text-center font-sans">
-            Analisis bersifat informatif berdasarkan konteks layar; bukan saran investasi mengikat.
+            Riwayat chat tersimpan lokal di browser &bull; Analisis bersifat informatif, bukan saran investasi.
           </p>
         </div>
       </aside>

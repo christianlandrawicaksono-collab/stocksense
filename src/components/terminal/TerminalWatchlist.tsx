@@ -1,16 +1,34 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { STOCKS_DATA } from "@/data/stocksData";
 import { formatNumber, formatMultiple, formatPersen, formatRupiah } from "@/lib/format";
 import {
   MAX_CUSTOM_WATCHLIST,
+  applyWatchlistImport,
+  buildWatchlistBackupJson,
   evaluateTargetBuyStatus,
   matchesWatchlistFilterPreset,
+  parseWatchlistBackupInput,
+  replaceWatchlistAndNotesStorage,
   type WatchlistEntryMeta,
   type WatchlistFilterPreset,
+  type WatchlistImportMode,
 } from "@/lib/watchlist";
-import { Search, ArrowUpDown, Plus, Loader2, Star, Bookmark, Target, StickyNote, X } from "lucide-react";
+import {
+  Search,
+  ArrowUpDown,
+  Plus,
+  Loader2,
+  Star,
+  Bookmark,
+  Target,
+  StickyNote,
+  X,
+  Download,
+  Upload,
+  Check,
+} from "lucide-react";
 import {
   MarketQuote,
   MarketProvider,
@@ -121,6 +139,19 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
     query: string;
     items: StockSearchItem[];
   }>({ query: "", items: [] });
+  const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
+  const [importText, setImportText] = useState<string>("");
+  const [importMode, setImportMode] = useState<WatchlistImportMode>("merge");
+  const [transferNotice, setTransferNotice] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const importPreview = useMemo(() => {
+    if (!importText.trim()) return null;
+    return parseWatchlistBackupInput(importText);
+  }, [importText]);
 
   const watchlistSet = useMemo(() => new Set(customWatchlist), [customWatchlist]);
   const isWatchlistFull = customWatchlist.length >= maxWatchlistSize;
@@ -271,6 +302,85 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       setListTabPref(activeTab);
     }
     onToggleWatchlist?.(ticker);
+  };
+
+  const handleExportWatchlist = () => {
+    if (customWatchlist.length === 0) return;
+    try {
+      const jsonStr = buildWatchlistBackupJson(customWatchlist, watchlistNotes);
+      const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `stocksense-watchlist-${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setTransferNotice({
+        kind: "success",
+        text: `Terekspor (${customWatchlist.length} emiten)`,
+      });
+      setTimeout(() => {
+        setTransferNotice((cur) => (cur?.kind === "success" ? null : cur));
+      }, 2500);
+    } catch {
+      setTransferNotice({
+        kind: "error",
+        text: "Gagal mengekspor file backup watchlist.",
+      });
+    }
+  };
+
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    file
+      .text()
+      .then((content) => {
+        setImportText(content);
+        setTransferNotice(null);
+      })
+      .catch(() => {
+        setTransferNotice({
+          kind: "error",
+          text: "Gagal membaca file JSON yang dipilih.",
+        });
+      });
+  };
+
+  const handleApplyImport = () => {
+    const parsed = parseWatchlistBackupInput(importText);
+    if (!parsed.ok) {
+      setTransferNotice({ kind: "error", text: parsed.error });
+      return;
+    }
+
+    const outcome = applyWatchlistImport({
+      currentTickers: customWatchlist,
+      currentNotes: watchlistNotes,
+      importedTickers: parsed.tickers,
+      importedNotes: parsed.notes,
+      mode: importMode,
+    });
+
+    replaceWatchlistAndNotesStorage(outcome.tickers, outcome.notes);
+    setListTabPref("watchlist");
+    setIsImportOpen(false);
+    setImportText("");
+
+    const msg =
+      importMode === "replace"
+        ? `Diimpor (${outcome.tickers.length} emiten)`
+        : `Digabung (+${outcome.addedCount} baru${
+            outcome.updatedCount > 0 ? `, ${outcome.updatedCount} catatan` : ""
+          }${outcome.skippedDueToLimit > 0 ? `, ${outcome.skippedDueToLimit} lewat batas` : ""})`;
+    setTransferNotice({ kind: "success", text: msg });
+    setTimeout(() => {
+      setTransferNotice((cur) => (cur?.kind === "success" ? null : cur));
+    }, 3500);
   };
 
   return (
@@ -609,7 +719,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                         <Target className="w-2.5 h-2.5 shrink-0" />
                         <span className="truncate">
                           {targetEval.status === "hit"
-                            ? `Area Beli ≤${formatNumber(entryMeta.targetBuyPrice)}`
+                            ? `Beli ≤${formatNumber(entryMeta.targetBuyPrice)}`
                             : targetEval.status === "near"
                             ? `Dekat ${formatNumber(entryMeta.targetBuyPrice)}`
                             : `Beli ${formatNumber(entryMeta.targetBuyPrice)}`}
@@ -692,13 +802,26 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                 <strong className="text-slate-300">Saham Kurasi</strong> atau cari kode BEI di atas.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setListTabPref("curated")}
-              className="px-3 py-1.5 rounded-lg bg-[#1E7B85] hover:bg-[#1E7B85]/85 text-white text-xs font-medium transition"
-            >
-              Pilih dari Saham Kurasi
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setListTabPref("curated")}
+                className="px-3 py-1.5 rounded-lg bg-[#1E7B85] hover:bg-[#1E7B85]/85 text-white text-xs font-medium transition"
+              >
+                Pilih dari Saham Kurasi
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImportOpen(true);
+                  setTransferNotice(null);
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#171F2C] hover:bg-[#1E2736] text-slate-200 border border-[#232F42] text-xs font-medium transition"
+              >
+                <Upload className="w-3.5 h-3.5 text-[#2DD4BF]" />
+                <span>Impor JSON</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -780,32 +903,185 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           )}
       </div>
 
+      {/* Drawer Impor Watchlist JSON */}
+      {activeTab === "watchlist" && isImportOpen && (
+        <div className="p-3 border-t border-[#1E2736] bg-[#0B1018] space-y-2.5 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-slate-200">Impor Backup Watchlist</span>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center space-x-1 px-2 py-1 rounded bg-[#171F2C] hover:bg-[#1E2736] text-[#2DD4BF] border border-[#232F42] text-[11px] font-medium transition"
+            >
+              <Upload className="w-3 h-3" />
+              <span>Pilih File .json</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              id="watchlist-import-file"
+              name="watchlistImportFile"
+              type="file"
+              accept=".json,application/json"
+              aria-label="Pilih file JSON backup watchlist"
+              onChange={handleImportFileChange}
+              className="hidden"
+            />
+          </div>
+
+          <textarea
+            id="watchlist-import-json"
+            name="watchlistImportJson"
+            aria-label="Isi JSON backup watchlist"
+            rows={3}
+            value={importText}
+            onChange={(e) => {
+              setImportText(e.target.value);
+              if (transferNotice?.kind === "error") setTransferNotice(null);
+            }}
+            placeholder='Tempel isi JSON backup (atau ["BBCA","BBRI"])...'
+            className="w-full px-2.5 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-[11px] font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#1E7B85]"
+          />
+
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-400">Mode impor:</span>
+            <div className="inline-flex rounded-lg bg-[#080B10] p-0.5 border border-[#20293A] text-[11px]">
+              <button
+                type="button"
+                onClick={() => setImportMode("merge")}
+                className={`px-2 py-0.5 rounded-md transition ${
+                  importMode === "merge"
+                    ? "bg-[#1E7B85] text-white font-medium"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Gabung
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportMode("replace")}
+                className={`px-2 py-0.5 rounded-md transition ${
+                  importMode === "replace"
+                    ? "bg-amber-600 text-white font-medium"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Ganti Semua
+              </button>
+            </div>
+          </div>
+
+          {importPreview && (
+            <div
+              className={`px-2.5 py-1.5 rounded text-[11px] border ${
+                importPreview.ok
+                  ? "bg-[#2EB886]/10 border-[#2EB886]/30 text-[#2EB886]"
+                  : "bg-red-950/40 border-red-700/40 text-red-300"
+              }`}
+            >
+              {importPreview.ok
+                ? `Siap impor: ${importPreview.tickers.length} emiten (${Object.keys(importPreview.notes).length} ada target/catatan)${
+                    importPreview.ignoredCount > 0 ? ` • ${importPreview.ignoredCount} duplikat/tidak valid diabaikan` : ""
+                  }`
+                : importPreview.error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsImportOpen(false);
+                setTransferNotice(null);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-[#111622] hover:bg-[#171F2C] text-slate-400 hover:text-slate-200 border border-[#20293A] text-[11px] transition"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={!importPreview?.ok}
+              onClick={handleApplyImport}
+              className="px-3 py-1 rounded-lg bg-[#1E7B85] hover:bg-[#1E7B85]/85 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium text-[11px] transition"
+            >
+              Terapkan Impor
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Pane Footer Note */}
-      <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-        {activeTab === "watchlist" ? (
-          <>
-            <span>
-              Tersimpan lokal: {customWatchlist.length}/{maxWatchlistSize} saham
-            </span>
-            <span>
-              {isWatchlistFull
-                ? "Batas maksimal tercapai"
-                : provider === "yahoo"
-                ? "Sektor, ROE & DER: Yahoo Finance"
-                : "Juga memprioritaskan feed Berita"}
-            </span>
-          </>
-        ) : provider === "yahoo" ? (
-          <>
-            <span>Harga, P/E, PBV, Div: Yahoo (~10 mnt)</span>
-            <span>Filter ROE &amp; DER: kurasi + Yahoo</span>
-          </>
-        ) : (
-          <>
-            <span>Basis data: 9 emiten IDX</span>
-            <span>*Data ilustrasi, bukan harga pasar</span>
-          </>
+      <div className="p-2.5 border-t border-[#1E2736] bg-[#0E131C] text-[11px] text-slate-400 flex flex-col gap-1.5">
+        {transferNotice && !isImportOpen && (
+          <div
+            className={`px-2 py-1 rounded text-[11px] flex items-center justify-between gap-2 ${
+              transferNotice.kind === "success"
+                ? "bg-[#2EB886]/15 text-[#2EB886] border border-[#2EB886]/30"
+                : "bg-red-950/40 text-red-300 border border-red-700/40"
+            }`}
+          >
+            <span className="truncate">{transferNotice.text}</span>
+            <button
+              type="button"
+              onClick={() => setTransferNotice(null)}
+              aria-label="Tutup pemberitahuan"
+              className="shrink-0 opacity-75 hover:opacity-100"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {activeTab === "watchlist" ? (
+            <>
+              <span className="font-mono tnum text-slate-400">
+                Lokal: {customWatchlist.length}/{maxWatchlistSize} saham
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={customWatchlist.length === 0}
+                  onClick={handleExportWatchlist}
+                  className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-[#171F2C] hover:bg-[#1E2736] disabled:opacity-45 disabled:pointer-events-none text-slate-300 hover:text-white border border-[#232F42] text-[11px] transition"
+                  title="Ekspor Watchlist & Target Beli ke file JSON"
+                >
+                  {transferNotice?.kind === "success" && transferNotice.text.startsWith("Terekspor") ? (
+                    <Check className="w-3 h-3 text-[#2EB886]" />
+                  ) : (
+                    <Download className="w-3 h-3 text-[#2DD4BF]" />
+                  )}
+                  <span>Ekspor</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportOpen((prev) => !prev);
+                    setTransferNotice(null);
+                  }}
+                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded border text-[11px] transition ${
+                    isImportOpen
+                      ? "bg-[#1E7B85]/25 border-[#1E7B85] text-[#2DD4BF]"
+                      : "bg-[#171F2C] hover:bg-[#1E2736] text-slate-300 hover:text-white border-[#232F42]"
+                  }`}
+                  title="Impor daftar Watchlist & Target Beli dari file JSON"
+                >
+                  <Upload className="w-3 h-3 text-[#2DD4BF]" />
+                  <span>Impor</span>
+                </button>
+              </div>
+            </>
+          ) : provider === "yahoo" ? (
+            <>
+              <span>Harga, P/E, PBV, Div: Yahoo (~10 mnt)</span>
+              <span>Filter ROE &amp; DER: kurasi + Yahoo</span>
+            </>
+          ) : (
+            <>
+              <span>Basis data: 9 emiten IDX</span>
+              <span>*Data ilustrasi, bukan harga pasar</span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
