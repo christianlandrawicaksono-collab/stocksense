@@ -3,9 +3,14 @@ import {
   allocateEditorialBuckets,
   areTitlesTopicallySimilar,
   buildLiveMarketBrief,
+  buildMarketQaInsights,
+  classifyNewsPublisherGroup,
   computeNewsCategoryCounts,
+  computeNewsPublisherCounts,
+  countTodayNewsItems,
   filterLiveNewsItems,
   filterNewsByTicker,
+  isNewsFromToday,
   normalizeNewsImageKey,
   prioritizeWatchlistNews,
 } from "@/lib/news-brief";
@@ -219,5 +224,81 @@ describe("news-brief & filterNewsByTicker helpers", () => {
     expect(gridIds).toContain("fx-photo");
     expect(buckets.overlayStory?.id).toBe("dup-photo");
     expect(buckets.stackedStories.map((s) => s.id)).toEqual(["dup-photo-same-img"]);
+  });
+
+  it("identifies and filters today-only WIB news cleanly alongside category counts", () => {
+    const multiDayItems: LiveMarketNewsItem[] = [
+      {
+        ...SAMPLE_ITEMS[0],
+        id: "today-1",
+        publishedAt: "2026-11-27T04:00:00.000Z", // 2026-11-27 11:00 WIB
+        category: "CORPORATE",
+      },
+      {
+        ...SAMPLE_ITEMS[3],
+        id: "today-2",
+        publishedAt: "2026-11-26T18:00:00.000Z", // 2026-11-27 01:00 WIB (sudah hari ini di Jakarta!)
+        category: "MONETARY_CURRENCY",
+      },
+      {
+        ...SAMPLE_ITEMS[2],
+        id: "yesterday-1",
+        publishedAt: "2026-11-26T10:00:00.000Z", // 2026-11-26 17:00 WIB
+        category: "COMMODITIES",
+      },
+    ];
+
+    const todayKey = "2026-11-27";
+    expect(isNewsFromToday(multiDayItems[0], todayKey)).toBe(true);
+    expect(isNewsFromToday(multiDayItems[1], todayKey)).toBe(true);
+    expect(isNewsFromToday(multiDayItems[2], todayKey)).toBe(false);
+    expect(countTodayNewsItems(multiDayItems, todayKey)).toBe(2);
+
+    const todayOnly = filterLiveNewsItems(multiDayItems, {
+      timeRange: "TODAY",
+      todayWibKey: todayKey,
+    });
+    expect(todayOnly.map((item) => item.id)).toEqual(["today-1", "today-2"]);
+
+    const todayCounts = computeNewsCategoryCounts(multiDayItems, {
+      timeRange: "TODAY",
+      todayWibKey: todayKey,
+    });
+    expect(todayCounts.ALL).toBe(2);
+    expect(todayCounts.CORPORATE).toBe(1);
+    expect(todayCounts.MONETARY_CURRENCY).toBe(1);
+    expect(todayCounts.COMMODITIES).toBe(0);
+  });
+
+  it("classifies publisher groups, computes publisher counts, and builds deterministic market Q&A insights", () => {
+    expect(classifyNewsPublisherGroup("CNBC Indonesia")).toBe("CNBC");
+    expect(classifyNewsPublisherGroup("ANTARA Finansial")).toBe("ANTARA");
+    expect(classifyNewsPublisherGroup("CNN Indonesia")).toBe("CNN");
+    expect(classifyNewsPublisherGroup("Kontan Investasi")).toBe("KONTAN");
+    expect(classifyNewsPublisherGroup("Bloomberg Technoz")).toBe("OTHER");
+
+    const pubCounts = computeNewsPublisherCounts(SAMPLE_ITEMS, {});
+    expect(pubCounts).toEqual({
+      ALL: 4,
+      CNBC: 1,
+      ANTARA: 1,
+      CNN: 0,
+      KONTAN: 1,
+      OTHER: 1,
+    });
+
+    const kontanOnly = filterLiveNewsItems(SAMPLE_ITEMS, { publisherGroup: "KONTAN" });
+    expect(kontanOnly.map((i) => i.id)).toEqual(["n3"]);
+
+    const macroTickers: MarketTickerItem[] = [
+      { symbol: "IHSG", name: "IHSG", value: "5.338,46", change: 1.84, isPositive: true },
+      { symbol: "USD/IDR", name: "USD/IDR", value: "18.295", change: -0.04, isPositive: false },
+    ];
+    const qa = buildMarketQaInsights(SAMPLE_ITEMS, macroTickers);
+    expect(qa).toHaveLength(4);
+    expect(qa[0].answer).toContain("2 bernada positif");
+    expect(qa[1].answer).toContain("Korporasi & bursa");
+    expect(qa[2].tickers).toContain("BRIS");
+    expect(qa[3].answer).toContain("IHSG di 5.338,46 (+1,84%)");
   });
 });
