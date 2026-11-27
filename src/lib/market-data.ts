@@ -56,6 +56,12 @@ export interface MarketQuote {
   sector?: string;
   roe?: number;
   der?: number;
+  open?: number;
+  dayHigh?: number;
+  dayLow?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  avgVolume3M?: number;
 }
 
 const YAHOO_SECTOR_LABELS: Record<string, string> = {

@@ -23,7 +23,14 @@ import {
   subscribeChartPrefsStorage,
   updateChartPreferencesStorage,
 } from "@/lib/chart-prefs";
-import { formatNumber, formatDesimal, formatRupiah, formatPersen } from "@/lib/format";
+import {
+  formatNumber,
+  formatDesimal,
+  formatRupiah,
+  formatPersen,
+  formatCompactVolume,
+} from "@/lib/format";
+import { computeRSI } from "@/lib/technical-indicators";
 import { TrendingUp, BarChart2, AlertCircle, AlertTriangle, RotateCcw, Maximize2, Minimize2 } from "lucide-react";
 
 interface LightweightPriceChartProps {
@@ -63,14 +70,6 @@ function computeSMA(points: MarketHistoryPoint[], period: number): { time: Time;
   return res;
 }
 
-function formatCompactVolume(vol: number): string {
-  if (!vol || vol <= 0) return "0";
-  if (vol >= 1e9) return `${formatDesimal(vol / 1e9, 2)} M`;
-  if (vol >= 1e6) return `${formatDesimal(vol / 1e6, 2)} jt`;
-  if (vol >= 1e3) return `${formatDesimal(vol / 1e3, 1)} rb`;
-  return formatNumber(vol);
-}
-
 export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   points,
   timeframe,
@@ -97,7 +96,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     () => parseChartPreferencesJson(chartPrefsJson),
     [chartPrefsJson]
   );
-  const { chartType, showVolume, showMa20, showMa50, showFairValue, showTargetBuy } = chartPrefs;
+  const { chartType, showVolume, showMa20, showMa50, showRsi, showFairValue, showTargetBuy } = chartPrefs;
   const isWeeklyTimeframe = timeframe === "5Th" || timeframe === "Semua";
   const [isExpanded, setIsExpanded] = useState(false);
   const [hoverData, setHoverData] = useState<{
@@ -142,6 +141,16 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     }
     return map;
   }, [sortedPoints]);
+
+  const rsiPoints = useMemo(() => computeRSI(sortedPoints, 14), [sortedPoints]);
+  const rsiByTime = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of rsiPoints) {
+      map.set(p.time, p.value);
+    }
+    return map;
+  }, [rsiPoints]);
+  const hasRsiPane = showRsi && rsiPoints.length > 0;
 
   // Pemeriksaan konsistensi harga antara bar terakhir riwayat dan quote live di header
   const priceConsistency = useMemo(() => {
@@ -352,6 +361,53 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       createSeriesMarkers(series, dividendMarkers);
     }
 
+    // Sub-pane indikator RSI (14) pada pane ke-2 bawaan lightweight-charts v5
+    if (hasRsiPane) {
+      const rsiSeries = chart.addSeries(
+        LineSeries,
+        {
+          color: "#38BDF8",
+          lineWidth: 2,
+          crosshairMarkerVisible: true,
+          crosshairMarkerRadius: 3,
+          lastValueVisible: true,
+          priceLineVisible: false,
+          priceFormat: {
+            type: "custom",
+            formatter: (val: number) => formatDesimal(val, 1),
+          },
+          autoscaleInfoProvider: () => ({
+            priceRange: { minValue: 0, maxValue: 100 },
+          }),
+        },
+        1
+      );
+      rsiSeries.setData(rsiPoints.map((p) => ({ time: p.time as Time, value: p.value })));
+      rsiSeries.createPriceLine({
+        price: 70,
+        color: "rgba(220, 82, 95, 0.7)",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "OB 70",
+      });
+      rsiSeries.createPriceLine({
+        price: 30,
+        color: "rgba(46, 184, 134, 0.7)",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "OS 30",
+      });
+      chart.priceScale("right", 1).applyOptions({
+        borderColor: "#1E2736",
+        scaleMargins: { top: 0.12, bottom: 0.12 },
+      });
+      const panes = chart.panes();
+      panes[0]?.setStretchFactor(0.73);
+      panes[1]?.setStretchFactor(0.27);
+    }
+
     chart.timeScale().fitContent();
 
     // Subscribe ke perpindahan crosshair untuk tooltip interaktif (O(1) lookup via Map)
@@ -410,6 +466,8 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
     showVolume,
     showMa20,
     showMa50,
+    hasRsiPane,
+    rsiPoints,
     showFairValue,
     showTargetBuy,
     fairValuePrice,
@@ -525,6 +583,20 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
             >
               <span>MA50</span>
             </button>
+            {rsiPoints.length > 0 && (
+              <button
+                type="button"
+                onClick={() => updateChartPreferencesStorage({ showRsi: !showRsi })}
+                className={`px-2 py-1 rounded text-[11px] font-mono border transition flex items-center space-x-1 ${
+                  showRsi
+                    ? "bg-[#38BDF8]/15 border-[#38BDF8]/60 text-[#7DD3FC]"
+                    : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200"
+                }`}
+                title="Relative Strength Index (14 bar) di sub-panel bawah grafik"
+              >
+                <span>RSI</span>
+              </button>
+            )}
             {fairValuePrice && fairValuePrice > 0 && (
               <button
                 type="button"
@@ -631,6 +703,22 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
                 Vol: <span className="text-slate-200">{formatCompactVolume(activeBar.volume)}</span>
               </span>
             )}
+            {hasRsiPane && rsiByTime.has(activeBar.time) && (
+              <span className="text-[11px] text-slate-400">
+                RSI(14):{" "}
+                <span
+                  className={`font-semibold ${
+                    (rsiByTime.get(activeBar.time) ?? 50) >= 70
+                      ? "text-[#DC525F]"
+                      : (rsiByTime.get(activeBar.time) ?? 50) <= 30
+                      ? "text-[#2EB886]"
+                      : "text-[#7DD3FC]"
+                  }`}
+                >
+                  {formatDesimal(rsiByTime.get(activeBar.time) ?? 50, 1)}
+                </span>
+              </span>
+            )}
             {activeBar.dividend !== undefined && activeBar.dividend > 0 && (
               <span className="px-1.5 py-0.5 rounded bg-[#F59E0B]/20 text-[#F59E0B] font-semibold text-[11px]">
                 Dividen: {formatRupiah(activeBar.dividend)} per lembar
@@ -665,7 +753,13 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       {/* Area Kanvas Lightweight Chart */}
       <div
         className={`relative w-full ${
-          isExpanded ? "h-[400px] sm:h-[460px]" : "h-[280px] sm:h-[340px]"
+          hasRsiPane
+            ? isExpanded
+              ? "h-[460px] sm:h-[520px]"
+              : "h-[360px] sm:h-[420px]"
+            : isExpanded
+            ? "h-[400px] sm:h-[460px]"
+            : "h-[280px] sm:h-[340px]"
         } bg-[#111622]`}
       >
         {error || !priceConsistency.isConsistent || (points.length === 0 && !isLoading) ? (

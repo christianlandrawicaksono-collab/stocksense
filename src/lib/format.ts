@@ -256,3 +256,14 @@ export function formatNewsTimestamp(
   }
   return publishedWib;
 }
+
+/**
+ * Memformat volume transaksi saham menjadi format ringkas Indonesia (M / jt / rb).
+ */
+export function formatCompactVolume(vol: number | undefined | null): string {
+  if (!vol || !Number.isFinite(vol) || vol <= 0) return "-";
+  if (vol >= 1e9) return `${formatDesimal(vol / 1e9, 2)} M`;
+  if (vol >= 1e6) return `${formatDesimal(vol / 1e6, 2)} jt`;
+  if (vol >= 1e3) return `${formatDesimal(vol / 1e3, 1)} rb`;
+  return formatNumber(vol);
+}

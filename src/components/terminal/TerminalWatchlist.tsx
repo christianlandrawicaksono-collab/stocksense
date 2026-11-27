@@ -404,18 +404,18 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
         </div>
 
         {/* Pemisah Tegas: Watchlist Saya vs Saham Kurasi */}
-        <div className="grid grid-cols-2 gap-1 bg-[#080B10] p-1 rounded-lg border border-[#20293A] text-xs">
+        <div className="grid grid-cols-2 gap-1 bg-[#080B10] p-1 rounded-lg border border-[#20293A] text-[11px]">
           <button
             type="button"
             onClick={() => setListTabPref("watchlist")}
-            className={`px-2 py-1.5 rounded-md font-medium transition flex items-center justify-center space-x-1.5 ${
+            className={`px-1.5 py-1.5 rounded-md font-medium transition flex items-center justify-center space-x-1 whitespace-nowrap ${
               activeTab === "watchlist"
                 ? "bg-[#1E7B85] text-white shadow-sm"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
             <Star
-              className={`w-3 h-3 ${
+              className={`w-3 h-3 shrink-0 ${
                 activeTab === "watchlist"
                   ? "fill-amber-300 text-amber-300"
                   : customWatchlist.length > 0
@@ -432,13 +432,13 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           <button
             type="button"
             onClick={() => setListTabPref("curated")}
-            className={`px-2 py-1.5 rounded-md font-medium transition flex items-center justify-center space-x-1.5 ${
+            className={`px-1.5 py-1.5 rounded-md font-medium transition flex items-center justify-center space-x-1 whitespace-nowrap ${
               activeTab === "curated"
                 ? "bg-[#1E7B85] text-white shadow-sm"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Bookmark className="w-3 h-3" />
+            <Bookmark className="w-3 h-3 shrink-0" />
             <span>Saham Kurasi</span>
             <span className="font-mono text-[10px] opacity-90 tnum">
               ({CURATED_TICKERS.length})
@@ -508,7 +508,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
               onChange={(e) => setSelectedSector(e.target.value)}
               aria-label="Filter sektor saham"
               title="Filter berdasarkan sektor"
-              className="max-w-[132px] px-2 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-xs text-slate-200 focus:outline-none focus:border-[#1E7B85] truncate"
+              className="max-w-[116px] px-2 py-1.5 bg-[#080B10] border border-[#20293A] rounded-lg text-xs text-slate-200 focus:outline-none focus:border-[#1E7B85] truncate"
             >
               <option value="ALL">Semua Sektor</option>
               {availableSectors.map((sector) => (
