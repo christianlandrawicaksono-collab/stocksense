@@ -83,20 +83,21 @@ export const CountUpNumber: React.FC<CountUpNumberProps> = ({
   className = "",
 }) => {
   const ref = useRef<HTMLSpanElement | null>(null);
-  const isInView = useInView(ref, { once: true, amount: 0.5 });
+  const isInView = useInView(ref, { once: true, amount: 0.2 });
   const shouldReduceMotion = useReducedMotion();
-  const prevValueRef = useRef<number>(0);
+  const renderedValueRef = useRef<number>(0);
   const [display, setDisplay] = useState<number>(value);
 
   useEffect(() => {
     if (shouldReduceMotion || !isInView) {
-      prevValueRef.current = value;
       return;
     }
 
-    const startValue = prevValueRef.current;
+    const startValue = renderedValueRef.current;
     const endValue = value;
-    if (startValue === endValue) return;
+    if (startValue === endValue) {
+      return;
+    }
 
     let rafId = 0;
     const startTime = performance.now();
@@ -106,19 +107,19 @@ export const CountUpNumber: React.FC<CountUpNumberProps> = ({
       const progress = Math.min(1, elapsed / durationMs);
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = Math.max(0, Math.round(startValue + (endValue - startValue) * eased));
+      renderedValueRef.current = current;
       setDisplay(current);
 
       if (progress < 1) {
         rafId = window.requestAnimationFrame(step);
       } else {
-        prevValueRef.current = endValue;
+        renderedValueRef.current = endValue;
       }
     };
 
     rafId = window.requestAnimationFrame(step);
     return () => {
       if (rafId) window.cancelAnimationFrame(rafId);
-      prevValueRef.current = endValue;
     };
   }, [value, durationMs, isInView, shouldReduceMotion]);
 

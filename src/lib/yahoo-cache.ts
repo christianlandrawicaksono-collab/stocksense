@@ -145,27 +145,74 @@ export async function fetchYahooSearchCached(query: string): Promise<
   return items;
 }
 
+const RSS_CACHE_TTL_MS = 3 * 60 * 1000;
+const RSS_FETCH_TIMEOUT_MS = 5000;
+const rssTextCache = new Map<string, { text: string; expiresAt: number }>();
+const rssInFlight = new Map<string, Promise<string>>();
+
+/**
+ * Mengambil XML RSS dengan hard timeout 5 detik (mencakup fetch + body read)
+ * dan cache in-memory 3 menit + request deduplication agar feed lambat
+ * tidak pernah menggantung handler /api/news maupun /api/news/global.
+ */
 export async function fetchRssTextCached(url: string): Promise<string> {
-  "use cache";
-  cacheLife({ stale: 60, revalidate: 120, expire: 900 });
-
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; StocksSense/1.0)",
-      Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
-    },
-    signal: AbortSignal.timeout(8000),
-  });
-
-  if (!res.ok) {
-    throw new Error(`RSS HTTP ${res.status} for ${url}`);
+  const now = Date.now();
+  const cached = rssTextCache.get(url);
+  if (cached && cached.expiresAt > now) {
+    return cached.text;
   }
 
-  const text = await res.text();
-  if (!text || text.length < 50) {
-    throw new Error(`Empty RSS body for ${url}`);
+  const existing = rssInFlight.get(url);
+  if (existing) {
+    return existing;
   }
-  return text;
+
+  const task = (async () => {
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`RSS timeout (${RSS_FETCH_TIMEOUT_MS}ms) for ${url}`));
+      }, RSS_FETCH_TIMEOUT_MS);
+    });
+
+    try {
+      const text = await Promise.race([
+        (async () => {
+          const res = await fetch(url, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; StocksSense/1.0)",
+              Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+            },
+            cache: "no-store",
+            signal: controller.signal,
+          });
+
+          if (!res.ok) {
+            throw new Error(`RSS HTTP ${res.status} for ${url}`);
+          }
+
+          const body = await res.text();
+          if (!body || body.length < 50) {
+            throw new Error(`Empty RSS body for ${url}`);
+          }
+          return body;
+        })(),
+        timeoutPromise,
+      ]);
+
+      rssTextCache.set(url, { text, expiresAt: Date.now() + RSS_CACHE_TTL_MS });
+      return text;
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      rssInFlight.delete(url);
+    }
+  })();
+
+  rssInFlight.set(url, task);
+  return task;
 }
 
 export async function fetchGeminiMarketBriefCached(

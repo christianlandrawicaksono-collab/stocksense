@@ -312,6 +312,7 @@ const EditorialCardActions: React.FC<EditorialCardActionsProps> = ({
             <button
               key={t}
               type="button"
+              data-cursor-hint="Buka Terminal"
               onClick={() => onSelectStockFromNews(t, "", story.title, story)}
               className={`px-1.5 py-0.5 border text-[11px] font-semibold transition active:scale-95 ${
                 onDark
@@ -364,6 +365,7 @@ const EditorialCardActions: React.FC<EditorialCardActionsProps> = ({
 
         <button
           type="button"
+          data-cursor-hint="Pratinjau"
           onClick={() => onOpenPreview(story)}
           className={`inline-flex items-center space-x-1 font-medium hover:underline ${
             onDark ? "text-white/90 hover:text-white" : "text-[#4E5563] hover:text-[#1E7B85]"
@@ -376,6 +378,7 @@ const EditorialCardActions: React.FC<EditorialCardActionsProps> = ({
         {onAskAiLiveNews && (
           <button
             type="button"
+            data-cursor-hint="Bedah AI"
             onClick={() => onAskAiLiveNews(story)}
             className={`inline-flex items-center space-x-1 font-semibold hover:underline ${
               onDark ? "text-[#5EEAD4]" : "text-[#1E7B85]"
@@ -390,6 +393,7 @@ const EditorialCardActions: React.FC<EditorialCardActionsProps> = ({
           href={story.link}
           target="_blank"
           rel="noopener noreferrer"
+          data-cursor-hint="Baca Sumber"
           className={`group/ext inline-flex items-center space-x-0.5 hover:underline ${
             onDark ? "text-white/80 hover:text-white" : "text-[#676E7E] hover:text-[#1D1F23]"
           }`}
@@ -1151,6 +1155,7 @@ interface NewsViewProps {
   aiBriefNotice?: string | null;
   isAiBriefLoading?: boolean;
   onRequestAiBrief?: (items: LiveMarketNewsItem[], macroTickers: MarketTickerItem[]) => void;
+  hideEmbeddedTicker?: boolean;
 }
 
 export const NewsView: React.FC<NewsViewProps> = ({
@@ -1170,6 +1175,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
   aiBriefNotice = null,
   isAiBriefLoading = false,
   onRequestAiBrief,
+  hideEmbeddedTicker = false,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<NewsFilterCategory>("ALL");
   const [selectedSentiment, setSelectedSentiment] = useState<NewsFilterSentiment>("ALL");
@@ -1190,6 +1196,7 @@ export const NewsView: React.FC<NewsViewProps> = ({
   const [focusedWireIndex, setFocusedWireIndex] = useState<number | null>(null);
   const [todayWibKey] = useState<string>(() => getJakartaDateKey(new Date()));
 
+  const newsRootRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const briefSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -1214,12 +1221,17 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
   useEffect(() => {
     const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 460);
+      if (hideEmbeddedTicker && newsRootRef.current) {
+        const rect = newsRootRef.current.getBoundingClientRect();
+        setShowScrollTop(rect.top <= 140);
+      } else {
+        setShowScrollTop(window.scrollY > 460);
+      }
     };
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [hideEmbeddedTicker]);
 
   const handleScrollToTop = useCallback(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1540,10 +1552,10 @@ export const NewsView: React.FC<NewsViewProps> = ({
 
   return (
     <MotionConfig reducedMotion="user">
-      <NewsAmbientBackground />
+      <NewsAmbientBackground contained={hideEmbeddedTicker} />
       <NewsScrollProgressBar />
 
-      <div className="relative z-10 w-full text-[#1D1F23] font-sans">
+      <div ref={newsRootRef} className="relative z-10 w-full text-[#1D1F23] font-sans">
         <div className="max-w-7xl mx-auto py-5 space-y-5">
           {/* Compact Broadsheet Masthead */}
           <header className="border-b-2 border-[#1D1F23] pb-4 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
@@ -1551,17 +1563,17 @@ export const NewsView: React.FC<NewsViewProps> = ({
               <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[#676E7E]">
                 <span
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    provider === "yahoo" ? "bg-[#2EB886]" : "bg-[#848B99]"
+                    provider === "yahoo" ? "bg-[#0D6343]" : "bg-[#848B99]"
                   }`}
                   aria-hidden="true"
                 />
-                <span>Edisi Pasar Modal Indonesia &bull; Arsip Maks. 3 Hari</span>
+                <span>Market Desk Indonesia &bull; Arsip 3 Hari Terakhir</span>
               </div>
               <h1 className="text-2xl sm:text-4xl font-serif font-bold text-[#1D1F23] tracking-tight leading-tight">
-                Warta pasar modal &amp; makro terkini
+                Headline pasar &amp; makro hari ini
               </h1>
-              <p className="text-xs sm:text-sm text-[#676E7E]">
-                Sari berita terpercaya dari CNBC Indonesia, ANTARA, CNN Indonesia Ekonomi, Kontan &amp; Google News IDX.
+              <p className="text-xs sm:text-sm text-[#5A6068]">
+                Update berita market terkurasi dari CNBC Indonesia, ANTARA, CNN Indonesia, Kontan &amp; Google News IDX.
               </p>
             </div>
 
@@ -1650,16 +1662,18 @@ export const NewsView: React.FC<NewsViewProps> = ({
             </div>
           </header>
 
-          {/* Embedded Sharp Macro Ticker Strip */}
-          <MarketTicker
-            provider={provider}
-            tickers={macroTickers}
-            isMacroFallback={isMacroFallback}
-            isLoading={isMacroLoading}
-            theme="light"
-            embedded
-            sharp
-          />
+          {/* Embedded Sharp Macro Ticker Strip (disembunyikan bila Orbital Velocity Ticker global aktif) */}
+          {!hideEmbeddedTicker && (
+            <MarketTicker
+              provider={provider}
+              tickers={macroTickers}
+              isMacroFallback={isMacroFallback}
+              isLoading={isMacroLoading}
+              theme="light"
+              embedded
+              sharp
+            />
+          )}
 
           {/* Ringkasan Pasar Hari Ini — Otomatis Terbuka + Dual-Axis Lensa & Stepper */}
           {provider === "yahoo" && liveNewsItems.length > 0 && (

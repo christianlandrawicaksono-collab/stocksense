@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import * as THREE from "three";
 import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon, Position } from "geojson";
 import worldAtlasRaw from "world-atlas/countries-110m.json";
-import { Cloud, Compass, Grid3X3, Minus, Plus, RotateCcw, SunMoon } from "lucide-react";
+import { Cloud, Compass, Eye, EyeOff, Grid3X3, Layers, Minus, Plus, RotateCcw, SunMoon } from "lucide-react";
 import { formatPersen } from "@/lib/format";
 import {
   computeMarketSpikeHeight,
@@ -16,12 +17,44 @@ import {
   latLonToSphereCoords,
 } from "@/lib/globe-math";
 import type { GlobalMarketHubSnapshot, GlobalMarketId } from "@/lib/global-markets";
+import type { GlobalNewsPinId, GlobeNewsPin } from "@/lib/global-news";
+
+interface GlobeDisplayMarker {
+  id: string;
+  label: string;
+  secondaryText: string;
+  tooltip: string;
+  lat: number;
+  lon: number;
+  isoNumeric: string;
+  isSelected: boolean;
+  isPulsing: boolean;
+  accentHexNum: number;
+  dotClass: string;
+  secondaryClass: string;
+  spikeHeight: number;
+  isJakartaOrigin: boolean;
+}
+
+export type GlobeVisualTheme = "dark-orbital" | "editorial-atlas" | "editorial-cartography";
 
 interface WorldGlobe3DProps {
-  hubs: GlobalMarketHubSnapshot[];
-  selectedHubId: GlobalMarketId;
-  onSelectHub: (id: GlobalMarketId) => void;
+  hubs?: GlobalMarketHubSnapshot[];
+  selectedHubId?: GlobalMarketId;
+  onSelectHub?: (id: GlobalMarketId) => void;
+  newsPins?: GlobeNewsPin[];
+  selectedNewsPinId?: GlobalNewsPinId;
+  onSelectNewsPin?: (pin: GlobeNewsPin) => void;
+  cameraZoomBias?: number;
+  scrollBehavior?: "pullback" | "scrollytelling";
   scrollProgressRef?: React.RefObject<number>;
+  viewOffsetXRatioRef?: React.RefObject<number>;
+  visualTheme?: GlobeVisualTheme;
+  seamless?: boolean;
+  onToggleEditorialStyle?: () => void;
+  isExploreMode?: boolean;
+  onToggleExploreMode?: () => void;
+  showFixedDock?: boolean;
   reducedMotion?: boolean;
 }
 
@@ -263,7 +296,9 @@ function createOrbitalEarthMaterial(
   dayTex: THREE.Texture,
   nightTex: THREE.Texture,
   topoTex: THREE.Texture,
-  sunDirLocal: THREE.Vector3
+  sunDirLocal: THREE.Vector3,
+  isEditorialLight: boolean,
+  initialCartographyMix: number
 ): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
@@ -272,6 +307,8 @@ function createOrbitalEarthMaterial(
       uTopoMap: { value: topoTex },
       uSunDirLocal: { value: sunDirLocal.clone().normalize() },
       uSolarMode: { value: 1.0 },
+      uLightEditorial: { value: isEditorialLight ? 1.0 : 0.0 },
+      uCartographyMix: { value: initialCartographyMix },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -294,6 +331,8 @@ function createOrbitalEarthMaterial(
       uniform sampler2D uTopoMap;
       uniform vec3 uSunDirLocal;
       uniform float uSolarMode;
+      uniform float uLightEditorial;
+      uniform float uCartographyMix;
 
       varying vec2 vUv;
       varying vec3 vLocalNormal;
@@ -317,18 +356,7 @@ function createOrbitalEarthMaterial(
         float slopeY = (topoU - topoC) * 4.2;
         float reliefShade = clamp(1.0 + (slopeX * 0.65 - slopeY * 0.55) * landMask, 0.72, 1.38);
 
-        // Color-grading siang bergaya Dark Orbital Obsidian-Sapphire (terbaca jelas, tanpa glare plastik)
-        float dayLum = dot(rawDay, vec3(0.299, 0.587, 0.114));
-        vec3 oceanDay = mix(vec3(0.032, 0.078, 0.145), vec3(0.068, 0.155, 0.255), clamp(dayLum * 2.1, 0.0, 1.0));
-        vec3 landBase = mix(vec3(0.115, 0.185, 0.255), vec3(0.235, 0.355, 0.435), clamp(dayLum * 1.45 + topoC * 0.45, 0.0, 1.0));
-        vec3 landDay = mix(landBase, rawDay * vec3(0.55, 0.72, 0.82), 0.24) * reliefShade;
-        vec3 gradedDay = mix(landDay, oceanDay, oceanMask);
-
-        // Sisi malam: lautan & daratan midnight pekat + lampu kota emas NASA Black Marble (core + soft bloom halo)
-        vec3 oceanNight = vec3(0.014, 0.028, 0.058);
-        vec3 landNight = vec3(0.036, 0.058, 0.095) * (0.85 + topoC * 0.35);
-        vec3 nightBase = mix(landNight, oceanNight, oceanMask);
-
+        // Lampu kota NASA Black Marble (core + soft bloom halo)
         vec3 nBlur = (
           texture2D(uNightMap, vUv + vec2(0.0014, 0.0)).rgb +
           texture2D(uNightMap, vUv - vec2(0.0014, 0.0)).rgb +
@@ -340,44 +368,84 @@ function createOrbitalEarthMaterial(
         float haloWarm = max(0.0, nBlur.r - nBlur.b * 0.66) + max(0.0, nBlur.g - nBlur.b * 0.78) * 0.55;
         float cityCore = smoothstep(0.032, 0.25, coreWarm);
         float cityHalo = smoothstep(0.022, 0.22, haloWarm);
-        vec3 goldLights = vec3(1.0, 0.87, 0.48) * cityCore * 2.05 + vec3(0.96, 0.56, 0.14) * cityHalo * 0.92;
-        vec3 gradedNight = nightBase + goldLights;
 
-        // Real-time Solar Day/Night Terminator
+        // Real-time Solar Day/Night Terminator & Studio Spherical Shading
         float sunDot = dot(normalize(vLocalNormal), normalize(uSunDirLocal));
         float realDayMix = smoothstep(-0.20, 0.24, sunDot);
         float dayMix = mix(0.84, realDayMix, uSolarMode);
-
-        // Pencahayaan difus lembut di sisi siang
-        float diffuseLift = mix(0.86, 1.16, smoothstep(-0.1, 0.9, sunDot));
-        vec3 surfaceColor = mix(gradedNight, gradedDay * diffuseLift, dayMix);
-
-        // Pita senja (Dual-Tone Twilight): emas hangat di sisi gelap + cyan orbital di tepi siang
-        float sunsetBand = exp(-pow((sunDot + 0.05) * 6.4, 2.0)) * uSolarMode;
-        float dawnScatter = exp(-pow((sunDot - 0.085) * 5.0, 2.0)) * uSolarMode;
-        surfaceColor += vec3(0.98, 0.50, 0.15) * sunsetBand * (0.34 + 0.16 * landMask);
-        surfaceColor += vec3(0.14, 0.74, 0.92) * dawnScatter * 0.24;
-
-        // Pendar atmosfer tipis menyatu di tepi bola bumi (subtle front Fresnel scattering)
         float ndotv = clamp(dot(normalize(vViewNormal), normalize(vViewDir)), 0.0, 1.0);
         float frontRim = pow(1.0 - ndotv, 3.6);
-        vec3 rimColor = mix(vec3(0.11, 0.68, 0.72), vec3(0.24, 0.72, 0.96), dayMix * 0.55);
-        surfaceColor += rimColor * frontRim * (0.34 + 0.28 * dayMix);
+        float dayLum = dot(rawDay, vec3(0.299, 0.587, 0.114));
 
-        gl_FragColor = vec4(surfaceColor, 1.0);
+        // === PATH 0: DARK ORBITAL EARTH (MODE TERMINAL) ===
+        vec3 oceanDayDark = mix(vec3(0.032, 0.078, 0.145), vec3(0.068, 0.155, 0.255), clamp(dayLum * 2.1, 0.0, 1.0));
+        vec3 landBaseDark = mix(vec3(0.115, 0.185, 0.255), vec3(0.235, 0.355, 0.435), clamp(dayLum * 1.45 + topoC * 0.45, 0.0, 1.0));
+        vec3 landDayDark = mix(landBaseDark, rawDay * vec3(0.55, 0.72, 0.82), 0.24) * reliefShade;
+        vec3 gradedDayDark = mix(landDayDark, oceanDayDark, oceanMask);
+
+        vec3 oceanNightDark = vec3(0.014, 0.028, 0.058);
+        vec3 landNightDark = vec3(0.036, 0.058, 0.095) * (0.85 + topoC * 0.35);
+        vec3 goldLightsDark = vec3(1.0, 0.87, 0.48) * cityCore * 2.05 + vec3(0.96, 0.56, 0.14) * cityHalo * 0.92;
+        vec3 gradedNightDark = mix(landNightDark, oceanNightDark, oceanMask) + goldLightsDark;
+
+        float diffuseLiftDark = mix(0.86, 1.16, smoothstep(-0.1, 0.9, sunDot));
+        vec3 darkSurface = mix(gradedNightDark, gradedDayDark * diffuseLiftDark, dayMix);
+
+        float sunsetBand = exp(-pow((sunDot + 0.05) * 6.4, 2.0)) * uSolarMode;
+        float dawnScatter = exp(-pow((sunDot - 0.085) * 5.0, 2.0)) * uSolarMode;
+        darkSurface += vec3(0.98, 0.50, 0.15) * sunsetBand * (0.34 + 0.16 * landMask);
+        darkSurface += vec3(0.14, 0.74, 0.92) * dawnScatter * 0.24;
+        vec3 rimColorDark = mix(vec3(0.11, 0.68, 0.72), vec3(0.24, 0.72, 0.96), dayMix * 0.55);
+        darkSurface += rimColorDark * frontRim * (0.34 + 0.28 * dayMix);
+
+        // === PATH 1: EDITORIAL DAYLIGHT SATELIT ATLAS (KERTAS TERANG FT) ===
+        float studioKey = clamp(dot(normalize(vViewNormal), normalize(vec3(-0.35, 0.45, 0.82))), 0.0, 1.0);
+        float studioShade = mix(0.76, 1.08, studioKey);
+
+        vec3 oceanAtlasDay = mix(vec3(0.115, 0.265, 0.355), vec3(0.205, 0.425, 0.525), clamp(dayLum * 1.9 + studioKey * 0.22, 0.0, 1.0));
+        vec3 warmSageLand = mix(vec3(0.45, 0.54, 0.48), vec3(0.84, 0.80, 0.72), clamp(dayLum * 1.15 + topoC * 0.38, 0.0, 1.0));
+        vec3 landAtlasDay = mix(rawDay * vec3(1.02, 1.02, 0.96), warmSageLand, 0.30) * clamp(reliefShade, 0.80, 1.24);
+        vec3 atlasDay = mix(landAtlasDay, oceanAtlasDay, oceanMask) * studioShade;
+
+        // Sisi malam lembut bergaya twilight indigo (tidak hitam legam di atas kertas terang)
+        vec3 oceanAtlasNight = vec3(0.085, 0.155, 0.235);
+        vec3 landAtlasNight = vec3(0.155, 0.225, 0.295) * (0.88 + topoC * 0.28);
+        vec3 goldLightsAtlas = vec3(1.0, 0.87, 0.52) * cityCore * 1.45 + vec3(0.95, 0.60, 0.22) * cityHalo * 0.55;
+        vec3 atlasNight = mix(landAtlasNight, oceanAtlasNight, oceanMask) + goldLightsAtlas;
+
+        float atlasDayMix = mix(0.92, smoothstep(-0.28, 0.24, sunDot), uSolarMode);
+        vec3 atlasSurface = mix(atlasNight, atlasDay, atlasDayMix);
+        atlasSurface += vec3(0.96, 0.62, 0.28) * sunsetBand * 0.20;
+        atlasSurface = mix(atlasSurface, vec3(0.74, 0.88, 0.92), frontRim * 0.38);
+
+        // === PATH 2: FT CARTOGRAPHIC INK GLOBE (INFOGRAFIS KORAN FT 3D) ===
+        float cartoVolume = mix(0.84, 1.05, studioKey);
+        vec3 oceanCarto = mix(vec3(0.79, 0.855, 0.89), vec3(0.885, 0.92, 0.94), clamp(studioKey * 0.72 + dayLum * 0.25, 0.0, 1.0));
+        vec3 landCarto = mix(vec3(0.975, 0.965, 0.945), vec3(0.915, 0.895, 0.855), clamp(topoC * 0.68, 0.0, 1.0)) * clamp(reliefShade, 0.86, 1.12);
+        vec3 cartoBase = mix(landCarto, oceanCarto, oceanMask) * cartoVolume;
+        // Terminator sangat halus di mode Kartografi agar tetap jernih seperti infografis cetak FT
+        float cartoShadow = mix(1.0, mix(0.86, 1.0, smoothstep(-0.24, 0.22, sunDot)), uSolarMode * 0.65);
+        vec3 cartoSurface = cartoBase * cartoShadow;
+        cartoSurface = mix(cartoSurface, vec3(0.11, 0.44, 0.48), frontRim * 0.24);
+
+        vec3 editorialSurface = mix(atlasSurface, cartoSurface, uCartographyMix);
+        vec3 finalSurface = mix(darkSurface, editorialSurface, uLightEditorial);
+
+        gl_FragColor = vec4(finalSurface, 1.0);
       }
     `,
   });
 }
 
 /**
- * Ultra-thin realistic outer atmosphere halo (menggantikan cincin neon tebal sebelumnya).
+ * Ultra-thin realistic outer atmosphere halo (adaptif Dark Orbital vs FT Light Editorial).
  */
-function createThinAtmosphereMaterial(): THREE.ShaderMaterial {
+function createThinAtmosphereMaterial(isEditorialLight: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
-      uColorInner: { value: new THREE.Color("#2DD4BF") },
-      uColorOuter: { value: new THREE.Color("#38BDF8") },
+      uColorInner: { value: new THREE.Color(isEditorialLight ? "#0D7680" : "#2DD4BF") },
+      uColorOuter: { value: new THREE.Color(isEditorialLight ? "#7EBAC6" : "#38BDF8") },
+      uStrength: { value: isEditorialLight ? 0.28 : 0.85 },
     },
     vertexShader: `
       varying vec3 vNormal;
@@ -392,20 +460,42 @@ function createThinAtmosphereMaterial(): THREE.ShaderMaterial {
     fragmentShader: `
       uniform vec3 uColorInner;
       uniform vec3 uColorOuter;
+      uniform float uStrength;
       varying vec3 vNormal;
       varying vec3 vViewDir;
       void main() {
         float rim = clamp(0.56 - dot(vNormal, vViewDir), 0.0, 1.0);
-        float intensity = pow(rim, 3.9) * 0.85;
+        float intensity = pow(rim, 3.6) * uStrength;
         vec3 col = mix(uColorOuter, uColorInner, clamp(rim * 1.8, 0.0, 1.0));
         gl_FragColor = vec4(col, intensity);
       }
     `,
     side: THREE.BackSide,
-    blending: THREE.AdditiveBlending,
+    blending: isEditorialLight ? THREE.NormalBlending : THREE.AdditiveBlending,
     transparent: true,
     depthWrite: false,
   });
+}
+
+/**
+ * Soft editorial paper drop shadow disc sitting directly behind/under the 3D sphere
+ * so it tracks camera.setViewOffset() automatically with zero CSS desync.
+ */
+function createPaperShadowTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const grad = ctx.createRadialGradient(size / 2, size / 2, size * 0.14, size / 2, size / 2, size * 0.5);
+  grad.addColorStop(0, "rgba(29, 31, 35, 0.20)");
+  grad.addColorStop(0.52, "rgba(29, 31, 35, 0.08)");
+  grad.addColorStop(1, "rgba(29, 31, 35, 0.0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
 }
 
 /**
@@ -414,14 +504,16 @@ function createThinAtmosphereMaterial(): THREE.ShaderMaterial {
 function createCometArcMaterial(
   colorHex: number,
   isSelected: boolean,
-  phaseOffset: number
+  phaseOffset: number,
+  isEditorialLight: boolean
 ): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(colorHex) },
+      uSparkColor: { value: new THREE.Color(isEditorialLight ? "#FFFFFF" : "#E0FFFA") },
       uTime: { value: 0 },
       uPhase: { value: phaseOffset },
-      uBaseOpacity: { value: isSelected ? 0.42 : 0.16 },
+      uBaseOpacity: { value: isEditorialLight ? (isSelected ? 0.56 : 0.26) : isSelected ? 0.42 : 0.16 },
       uCometBoost: { value: isSelected ? 1.0 : 0.72 },
     },
     vertexShader: `
@@ -433,6 +525,7 @@ function createCometArcMaterial(
     `,
     fragmentShader: `
       uniform vec3 uColor;
+      uniform vec3 uSparkColor;
       uniform float uTime;
       uniform float uPhase;
       uniform float uBaseOpacity;
@@ -452,12 +545,12 @@ function createCometArcMaterial(
         float headSpark = exp(-distBehind * 42.0) * uCometBoost;
 
         float alpha = clamp((uBaseOpacity + cometTail * 0.78 + headSpark * 0.6) * endFade, 0.0, 1.0);
-        vec3 finalCol = mix(uColor, vec3(0.88, 1.0, 0.98), clamp(headSpark * 0.85, 0.0, 1.0));
+        vec3 finalCol = mix(uColor, uSparkColor, clamp(headSpark * 0.85, 0.0, 1.0));
         gl_FragColor = vec4(finalCol, alpha);
       }
     `,
     transparent: true,
-    blending: THREE.AdditiveBlending,
+    blending: isEditorialLight ? THREE.NormalBlending : THREE.AdditiveBlending,
     depthWrite: false,
   });
 }
@@ -486,19 +579,153 @@ function createGreatCircleArcCurve(
  * - Glowing 3D Tube Arcs dengan Animated Comet Trail ke Jakarta (IDX)
  * - 3D Vertical Market Spikes + Radar Ripples + Anti-Overlap Telemetry Labels
  */
+const emptyClientSubscribe = () => () => {};
+
 export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
-  hubs,
-  selectedHubId,
+  hubs = [],
+  selectedHubId = "ID",
   onSelectHub,
+  newsPins,
+  selectedNewsPinId = "US",
+  onSelectNewsPin,
+  cameraZoomBias = 0,
+  scrollBehavior = "pullback",
   scrollProgressRef,
+  viewOffsetXRatioRef,
+  visualTheme = "dark-orbital",
+  seamless = false,
+  onToggleEditorialStyle,
+  isExploreMode = false,
+  onToggleExploreMode,
+  showFixedDock = true,
   reducedMotion = false,
 }) => {
+  const isClient = useSyncExternalStore(
+    emptyClientSubscribe,
+    () => true,
+    () => false
+  );
+  const isNewsMode = Boolean(newsPins && newsPins.length > 0);
+  const isEditorialLight = visualTheme !== "dark-orbital";
+  const isCartography = visualTheme === "editorial-cartography";
+  const activeMarkerId: string = isNewsMode ? selectedNewsPinId : selectedHubId;
+
+  const displayMarkers = useMemo<GlobeDisplayMarker[]>(() => {
+    if (newsPins && newsPins.length > 0) {
+      return newsPins.map((pin) => {
+        const isSelected = pin.id === selectedNewsPinId;
+        const accentHexNum = isEditorialLight
+          ? isSelected
+            ? 0x0d7680
+            : pin.sentiment === "BULLISH"
+            ? 0x0d6343
+            : pin.sentiment === "BEARISH"
+            ? 0x990f3d
+            : 0x0f5499
+          : isSelected
+          ? 0x2dd4bf
+          : pin.sentiment === "BULLISH"
+          ? 0x22c55e
+          : pin.sentiment === "BEARISH"
+          ? 0xef4444
+          : 0x38bdf8;
+        const dotClass = isEditorialLight
+          ? pin.sentiment === "BULLISH"
+            ? "bg-[#0D6343]"
+            : pin.sentiment === "BEARISH"
+            ? "bg-[#990F3D]"
+            : "bg-[#0F5499]"
+          : pin.sentiment === "BULLISH"
+          ? "bg-[#22C55E]"
+          : pin.sentiment === "BEARISH"
+          ? "bg-[#EF4444]"
+          : "bg-[#38BDF8]";
+        const secondaryClass = isEditorialLight
+          ? pin.sentiment === "BULLISH"
+            ? "text-[#0D6343]"
+            : pin.sentiment === "BEARISH"
+            ? "text-[#990F3D]"
+            : "text-[#0F5499]"
+          : pin.sentiment === "BULLISH"
+          ? "text-[#4ADE80]"
+          : pin.sentiment === "BEARISH"
+          ? "text-[#F87171]"
+          : "text-sky-300";
+        const spikeHeight = isSelected
+          ? 0.145 + Math.min(0.075, pin.newsCount * 0.014)
+          : 0.055 + Math.min(0.08, pin.newsCount * 0.013);
+        return {
+          id: pin.id,
+          label: pin.id,
+          secondaryText: `${pin.newsCount} berita`,
+          tooltip: `${pin.city} (${pin.label}) • ${pin.newsCount} berita kawasan`,
+          lat: pin.lat,
+          lon: pin.lon,
+          isoNumeric: pin.isoNumeric,
+          isSelected,
+          isPulsing: isSelected || pin.newsCount > 0,
+          accentHexNum,
+          dotClass,
+          secondaryClass,
+          spikeHeight,
+          isJakartaOrigin: pin.id === "ID",
+        };
+      });
+    }
+
+    return hubs.map((hub) => {
+      const isSelected = hub.id === selectedHubId;
+      const isUp = hub.primaryIndex.changePercent >= 0;
+      const accentHexNum = isSelected ? 0x2dd4bf : isUp ? 0x22c55e : 0xef4444;
+      return {
+        id: hub.id,
+        label: hub.id,
+        secondaryText: formatPersen(hub.primaryIndex.changePercent, 1, true),
+        tooltip: `${hub.countryName} (${hub.exchange}) • ${hub.primaryIndex.name} ${formatPersen(
+          hub.primaryIndex.changePercent,
+          2,
+          true
+        )}`,
+        lat: hub.lat,
+        lon: hub.lon,
+        isoNumeric: hub.isoNumeric,
+        isSelected,
+        isPulsing: hub.session.isOpen || isSelected,
+        accentHexNum,
+        dotClass: hub.session.isOpen
+          ? isUp
+            ? "bg-[#22C55E]"
+            : "bg-[#EF4444]"
+          : "bg-slate-500",
+        secondaryClass: isUp ? "text-[#22C55E]" : "text-[#EF4444]",
+        spikeHeight: computeMarketSpikeHeight(hub.primaryIndex.changePercent, isSelected),
+        isJakartaOrigin: hub.id === "ID",
+      };
+    });
+  }, [hubs, selectedHubId, newsPins, selectedNewsPinId, isEditorialLight]);
+
   const containerRef = useRef<HTMLDivElement>(null);
-  const labelElsRef = useRef<Map<GlobalMarketId, HTMLButtonElement>>(new Map());
-  const onSelectHubRef = useRef(onSelectHub);
-  const hubsRef = useRef(hubs);
-  const selectedHubIdRef = useRef(selectedHubId);
+  const labelElsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const markersRef = useRef<GlobeDisplayMarker[]>(displayMarkers);
+  const activeMarkerIdRef = useRef<string>(activeMarkerId);
   const reducedMotionRef = useRef(reducedMotion);
+  const cameraZoomBiasRef = useRef(cameraZoomBias);
+  const scrollBehaviorRef = useRef(scrollBehavior);
+  const visualThemeRef = useRef<GlobeVisualTheme>(visualTheme);
+  const isEditorialLightRef = useRef<boolean>(isEditorialLight);
+
+  const handleSelectMarker = useCallback(
+    (id: string) => {
+      if (newsPins && newsPins.length > 0) {
+        const pin = newsPins.find((p) => p.id === id);
+        if (pin) onSelectNewsPin?.(pin);
+        return;
+      }
+      onSelectHub?.(id as GlobalMarketId);
+    },
+    [newsPins, onSelectNewsPin, onSelectHub]
+  );
+  const handleSelectMarkerRef = useRef(handleSelectMarker);
 
   const [webglFailed, setWebglFailed] = useState(false);
   const [solarMode, setSolarMode] = useState(true);
@@ -510,20 +737,33 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
   const showDotsRef = useRef(showDots);
 
   useEffect(() => {
-    onSelectHubRef.current = onSelectHub;
-  }, [onSelectHub]);
+    handleSelectMarkerRef.current = handleSelectMarker;
+  }, [handleSelectMarker]);
 
   useEffect(() => {
-    hubsRef.current = hubs;
-  }, [hubs]);
+    markersRef.current = displayMarkers;
+  }, [displayMarkers]);
 
   useEffect(() => {
-    selectedHubIdRef.current = selectedHubId;
-  }, [selectedHubId]);
+    activeMarkerIdRef.current = activeMarkerId;
+  }, [activeMarkerId]);
 
   useEffect(() => {
     reducedMotionRef.current = reducedMotion;
   }, [reducedMotion]);
+
+  useEffect(() => {
+    cameraZoomBiasRef.current = cameraZoomBias;
+  }, [cameraZoomBias]);
+
+  useEffect(() => {
+    scrollBehaviorRef.current = scrollBehavior;
+  }, [scrollBehavior]);
+
+  useEffect(() => {
+    visualThemeRef.current = visualTheme;
+    isEditorialLightRef.current = visualTheme !== "dark-orbital";
+  }, [visualTheme]);
 
   useEffect(() => {
     solarModeRef.current = solarMode;
@@ -537,18 +777,23 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
     showDotsRef.current = showDots;
   }, [showDots]);
 
+  const initialMarker = displayMarkers.find((m) => m.id === activeMarkerId) ?? displayMarkers[0];
   const targetRotRef = useRef<{ rotX: number; rotY: number }>(
-    getTargetRotationForLatLon(-6.2088, 106.8456)
+    initialMarker
+      ? getTargetRotationForLatLon(initialMarker.lat, initialMarker.lon)
+      : getTargetRotationForLatLon(-6.2088, 106.8456)
   );
-  const targetZoomRef = useRef<number>(BASE_CAMERA_Z);
+  const targetZoomRef = useRef<number>(
+    Math.max(MIN_CAMERA_Z, Math.min(MAX_CAMERA_Z, BASE_CAMERA_Z + cameraZoomBias))
+  );
   const userInteractedAtRef = useRef<number>(0);
 
   useEffect(() => {
-    const activeHub = hubs.find((h) => h.id === selectedHubId);
-    if (!activeHub) return;
-    targetRotRef.current = getTargetRotationForLatLon(activeHub.lat, activeHub.lon);
+    const active = displayMarkers.find((m) => m.id === activeMarkerId);
+    if (!active) return;
+    targetRotRef.current = getTargetRotationForLatLon(active.lat, active.lon);
     userInteractedAtRef.current = Date.now();
-  }, [selectedHubId, hubs]);
+  }, [activeMarkerId, displayMarkers]);
 
   const handleZoomIn = useCallback(() => {
     targetZoomRef.current = Math.max(MIN_CAMERA_Z, targetZoomRef.current - 0.3);
@@ -560,17 +805,22 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
 
   const handleResetView = useCallback(() => {
     const w = containerRef.current?.clientWidth ?? 640;
-    targetZoomRef.current = w < 460 ? MOBILE_CAMERA_Z : BASE_CAMERA_Z;
-    const activeHub = hubsRef.current.find((h) => h.id === selectedHubIdRef.current);
-    targetRotRef.current = activeHub
-      ? getTargetRotationForLatLon(activeHub.lat, activeHub.lon)
+    const baseZ = (w < 460 ? MOBILE_CAMERA_Z : BASE_CAMERA_Z) + cameraZoomBiasRef.current;
+    targetZoomRef.current = Math.max(MIN_CAMERA_Z, Math.min(MAX_CAMERA_Z, baseZ));
+    const active = markersRef.current.find((m) => m.id === activeMarkerIdRef.current);
+    targetRotRef.current = active
+      ? getTargetRotationForLatLon(active.lat, active.lon)
       : getTargetRotationForLatLon(-6.2088, 106.8456);
   }, []);
 
   const countryFeatures = useMemo(() => extractCountryFeatures(), []);
-  const selectedHub = useMemo(
-    () => hubs.find((h) => h.id === selectedHubId) ?? hubs[0],
-    [hubs, selectedHubId]
+  const selectedMarker = useMemo(
+    () => displayMarkers.find((m) => m.id === activeMarkerId) ?? displayMarkers[0],
+    [displayMarkers, activeMarkerId]
+  );
+  const selectedNewsPin = useMemo(
+    () => (newsPins && newsPins.length > 0 ? newsPins.find((p) => p.id === selectedNewsPinId) ?? newsPins[0] : null),
+    [newsPins, selectedNewsPinId]
   );
 
   const [solarUtcLabel, setSolarUtcLabel] = useState<string>(
@@ -586,18 +836,18 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
 
   const highlightUpdaterRef = useRef<((isoNumeric: string) => void) | null>(null);
   const dynamicDataUpdaterRef = useRef<
-    ((nextHubs: GlobalMarketHubSnapshot[], nextSelectedId: GlobalMarketId) => void) | null
+    ((nextMarkers: GlobeDisplayMarker[], nextSelectedId: string) => void) | null
   >(null);
 
   useEffect(() => {
-    const hub = hubs.find((h) => h.id === selectedHubId);
-    if (hub && highlightUpdaterRef.current) {
-      highlightUpdaterRef.current(hub.isoNumeric);
+    const active = displayMarkers.find((m) => m.id === activeMarkerId);
+    if (active && highlightUpdaterRef.current) {
+      highlightUpdaterRef.current(active.isoNumeric);
     }
     if (dynamicDataUpdaterRef.current) {
-      dynamicDataUpdaterRef.current(hubs, selectedHubId);
+      dynamicDataUpdaterRef.current(displayMarkers, activeMarkerId);
     }
-  }, [hubs, selectedHubId]);
+  }, [displayMarkers, activeMarkerId]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -622,12 +872,18 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const initCameraZ = initWidth < 460 ? MOBILE_CAMERA_Z : BASE_CAMERA_Z;
+    const initCameraZ = Math.max(
+      MIN_CAMERA_Z,
+      Math.min(MAX_CAMERA_Z, (initWidth < 460 ? MOBILE_CAMERA_Z : BASE_CAMERA_Z) + cameraZoomBiasRef.current)
+    );
     targetZoomRef.current = initCameraZ;
     const camera = new THREE.PerspectiveCamera(40, initWidth / initHeight, 0.1, 30);
     camera.position.set(0, 0, initCameraZ);
 
-    // Starfield depth parallax layer
+    const initialEditorialLight = isEditorialLightRef.current;
+    const initialCartographyMix = visualThemeRef.current === "editorial-cartography" ? 1.0 : 0.0;
+
+    // Starfield depth parallax layer (hanya untuk Dark Orbital Mode di Terminal)
     const starCount = 460;
     const starPositions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i += 1) {
@@ -648,7 +904,22 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
       sizeAttenuation: true,
     });
     const starField = new THREE.Points(starGeo, starMat);
+    starField.visible = !initialEditorialLight;
     scene.add(starField);
+
+    // Soft editorial paper drop shadow disc (khusus mode FT Light Editorial, ikut bergeser bersama setViewOffset)
+    const shadowTex = createPaperShadowTexture();
+    const shadowGeo = new THREE.PlaneGeometry(2.58, 2.58);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      map: shadowTex,
+      transparent: true,
+      depthWrite: false,
+      opacity: initialEditorialLight ? 0.95 : 0.0,
+    });
+    const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+    shadowMesh.position.set(0.06, -0.14, -0.45);
+    shadowMesh.visible = initialEditorialLight;
+    scene.add(shadowMesh);
 
     // Root Globe Group
     const globeGroup = new THREE.Group();
@@ -657,7 +928,7 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
     globeGroup.rotation.y = targetRotRef.current.rotY;
     scene.add(globeGroup);
 
-    // 1. Orbital Earth with Custom GLSL Day/Night Terminator Shader
+    // 1. Orbital / Editorial Earth with Custom GLSL Shader
     const fallbacks = createFallbackTextures(countryFeatures);
     const sunInit = computeSunDirectionLocal();
     const sunVec = new THREE.Vector3(sunInit.x, sunInit.y, sunInit.z).normalize();
@@ -667,7 +938,9 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
       fallbacks.dayTex,
       fallbacks.nightTex,
       fallbacks.topoTex,
-      sunVec
+      sunVec,
+      initialEditorialLight,
+      initialCartographyMix
     );
     const earthMesh = new THREE.Mesh(earthGeo, earthMat);
     globeGroup.add(earthMesh);
@@ -675,7 +948,7 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
     // 2. Drifting Satellite Cloud Layer (r = 1.012)
     const cloudsGeo = new THREE.SphereGeometry(EARTH_RADIUS * 1.012, 64, 64);
     const cloudsMat = new THREE.MeshBasicMaterial({
-      color: 0xd8f3ff,
+      color: initialEditorialLight ? 0xffffff : 0xd8f3ff,
       transparent: true,
       opacity: 0.0,
       depthWrite: false,
@@ -731,23 +1004,29 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
 
     // 3. Subtle Continental Micro-Dot Matrix (InstancedMesh, 1 draw call)
     const dotMatrixMesh = buildContinentalDotMatrix(countryFeatures, EARTH_RADIUS * 1.0035);
+    const dotMatRef = dotMatrixMesh.material as THREE.MeshBasicMaterial;
+    if (initialEditorialLight) {
+      dotMatRef.blending = THREE.NormalBlending;
+      dotMatRef.color.setHex(initialCartographyMix > 0.5 ? 0x1e5c64 : 0xeaf6f7);
+      dotMatRef.opacity = initialCartographyMix > 0.5 ? 0.28 : 0.24;
+    }
     globeGroup.add(dotMatrixMesh);
 
     // 4. Crisp Country Borders + Glowing Active Country Highlight
     const allBordersGeo = buildCountryBorderGeometry(countryFeatures, EARTH_RADIUS * 1.0025);
     const allBordersMat = new THREE.LineBasicMaterial({
-      color: 0x38bdf8,
+      color: initialEditorialLight ? (initialCartographyMix > 0.5 ? 0x262a33 : 0xfbfbfa) : 0x38bdf8,
       transparent: true,
-      opacity: 0.11,
+      opacity: initialEditorialLight ? (initialCartographyMix > 0.5 ? 0.42 : 0.22) : 0.11,
     });
     const allBordersLines = new THREE.LineSegments(allBordersGeo, allBordersMat);
     globeGroup.add(allBordersLines);
 
     let highlightLines: THREE.LineSegments | null = null;
     const highlightMat = new THREE.LineBasicMaterial({
-      color: 0x5eead4,
+      color: initialEditorialLight ? 0x0d7680 : 0x5eead4,
       transparent: true,
-      opacity: 0.95,
+      opacity: 0.96,
     });
 
     const updateHighlightCountry = (isoNumeric: string) => {
@@ -768,16 +1047,16 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
 
     // 5. Thin Realistic Outer Fresnel Atmosphere Halo (r = 1.055)
     const atmosGeo = new THREE.SphereGeometry(EARTH_RADIUS * 1.055, 64, 64);
-    const atmosMat = createThinAtmosphereMaterial();
+    const atmosMat = createThinAtmosphereMaterial(initialEditorialLight);
     const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
     scene.add(atmosMesh);
 
-    // Subtle Orbital Telemetry Ring
+    // Subtle Orbital / Architectural Meridian Ring
     const ringGeo = new THREE.RingGeometry(EARTH_RADIUS * 1.19, EARTH_RADIUS * 1.193, 128);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x2dd4bf,
+      color: initialEditorialLight ? 0x1d1f23 : 0x2dd4bf,
       transparent: true,
-      opacity: 0.09,
+      opacity: initialEditorialLight ? 0.11 : 0.09,
       side: THREE.DoubleSide,
     });
     const orbitalRing = new THREE.Mesh(ringGeo, ringMat);
@@ -785,14 +1064,14 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
     orbitalRing.rotation.y = 0.24;
     scene.add(orbitalRing);
 
-    // 6. 3D Vertical Market Spikes, Radar Ripples & Glowing Tube Arcs
+    // 6. 3D Vertical Spikes, Radar Ripples & Glowing Tube Arcs
     interface MarkerEntry {
-      id: GlobalMarketId;
+      id: string;
       tipPos: THREE.Vector3;
       basePos: THREE.Vector3;
       ringMeshA: THREE.Mesh;
       ringMeshB: THREE.Mesh;
-      isOpen: boolean;
+      isPulsing: boolean;
     }
 
     const markersGroup = new THREE.Group();
@@ -809,10 +1088,6 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
     const hitGeo = new THREE.SphereGeometry(0.072, 12, 12);
     const pulseRingGeo = new THREE.RingGeometry(0.018, 0.026, 28);
 
-    const jakartaHub = hubsRef.current.find((h) => h.id === "ID");
-    const jktLat = jakartaHub?.lat ?? -6.2088;
-    const jktLon = jakartaHub?.lon ?? 106.8456;
-
     const clearDynamicVisuals = () => {
       while (markersGroup.children.length > 0) markersGroup.remove(markersGroup.children[0]);
       while (arcsGroup.children.length > 0) arcsGroup.remove(arcsGroup.children[0]);
@@ -823,21 +1098,24 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
       hitMeshes.length = 0;
     };
 
-    const rebuildHubVisuals = (
-      currentHubs: GlobalMarketHubSnapshot[],
-      activeId: GlobalMarketId
+    const rebuildVisuals = (
+      currentMarkers: GlobeDisplayMarker[],
+      activeId: string
     ) => {
       clearDynamicVisuals();
 
-      currentHubs.forEach((hub, index) => {
-        const basePos = latLonToVector3(hub.lat, hub.lon, EARTH_RADIUS * 1.006);
-        const normal = basePos.clone().normalize();
-        const isSelected = hub.id === activeId;
-        const isUp = hub.primaryIndex.changePercent >= 0;
-        const accentHex = isSelected ? 0x2dd4bf : isUp ? 0x22c55e : 0xef4444;
+      const jakartaMarker = currentMarkers.find((m) => m.isJakartaOrigin);
+      const jktLat = jakartaMarker?.lat ?? -6.2088;
+      const jktLon = jakartaMarker?.lon ?? 106.8456;
 
-        // 3D Vertical Market Spike rising radially from the exchange
-        const spikeHeight = computeMarketSpikeHeight(hub.primaryIndex.changePercent, isSelected);
+      currentMarkers.forEach((marker, index) => {
+        const basePos = latLonToVector3(marker.lat, marker.lon, EARTH_RADIUS * 1.006);
+        const normal = basePos.clone().normalize();
+        const isSelected = marker.id === activeId;
+        const accentHex = marker.accentHexNum;
+
+        // 3D Vertical Spike rising radially from the country/hotspot
+        const spikeHeight = marker.spikeHeight;
         const spikeGeo = new THREE.CylinderGeometry(
           isSelected ? 0.0042 : 0.0026,
           isSelected ? 0.0085 : 0.0058,
@@ -859,7 +1137,11 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
         // Luminous orb tip at the top of the spike
         const tipPos = basePos.clone().addScaledVector(normal, spikeHeight + 0.004);
         const capMat = new THREE.MeshBasicMaterial({
-          color: isSelected ? 0x99f6e4 : accentHex,
+          color: isSelected
+            ? isEditorialLightRef.current
+              ? 0x0d7680
+              : 0x99f6e4
+            : accentHex,
         });
         dynamicDisposables.push(capMat);
         const capMesh = new THREE.Mesh(capGeo, capMat);
@@ -871,7 +1153,7 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
         const rMatA = new THREE.MeshBasicMaterial({
           color: accentHex,
           transparent: true,
-          opacity: isSelected ? 0.8 : hub.session.isOpen ? 0.6 : 0.2,
+          opacity: isSelected ? 0.8 : marker.isPulsing ? 0.6 : 0.2,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
@@ -899,25 +1181,30 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
         dynamicDisposables.push(hitMat);
         const hitMesh = new THREE.Mesh(hitGeo, hitMat);
         hitMesh.position.copy(tipPos);
-        hitMesh.userData = { hubId: hub.id };
+        hitMesh.userData = { markerId: marker.id };
         markersGroup.add(hitMesh);
         hitMeshes.push(hitMesh);
 
         markerEntries.push({
-          id: hub.id,
+          id: marker.id,
           tipPos,
           basePos,
           ringMeshA,
           ringMeshB,
-          isOpen: hub.session.isOpen,
+          isPulsing: marker.isPulsing,
         });
 
         // Glowing 3D Tube Arc menuju Jakarta dengan Animated Comet Trail
-        if (hub.id !== "ID") {
-          const curve = createGreatCircleArcCurve(hub.lat, hub.lon, jktLat, jktLon);
+        if (!marker.isJakartaOrigin) {
+          const curve = createGreatCircleArcCurve(marker.lat, marker.lon, jktLat, jktLon);
           const tubeRadius = isSelected ? 0.0052 : 0.003;
           const tubeGeo = new THREE.TubeGeometry(curve, 52, tubeRadius, 7, false);
-          const cometMat = createCometArcMaterial(accentHex, isSelected, (index * 0.13) % 1);
+          const cometMat = createCometArcMaterial(
+            accentHex,
+            isSelected,
+            (index * 0.13) % 1,
+            isEditorialLightRef.current
+          );
           dynamicDisposables.push(tubeGeo, cometMat);
           cometMaterials.push(cometMat);
 
@@ -927,11 +1214,11 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
       });
     };
 
-    dynamicDataUpdaterRef.current = rebuildHubVisuals;
-    rebuildHubVisuals(hubsRef.current, selectedHubIdRef.current);
-    const initialHub = hubsRef.current.find((h) => h.id === selectedHubIdRef.current);
-    if (initialHub) {
-      updateHighlightCountry(initialHub.isoNumeric);
+    dynamicDataUpdaterRef.current = rebuildVisuals;
+    rebuildVisuals(markersRef.current, activeMarkerIdRef.current);
+    const initialActive = markersRef.current.find((m) => m.id === activeMarkerIdRef.current);
+    if (initialActive) {
+      updateHighlightCountry(initialActive.isoNumeric);
     }
 
     // Pointer Interaction (Drag rotates, click selects pin, hover drives subtle camera parallax)
@@ -986,8 +1273,8 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
         raycaster.setFromCamera(pointerNdc, camera);
         const hits = raycaster.intersectObjects(hitMeshes, false);
         if (hits.length > 0) {
-          const hubId = hits[0].object.userData?.hubId as GlobalMarketId | undefined;
-          if (hubId) onSelectHubRef.current(hubId);
+          const markerId = hits[0].object.userData?.markerId as string | undefined;
+          if (markerId) handleSelectMarkerRef.current(markerId);
         }
       }
       isDragging = false;
@@ -1033,10 +1320,16 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
     let lastFrameMs = performance.now();
     let elapsedSec = 0;
     let lastSunSyncMs = 0;
+    let currentOffsetRatio = 0;
+    let currentCartoMix = initialCartographyMix;
 
     const worldPosScratch = new THREE.Vector3();
     const camDirScratch = new THREE.Vector3();
     const projScratch = new THREE.Vector3();
+    const atlasBorderCol = new THREE.Color(0xfbfbfa);
+    const cartoBorderCol = new THREE.Color(0x262a33);
+    const atlasDotCol = new THREE.Color(0xeaf6f7);
+    const cartoDotCol = new THREE.Color(0x1e5c64);
 
     const animate = () => {
       if (disposed || !isVisible || !isTabVisible) {
@@ -1062,8 +1355,23 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
       earthMat.uniforms.uSolarMode.value +=
         (targetSolar - earthMat.uniforms.uSolarMode.value) * Math.min(1, dt * 6);
 
-      // Toggle layers cleanly without recreating geometry
-      cloudsMesh.visible = showCloudsRef.current;
+      // Smooth morphing antara Daylight Satelit Atlas (0) ↔ FT Cartographic Ink (1)
+      if (isEditorialLightRef.current) {
+        const targetCarto = visualThemeRef.current === "editorial-cartography" ? 1.0 : 0.0;
+        currentCartoMix += (targetCarto - currentCartoMix) * Math.min(1, dt * 5.2);
+        earthMat.uniforms.uCartographyMix.value = currentCartoMix;
+        allBordersMat.color.copy(atlasBorderCol).lerp(cartoBorderCol, currentCartoMix);
+        allBordersMat.opacity = 0.22 + currentCartoMix * 0.22;
+        dotMatRef.color.copy(atlasDotCol).lerp(cartoDotCol, currentCartoMix);
+        dotMatRef.opacity = 0.22 + currentCartoMix * 0.08;
+        atmosMat.uniforms.uStrength.value = 0.28 - currentCartoMix * 0.14;
+      }
+
+      // Toggle layers cleanly without recreating geometry (awan otomatis meredup di mode Kartografi)
+      cloudsMesh.visible = showCloudsRef.current && (!isEditorialLightRef.current || currentCartoMix < 0.88);
+      if (isEditorialLightRef.current && cloudsMat.map) {
+        cloudsMat.opacity = 0.16 * (1 - currentCartoMix);
+      }
       dotMatrixMesh.visible = showDotsRef.current;
 
       // Drifting satellite clouds
@@ -1071,33 +1379,63 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
         cloudsMesh.rotation.y += dt * 0.009;
       }
 
-      // Scroll-coupled parallax pitch & subtle camera pull-back
+      // Scroll-coupled inertial camera choreography
       const scrollP = isReduced ? 0 : Math.max(0, Math.min(1, scrollProgressRef?.current ?? 0));
 
       const idleMs = Date.now() - userInteractedAtRef.current;
-      if (!isDragging && !isReduced && idleMs > 6500) {
+      if (!isDragging && !isReduced && idleMs > 6500 && scrollBehaviorRef.current !== "scrollytelling") {
         targetRotRef.current.rotY += dt * 0.055;
       }
 
-      const desiredRotX = targetRotRef.current.rotX + scrollP * 0.22;
-      const desiredRotY = targetRotRef.current.rotY + scrollP * 0.18;
+      const isScrolly = scrollBehaviorRef.current === "scrollytelling";
+      const desiredRotX = isScrolly
+        ? targetRotRef.current.rotX + (scrollP - 0.5) * 0.14
+        : targetRotRef.current.rotX + scrollP * 0.22;
+      const desiredRotY = isScrolly
+        ? targetRotRef.current.rotY + (scrollP - 0.5) * 0.12
+        : targetRotRef.current.rotY + scrollP * 0.18;
 
-      globeGroup.rotation.x += (desiredRotX - globeGroup.rotation.x) * Math.min(1, dt * 6.5);
+      const rotDamping = isScrolly ? 4.8 : 6.5;
+      globeGroup.rotation.x += (desiredRotX - globeGroup.rotation.x) * Math.min(1, dt * rotDamping);
       globeGroup.rotation.y +=
-        shortestAngleDiff(globeGroup.rotation.y, desiredRotY) * Math.min(1, dt * 6.5);
+        shortestAngleDiff(globeGroup.rotation.y, desiredRotY) * Math.min(1, dt * rotDamping);
 
       // Pointer parallax on camera & starfield
       pointerParallax.curX += (pointerParallax.targetX - pointerParallax.curX) * Math.min(1, dt * 5);
       pointerParallax.curY += (pointerParallax.targetY - pointerParallax.curY) * Math.min(1, dt * 5);
 
-      const desiredZ = targetZoomRef.current + scrollP * 0.34;
-      camera.position.z += (desiredZ - camera.position.z) * Math.min(1, dt * 6);
+      const desiredZ = isScrolly
+        ? targetZoomRef.current - Math.sin(scrollP * Math.PI) * 0.12
+        : targetZoomRef.current + scrollP * 0.34;
+      camera.position.z += (desiredZ - camera.position.z) * Math.min(1, dt * 5.5);
       camera.position.x = isReduced ? 0 : pointerParallax.curX;
       camera.position.y = isReduced ? 0 : pointerParallax.curY;
       camera.lookAt(0, 0, 0);
 
-      starField.rotation.y = elapsed * (isReduced ? 0 : 0.007) - pointerParallax.curX * 0.35;
-      starField.rotation.x = pointerParallax.curY * 0.35;
+      // Optical off-center framing via camera.setViewOffset() (Style A: tengah di Hero → kiri di Bab 01-05)
+      const canvasW = renderer.domElement.clientWidth;
+      const canvasH = renderer.domElement.clientHeight;
+      const rawTargetOffset = canvasW >= 1024 ? (viewOffsetXRatioRef?.current ?? 0) : 0;
+      currentOffsetRatio += (rawTargetOffset - currentOffsetRatio) * Math.min(1, dt * 4.8);
+      if (canvasW > 0 && canvasH > 0) {
+        if (Math.abs(currentOffsetRatio) > 0.0006) {
+          camera.setViewOffset(
+            canvasW,
+            canvasH,
+            currentOffsetRatio * canvasW,
+            0,
+            canvasW,
+            canvasH
+          );
+        } else if (camera.view) {
+          camera.clearViewOffset();
+        }
+      }
+
+      if (starField.visible) {
+        starField.rotation.y = elapsed * (isReduced ? 0 : 0.007) - pointerParallax.curX * 0.35;
+        starField.rotation.x = pointerParallax.curY * 0.35;
+      }
       orbitalRing.rotation.z = elapsed * (isReduced ? 0 : 0.035);
 
       // Animate comet trails along all 3D tube arcs
@@ -1108,8 +1446,8 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
 
       // Animate dual concentric radar ripples on surface
       for (const m of markerEntries) {
-        const isSel = m.id === selectedHubIdRef.current;
-        if (!isReduced && (m.isOpen || isSel)) {
+        const isSel = m.id === activeMarkerIdRef.current;
+        if (!isReduced && (m.isPulsing || isSel)) {
           const speed = isSel ? 1.15 : 0.85;
           const wA = ((elapsed * speed + m.basePos.x) % 1 + 1) % 1;
           const wB = (wA + 0.5) % 1;
@@ -1132,12 +1470,10 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
       renderer.render(scene, camera);
 
       // Project 3D spike tips to HTML HUD labels with 4-pass collision separation
-      const canvasW = renderer.domElement.clientWidth;
-      const canvasH = renderer.domElement.clientHeight;
       globeGroup.updateMatrixWorld();
 
       interface ProjectedLabel {
-        id: GlobalMarketId;
+        id: string;
         el: HTMLButtonElement;
         x: number;
         y: number;
@@ -1167,7 +1503,7 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
             x: sx,
             y: sy,
             fade,
-            priority: m.id === selectedHubIdRef.current ? 10 : facing,
+            priority: m.id === activeMarkerIdRef.current ? 10 : facing,
           });
         } else {
           el.style.opacity = "0";
@@ -1265,6 +1601,9 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
       ringMat.dispose();
       starGeo.dispose();
       starMat.dispose();
+      shadowGeo.dispose();
+      shadowMat.dispose();
+      shadowTex.dispose();
       capGeo.dispose();
       hitGeo.dispose();
       pulseRingGeo.dispose();
@@ -1273,195 +1612,384 @@ export const WorldGlobe3D: React.FC<WorldGlobe3DProps> = ({
         container.removeChild(renderer.domElement);
       }
     };
-  }, [countryFeatures, scrollProgressRef]);
+  }, [countryFeatures, scrollProgressRef, viewOffsetXRatioRef]);
 
   if (webglFailed) {
     return (
-      <div className="w-full h-full min-h-[340px] flex flex-col items-center justify-center p-5 bg-[#080B12] rounded-lg border border-white/[0.06] text-center space-y-3">
-        <Compass className="w-7 h-7 text-[#2DD4BF]" />
-        <p className="text-xs text-slate-300 font-medium">
-          WebGL tidak tersedia di perangkat ini — gunakan pemilih negara cepat:
+      <div
+        className={`w-full h-full min-h-[340px] flex flex-col items-center justify-center p-5 text-center space-y-3 ${
+          isEditorialLight
+            ? "bg-[#F6F4EE] text-[#1D1F23] border border-[#E5E5DC]"
+            : "bg-[#080B12] rounded-lg border border-white/[0.06] text-slate-300"
+        }`}
+      >
+        <Compass className={`w-7 h-7 ${isEditorialLight ? "text-[#0D7680]" : "text-[#2DD4BF]"}`} />
+        <p className="text-xs font-medium">
+          WebGL tidak tersedia di perangkat ini — pilih kawasan langsung:
         </p>
         <div className="flex flex-wrap justify-center gap-1.5 max-w-md">
-          {hubs.map((hub) => {
-            const isSel = hub.id === selectedHubId;
-            return (
-              <button
-                key={hub.id}
-                type="button"
-                onClick={() => onSelectHub(hub.id)}
-                className={`px-2.5 py-1.5 rounded-md border text-[11px] font-mono transition ${
-                  isSel
-                    ? "bg-[#1E7B85] border-[#2DD4BF] text-white font-semibold"
-                    : "bg-[#0F131C] border-white/[0.08] text-slate-300 hover:border-white/[0.2]"
-                }`}
-              >
-                {hub.id} {formatPersen(hub.primaryIndex.changePercent, 1, true)}
-              </button>
-            );
-          })}
+          {displayMarkers.map((marker) => (
+            <button
+              key={marker.id}
+              type="button"
+              onClick={() => handleSelectMarker(marker.id)}
+              className={`px-2.5 py-1.5 rounded-md border text-[11px] font-mono transition ${
+                marker.isSelected
+                  ? isEditorialLight
+                    ? "bg-[#0D7680] border-[#0D7680] text-white font-semibold"
+                    : "bg-[#1E7B85] border-[#2DD4BF] text-white font-semibold"
+                  : isEditorialLight
+                  ? "bg-[#FBFBFA] border-[#D5D7DC] text-[#1D1F23] hover:border-[#0D7680]"
+                  : "bg-[#0F131C] border-white/[0.08] text-slate-300 hover:border-white/[0.2]"
+              }`}
+            >
+              {marker.label} {marker.secondaryText}
+            </button>
+          ))}
         </div>
       </div>
     );
   }
 
+  const wrapperClass = seamless
+    ? "relative w-full h-full min-h-[340px] select-none overflow-hidden bg-transparent"
+    : isEditorialLight
+    ? "relative w-full h-full min-h-[340px] sm:min-h-[405px] select-none overflow-hidden rounded-lg bg-[#F6F4EE]"
+    : "relative w-full h-full min-h-[340px] sm:min-h-[405px] select-none overflow-hidden rounded-lg bg-[radial-gradient(circle_at_50%_48%,rgba(14,42,66,0.34),rgba(7,10,16,0.98)_72%)]";
+
+  const hudSurfaceClass = isEditorialLight
+    ? "bg-[#FBFBFA]/88 backdrop-blur-md border border-[#DCD7CC] text-[#1D1F23] shadow-sm"
+    : "bg-[#0B0E15]/82 backdrop-blur-md border border-white/[0.08] text-slate-300";
+
+  const hudActiveBtnClass = isEditorialLight
+    ? "bg-[#0D7680]/14 text-[#0D7680] border border-[#0D7680]/35 font-medium"
+    : "bg-[#1E7B85]/35 text-[#5EEAD4] border border-[#2DD4BF]/40";
+
+  const hudIdleBtnClass = isEditorialLight
+    ? "text-[#5A6068] hover:text-[#1D1F23] border border-transparent"
+    : "text-slate-400 hover:text-slate-200 border border-transparent";
+
   return (
-    <div className="relative w-full h-full min-h-[340px] sm:min-h-[405px] select-none overflow-hidden rounded-lg bg-[radial-gradient(circle_at_50%_48%,rgba(14,42,66,0.34),rgba(7,10,16,0.98)_72%)]">
+    <div className={wrapperClass}>
       {/* Kanvas WebGL Three.js */}
       <div
         ref={containerRef}
-        aria-label="Peta Bola Dunia 3D Pasar Saham Global Interaktif"
-        className="absolute inset-0 cursor-grab active:cursor-grabbing"
+        data-cursor-hint="Drag · Putar"
+        aria-label={
+          isNewsMode
+            ? "Peta Bola Dunia 3D Berita Global Interaktif"
+            : "Peta Bola Dunia 3D Pasar Saham Global Interaktif"
+        }
+        className="absolute inset-0 z-0 cursor-grab active:cursor-grabbing"
       />
 
-      {/* HUD Kiri Atas: Telemetri Koordinat & Matahari UTC */}
-      <div className="pointer-events-none absolute top-2.5 left-2.5 z-20 flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#0B0E15]/78 backdrop-blur-md border border-white/[0.07] text-[10px] font-mono tnum text-slate-300">
-        {selectedHub && (
-          <>
-            <span className="text-[#2DD4BF] font-semibold">{selectedHub.id}</span>
-            <span>{formatGeoCoordinates(selectedHub.lat, selectedHub.lon)}</span>
-          </>
-        )}
-        <span className="hidden sm:inline text-slate-600">&bull;</span>
-        <span className="hidden sm:inline text-slate-400">{solarUtcLabel}</span>
-      </div>
+      {/* HUD Kiri Atas & Kanan Atas (hanya mode Non-Seamless / Terminal — di Seamless Berita dipindah ke 2A Unified Bottom-Left Dock agar 100% bebas ketutup kartu kanan!) */}
+      {!seamless && (
+        <>
+          <div
+            className={`pointer-events-none absolute top-2.5 left-2.5 z-20 flex items-center gap-2 px-2.5 py-1 rounded-md text-[10px] font-mono tnum ${hudSurfaceClass}`}
+          >
+            {selectedMarker && (
+              <>
+                <span className={isEditorialLight ? "text-[#0D7680] font-semibold" : "text-[#2DD4BF] font-semibold"}>
+                  {selectedNewsPin ? `${selectedNewsPin.id} • ${selectedNewsPin.city}` : selectedMarker.label}
+                </span>
+                <span>{formatGeoCoordinates(selectedMarker.lat, selectedMarker.lon)}</span>
+              </>
+            )}
+            <span className="hidden sm:inline opacity-40">&bull;</span>
+            <span className="hidden sm:inline opacity-75">{solarUtcLabel}</span>
+          </div>
 
-      {/* HUD Kanan Atas: Toggle Layer (Siang/Malam, Awan, Titik) */}
-      <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 bg-[#0B0E15]/82 backdrop-blur-md border border-white/[0.08] p-1 rounded-md text-[10px] font-sans">
-        <button
-          type="button"
-          onClick={() => setSolarMode((v) => !v)}
-          aria-pressed={solarMode}
-          title="Toggle pencahayaan Siang/Malam UTC real-time"
-          className={`inline-flex items-center gap-1 px-1.5 py-1 rounded transition ${
-            solarMode
-              ? "bg-[#1E7B85]/35 text-[#5EEAD4] border border-[#2DD4BF]/40"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
-          }`}
-        >
-          <SunMoon className="w-3 h-3" aria-hidden="true" />
-          <span className="hidden sm:inline">Siang/Malam</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowClouds((v) => !v)}
-          aria-pressed={showClouds}
-          title="Tampilkan / sembunyikan lapisan awan orbital"
-          className={`inline-flex items-center gap-1 px-1.5 py-1 rounded transition ${
-            showClouds
-              ? "bg-[#1E7B85]/35 text-[#5EEAD4] border border-[#2DD4BF]/40"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
-          }`}
-        >
-          <Cloud className="w-3 h-3" aria-hidden="true" />
-          <span className="hidden md:inline">Awan</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowDots((v) => !v)}
-          aria-pressed={showDots}
-          title="Tampilkan / sembunyikan matriks titik benua"
-          className={`inline-flex items-center gap-1 px-1.5 py-1 rounded transition ${
-            showDots
-              ? "bg-[#1E7B85]/35 text-[#5EEAD4] border border-[#2DD4BF]/40"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
-          }`}
-        >
-          <Grid3X3 className="w-3 h-3" aria-hidden="true" />
-          <span className="hidden md:inline">Titik</span>
-        </button>
-      </div>
-
-      {/* Screen-Projected Interactive Hub Badges */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        {hubs.map((hub) => {
-          const isSelected = hub.id === selectedHubId;
-          const isUp = hub.primaryIndex.changePercent >= 0;
-          return (
+          <div
+            className={`absolute top-2.5 right-2.5 z-20 flex items-center gap-1 p-1 rounded-md text-[10px] font-sans ${hudSurfaceClass}`}
+          >
             <button
-              key={hub.id}
               type="button"
-              ref={(el) => {
-                if (el) labelElsRef.current.set(hub.id, el);
-                else labelElsRef.current.delete(hub.id);
-              }}
-              onClick={() => onSelectHub(hub.id)}
-              style={{ opacity: 0 }}
-              title={`${hub.countryName} (${hub.exchange}) • ${hub.primaryIndex.name} ${formatPersen(
-                hub.primaryIndex.changePercent,
-                2,
-                true
-              )}`}
-              className={`absolute top-0 left-0 px-1.5 py-0.5 rounded border backdrop-blur-md transition-colors text-[9.5px] font-mono tnum flex items-center gap-1 shadow-lg ${
-                isSelected
-                  ? "z-20 bg-[#0F131C]/95 border-[#2DD4BF] text-white shadow-[#2DD4BF]/25"
-                  : "z-10 bg-[#0B0E15]/82 border-white/[0.12] text-slate-200 hover:border-[#2DD4BF]/70 hover:bg-[#161C29]/95"
+              onClick={() => setSolarMode((v) => !v)}
+              aria-pressed={solarMode}
+              title="Toggle pencahayaan Siang/Malam UTC real-time"
+              className={`inline-flex items-center gap-1 px-1.5 py-1 rounded transition ${
+                solarMode ? hudActiveBtnClass : hudIdleBtnClass
               }`}
             >
-              <span
-                aria-hidden="true"
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  hub.session.isOpen
-                    ? isUp
-                      ? "bg-[#22C55E]"
-                      : "bg-[#EF4444]"
-                    : "bg-slate-500"
-                }`}
-              />
-              <span className="font-bold">{hub.id}</span>
-              <span className={isUp ? "text-[#22C55E]" : "text-[#EF4444]"}>
-                {formatPersen(hub.primaryIndex.changePercent, 1, true)}
-              </span>
+              <SunMoon className="w-3 h-3" aria-hidden="true" />
+              <span className="hidden sm:inline">Siang/Malam</span>
             </button>
-          );
-        })}
+            <button
+              type="button"
+              onClick={() => setShowClouds((v) => !v)}
+              aria-pressed={showClouds}
+              title="Tampilkan / sembunyikan lapisan awan orbital"
+              className={`inline-flex items-center gap-1 px-1.5 py-1 rounded transition ${
+                showClouds ? hudActiveBtnClass : hudIdleBtnClass
+              }`}
+            >
+              <Cloud className="w-3 h-3" aria-hidden="true" />
+              <span className="hidden md:inline">Awan</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDots((v) => !v)}
+              aria-pressed={showDots}
+              title="Tampilkan / sembunyikan matriks titik benua"
+              className={`inline-flex items-center gap-1 px-1.5 py-1 rounded transition ${
+                showDots ? hudActiveBtnClass : hudIdleBtnClass
+              }`}
+            >
+              <Grid3X3 className="w-3 h-3" aria-hidden="true" />
+              <span className="hidden md:inline">Titik</span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Screen-Projected Interactive Hub / News Hotspot Badges */}
+      <div className="pointer-events-none absolute inset-0 z-[5] overflow-hidden">
+        {displayMarkers.map((marker) => (
+          <button
+            key={marker.id}
+            type="button"
+            data-cursor-hint="Klik Hotspot"
+            ref={(el) => {
+              if (el) labelElsRef.current.set(marker.id, el);
+              else labelElsRef.current.delete(marker.id);
+            }}
+            onClick={() => handleSelectMarker(marker.id)}
+            style={{ opacity: 0 }}
+            title={marker.tooltip}
+            className={`absolute top-0 left-0 px-2 py-0.5 rounded border backdrop-blur-md transition-colors text-[10px] font-mono tnum flex items-center gap-1.5 ${
+              isEditorialLight
+                ? marker.isSelected
+                  ? "z-20 bg-[#1D1F23] border-[#1D1F23] text-[#FBFBFA] shadow-md"
+                  : "z-10 bg-[#FBFBFA]/92 border-[#D5D1C8] text-[#1D1F23] hover:border-[#0D7680] hover:bg-white shadow-sm"
+                : marker.isSelected
+                ? "z-20 bg-[#0F131C]/95 border-[#2DD4BF] text-white shadow-lg shadow-[#2DD4BF]/25"
+                : "z-10 bg-[#0B0E15]/82 border-white/[0.12] text-slate-200 hover:border-[#2DD4BF]/70 hover:bg-[#161C29]/95 shadow-lg"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${marker.dotClass}`}
+            />
+            <span className="font-bold">{marker.label}</span>
+            <span
+              className={
+                isEditorialLight && marker.isSelected ? "text-[#5EEAD4]" : marker.secondaryClass
+              }
+            >
+              {marker.secondaryText}
+            </span>
+          </button>
+        ))}
       </div>
 
-      {/* HUD Kiri Bawah: Petunjuk Interaksi */}
-      <div className="pointer-events-none absolute bottom-2.5 left-2.5 z-20 flex items-center gap-2 px-2.5 py-1 rounded-md bg-[#0B0E15]/80 backdrop-blur-md border border-white/[0.07] text-[10px] text-slate-400 font-sans">
-        <span className="inline-flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
-          <span>Buka</span>
-        </span>
-        <span className="text-slate-600">&bull;</span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-          <span>Tutup</span>
-        </span>
-        <span className="hidden sm:inline text-slate-600">&bull;</span>
-        <span className="hidden sm:inline text-slate-300">Drag putar &bull; Klik pin negara</span>
-      </div>
+      {/* HUD BAWAH: 2A Unified Instrument Dock di Kiri-Bawah (portal ke document.body agar bebas jebakan stacking-context sticky di Mobile & Desktop!) */}
+      {seamless ? (
+        isClient
+          ? createPortal(
+              <div
+                aria-label="Panel Kontrol 3D Globe"
+                className={`fixed bottom-3.5 left-3 sm:left-5 z-30 max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-1 px-2 py-1.5 text-[10.5px] font-sans transition-all duration-200 ${hudSurfaceClass} ${
+                  showFixedDock
+                    ? "opacity-100 translate-y-0 pointer-events-auto"
+                    : "opacity-0 translate-y-4 pointer-events-none"
+                }`}
+              >
+          {/* Segmen 1: Telemetri Aktif */}
+          {selectedMarker && (
+            <div className="hidden sm:flex items-center gap-1.5 pr-2 mr-0.5 border-r border-[#DCD7CC] font-mono text-[10px]">
+              <span className="font-bold text-[#0D7680]">
+                {selectedNewsPin ? `${selectedNewsPin.id} · ${selectedNewsPin.city}` : selectedMarker.label}
+              </span>
+              <span className="hidden xl:inline text-[#676E7E]">
+                {formatGeoCoordinates(selectedMarker.lat, selectedMarker.lon)}
+              </span>
+            </div>
+          )}
 
-      {/* HUD Kanan Bawah: Kontrol Zoom (+ / - / Reset) */}
-      <div className="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 bg-[#0B0E15]/85 backdrop-blur-md border border-white/[0.08] p-1 rounded-md">
-        <button
-          type="button"
-          onClick={handleZoomIn}
-          aria-label="Perbesar globe"
-          title="Perbesar globe"
-          className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/[0.08] transition"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={handleZoomOut}
-          aria-label="Perkecil globe"
-          title="Perkecil globe"
-          className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/[0.08] transition"
-        >
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={handleResetView}
-          aria-label="Reset sudut pandang globe"
-          title="Reset sudut pandang"
-          className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-[#2DD4BF] hover:bg-white/[0.08] transition"
-        >
-          <RotateCcw className="w-3 h-3" />
-        </button>
-      </div>
+          {/* Segmen 2: Toggle Gaya Globe (Satelit Atlas ↔ Kartografi FT) & Layer */}
+          {isEditorialLight && onToggleEditorialStyle && (
+            <button
+              type="button"
+              onClick={onToggleEditorialStyle}
+              aria-pressed={isCartography}
+              data-cursor-hint="Ganti Gaya"
+              title="Ganti gaya Globe 3D: Satelit Atlas ↔ Kartografi FT"
+              className={`inline-flex items-center gap-1 px-2 py-1 transition font-semibold ${
+                isCartography
+                  ? "bg-[#990F3D]/12 text-[#990F3D] border border-[#990F3D]/35"
+                  : "bg-[#0D7680]/14 text-[#0D7680] border border-[#0D7680]/35"
+              }`}
+            >
+              <Layers className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>{isCartography ? "Kartografi FT" : "Satelit Atlas"}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setSolarMode((v) => !v)}
+            aria-pressed={solarMode}
+            data-cursor-hint="Siang/Malam"
+            title="Toggle pencahayaan Siang/Malam UTC real-time"
+            className={`inline-flex items-center gap-1 px-1.5 py-1 transition ${
+              solarMode ? hudActiveBtnClass : hudIdleBtnClass
+            }`}
+          >
+            <SunMoon className="w-3 h-3 shrink-0" aria-hidden="true" />
+            <span className="hidden md:inline">Siang/Malam</span>
+          </button>
+
+          {!isCartography && (
+            <button
+              type="button"
+              onClick={() => setShowClouds((v) => !v)}
+              aria-pressed={showClouds}
+              data-cursor-hint="Lapisan Awan"
+              title="Tampilkan / sembunyikan lapisan awan"
+              className={`inline-flex items-center gap-1 px-1.5 py-1 transition ${
+                showClouds ? hudActiveBtnClass : hudIdleBtnClass
+              }`}
+            >
+              <Cloud className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span className="hidden xl:inline">Awan</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowDots((v) => !v)}
+            aria-pressed={showDots}
+            data-cursor-hint="Dot Matrix"
+            title="Tampilkan / sembunyikan dot-matrix benua"
+            className={`inline-flex items-center gap-1 px-1.5 py-1 transition ${
+              showDots ? hudActiveBtnClass : hudIdleBtnClass
+            }`}
+          >
+            <Grid3X3 className="w-3 h-3 shrink-0" aria-hidden="true" />
+            <span className="hidden xl:inline">Titik</span>
+          </button>
+
+          {/* Segmen 3: Kontrol Zoom (+ / - / Reset) */}
+          <div className="flex items-center gap-0.5 pl-1.5 ml-0.5 border-l border-[#DCD7CC]">
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              aria-label="Perbesar globe"
+              title="Perbesar globe"
+              className="w-6 h-6 flex items-center justify-center text-[#4E5563] hover:text-[#1D1F23] hover:bg-black/[0.06] transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              aria-label="Perkecil globe"
+              title="Perkecil globe"
+              className="w-6 h-6 flex items-center justify-center text-[#4E5563] hover:text-[#1D1F23] hover:bg-black/[0.06] transition"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleResetView}
+              aria-label="Reset sudut pandang globe"
+              title="Reset sudut pandang"
+              className="w-6 h-6 flex items-center justify-center text-[#4E5563] hover:text-[#0D7680] hover:bg-black/[0.06] transition"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
+          </div>
+
+          {/* Segmen 4: Explore Mode Toggle (H) */}
+          {onToggleExploreMode && (
+            <div className="pl-1.5 ml-0.5 border-l border-[#DCD7CC]">
+              <button
+                type="button"
+                onClick={onToggleExploreMode}
+                aria-pressed={isExploreMode}
+                data-cursor-hint={isExploreMode ? "Tampilkan Berita" : "Explore Bebas"}
+                title="Sembunyikan / tampilkan kartu berita untuk jelajah Bumi bebas (shortcut H)"
+                className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition ${
+                  isExploreMode
+                    ? "bg-[#1D1F23] text-[#FBFBFA] border border-[#1D1F23]"
+                    : "text-[#4E5563] hover:text-[#1D1F23] hover:bg-black/[0.05] border border-transparent"
+                }`}
+              >
+                {isExploreMode ? (
+                  <>
+                    <Eye className="w-3 h-3 text-[#5EEAD4]" aria-hidden="true" />
+                    <span>Berita (H)</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3 h-3" aria-hidden="true" />
+                    <span className="hidden sm:inline">Explore (H)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>,
+              document.body
+            )
+          : null
+      ) : (
+        <>
+          {/* HUD Kiri Bawah (Mode Terminal) */}
+          <div
+            className={`pointer-events-none absolute bottom-2.5 left-2.5 z-20 flex items-center gap-2 px-2.5 py-1 rounded-md text-[10px] font-sans ${hudSurfaceClass}`}
+          >
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
+              <span>Buka</span>
+            </span>
+            <span className="text-slate-600">&bull;</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              <span>Tutup</span>
+            </span>
+            <span className="hidden sm:inline text-slate-600">&bull;</span>
+            <span className="hidden sm:inline text-slate-300">
+              Drag putar &bull; Klik pin negara
+            </span>
+          </div>
+
+          {/* HUD Kanan Bawah (Mode Terminal) */}
+          <div
+            className={`absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 p-1 rounded-md ${hudSurfaceClass}`}
+          >
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              aria-label="Perbesar globe"
+              title="Perbesar globe"
+              className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/[0.08] transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              aria-label="Perkecil globe"
+              title="Perkecil globe"
+              className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/[0.08] transition"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={handleResetView}
+              aria-label="Reset sudut pandang globe"
+              title="Reset sudut pandang"
+              className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-[#2DD4BF] hover:bg-white/[0.08] transition"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 };

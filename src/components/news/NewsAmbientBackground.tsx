@@ -24,7 +24,13 @@ const PAPER_GRAIN_SVG =
  * Seluruh animasi otomatis nonaktif pada perangkat touch atau prefers-reduced-motion,
  * serta di-pause otomatis saat tab disembunyikan.
  */
-export const NewsAmbientBackground: React.FC = () => {
+interface NewsAmbientBackgroundProps {
+  contained?: boolean;
+}
+
+export const NewsAmbientBackground: React.FC<NewsAmbientBackgroundProps> = ({
+  contained = false,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const shouldReduceMotion = useReducedMotion();
 
@@ -236,7 +242,9 @@ export const NewsAmbientBackground: React.FC = () => {
     <div
       aria-hidden="true"
       data-testid="news-ambient-background"
-      className="fixed inset-0 z-0 pointer-events-none overflow-hidden select-none"
+      className={`${
+        contained ? "absolute" : "fixed"
+      } inset-0 z-0 pointer-events-none overflow-hidden select-none`}
     >
       {/* 1. Ambient Constellation Canvas */}
       {!shouldReduceMotion && (

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
@@ -62,6 +63,8 @@ function getSentimentVisual(sentiment: LiveMarketNewsItem["sentiment"]) {
   };
 }
 
+const emptySubscribe = () => () => {};
+
 export const NewsReaderDrawer: React.FC<NewsReaderDrawerProps> = ({
   story,
   storyIndex,
@@ -75,6 +78,11 @@ export const NewsReaderDrawer: React.FC<NewsReaderDrawerProps> = ({
   isBookmarked = false,
   onToggleBookmark,
 }) => {
+  const isClient = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
   const shouldReduceMotion = useReducedMotion();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -138,11 +146,11 @@ export const NewsReaderDrawer: React.FC<NewsReaderDrawerProps> = ({
   const hasNext = storyIndex >= 0 && storyIndex < totalStories - 1;
   const canShowImage = Boolean(story?.imageUrl && failedImageUrl !== story.imageUrl);
 
-  return (
+  const drawerContent = (
     <AnimatePresence>
       {story && sentimentVisual && (
         <div
-          className="fixed inset-0 z-50 flex justify-end"
+          className="fixed inset-0 z-[70] flex justify-end"
           role="dialog"
           aria-modal="true"
           aria-labelledby="news-reader-drawer-title"
@@ -458,4 +466,7 @@ export const NewsReaderDrawer: React.FC<NewsReaderDrawerProps> = ({
       )}
     </AnimatePresence>
   );
+
+  if (!isClient) return null;
+  return createPortal(drawerContent, document.body);
 };
