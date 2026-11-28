@@ -71,7 +71,7 @@ export const NewsFloatingDock: React.FC<NewsFloatingDockProps> = ({
               aria-pressed={isTodayActive}
               onClick={onToggleToday}
               title="Saring berita hari ini (WIB)"
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-medium transition ${
+              className={`whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-medium transition ${
                 isTodayActive
                   ? "bg-[#1E7B85] text-white font-semibold"
                   : "hover:bg-white/10 text-white/85 hover:text-white"

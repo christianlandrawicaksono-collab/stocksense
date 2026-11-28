@@ -384,7 +384,8 @@ export async function getStockProfile(ticker: string): Promise<StockProfileData 
  */
 export async function getLiveMarketNews(
   ticker?: string,
-  watchlistTickers?: string[]
+  watchlistTickers?: string[],
+  signal?: AbortSignal
 ): Promise<{
   provider: MarketProvider;
   items: LiveMarketNewsItem[];
@@ -403,6 +404,7 @@ export async function getLiveMarketNews(
     const res = await fetch(url, {
       method: "GET",
       cache: "no-store",
+      signal,
     });
     if (!res.ok) {
       throw new Error(`HTTP error ${res.status}`);

@@ -28,10 +28,17 @@ import {
 } from "@/components/terminal/terminalMotion";
 import type { MarketHistoryPoint } from "@/lib/market-data";
 import { NewsView } from "@/components/news/NewsView";
+import { EditorialCursorField } from "@/components/news/EditorialCursorField";
+import {
+  EditorialPaperCurtain,
+  NewsWorldScrollytelling,
+  type NewsChapterJumpRequest,
+} from "@/components/news/NewsWorldScrollytelling";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 import { ArrowUp, Search } from "lucide-react";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useGlobalMarkets } from "@/hooks/useGlobalMarkets";
+import { useGlobalNews } from "@/hooks/useGlobalNews";
 import { useLiveNews } from "@/hooks/useLiveNews";
 import { useAiChat } from "@/hooks/useAiChat";
 import {
@@ -39,6 +46,11 @@ import {
   formatGlobalCurrency,
   formatGlobalIndexValue,
 } from "@/lib/global-markets";
+import {
+  mapMacroSymbolToNewsChapter,
+  type GlobalNewsChapterData,
+  type GlobalNewsItem,
+} from "@/lib/global-news";
 import { formatPersen, formatRupiah } from "@/lib/format";
 import { STOCKS_DATA } from "@/data/stocksData";
 import {
@@ -100,6 +112,7 @@ function HomeContent() {
   const [isWatchlistCollapsed, setIsWatchlistCollapsed] = useState<boolean>(false);
   const [isQuickRailOpen, setIsQuickRailOpen] = useState<boolean>(true);
   const [isCommandSearchOpen, setIsCommandSearchOpen] = useState<boolean>(false);
+  const [newsChapterJump, setNewsChapterJump] = useState<NewsChapterJumpRequest | null>(null);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
   const [allocationAiSummary, setAllocationAiSummary] = useState<string | null>(null);
   const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
@@ -160,6 +173,8 @@ function HomeContent() {
     provider,
     currentMode === "terminal" && isGlobalDeckOpen
   );
+
+  const globalNews = useGlobalNews(provider, currentMode === "berita");
 
   const liveNews = useLiveNews(provider, customWatchlist, isHydrated);
 
@@ -426,6 +441,53 @@ function HomeContent() {
     runAiAnalysis(prompt);
   };
 
+  const handleAskAiGlobalNews = (item: GlobalNewsItem, chapter: GlobalNewsChapterData) => {
+    setActiveLiveNewsForAi(null);
+    setAllocationAiSummary(null);
+    const tickersText = chapter.sensitiveBeiTickers.join(", ");
+    const overrideArticle: AiArticleContext = {
+      title: item.title,
+      category: `GLOBAL_${chapter.id}`,
+      catalyst: `Radar Global 3D — Bab ${chapter.numberLabel} ${chapter.title} (${item.publisher}, ${item.publishedWib})`,
+      summary: item.summary || chapter.transmissionNote,
+      overallImpact: `Jalur transmisi: ${chapter.transmissionNote} Emiten sensitif BEI: ${tickersText}`,
+      isLive: !item.isFallback,
+      publisher: item.publisher,
+      publishedWib: item.publishedWib,
+      link: item.link,
+      tickers: item.impactTickers.length > 0 ? item.impactTickers : chapter.sensitiveBeiTickers,
+    };
+    const prompt =
+      item.language === "EN"
+        ? `Terjemahkan inti berita global kawasan ${chapter.title} ini ke Bahasa Indonesia secara ringkas, lalu bedah dampak transmisinya ke IHSG, Rupiah, dan emiten BEI sensitif (${tickersText}): "${item.title}"`
+        : `Bedah dampak berita kawasan ${chapter.title} ini terhadap IHSG dan emiten BEI terkait (${tickersText}): "${item.title}"`;
+    runAiAnalysis(prompt, overrideArticle);
+  };
+
+  const handleSelectTickerSymbol = useCallback(
+    (symbol: string) => {
+      if (currentMode === "berita") {
+        const chapterId = mapMacroSymbolToNewsChapter(symbol);
+        setNewsChapterJump({ chapterId, nonce: Date.now() });
+      } else {
+        scrollToGlobalDeck();
+      }
+    },
+    [currentMode, scrollToGlobalDeck]
+  );
+
+  const scrollToEditorialPaper = useCallback(() => {
+    document
+      .getElementById("editorial-paper-section")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const scrollToNewsWorldHero = useCallback(() => {
+    document
+      .getElementById("news-world-hero")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   // Navigate from News ticker link to Terminal without altering custom watchlist unexpectedly
   const handleSelectStockFromNews = (
     ticker: string,
@@ -595,19 +657,23 @@ function HomeContent() {
           : "bg-[#080A0F] text-slate-100"
       } ${isAiModalOpen ? "xl:pr-[440px]" : ""}`}
     >
-      {/* 1. Satu strip tipis disclaimer di bagian paling atas */}
+      {/* 1. Strip status data tipis (FT Warm Ivory di Berita, Dark Obsidian di Terminal) */}
       <div
-        className={`relative z-10 px-4 py-1 text-center text-xs font-sans border-b select-none ${
+        className={`relative z-10 px-4 py-1 text-center text-xs font-sans border-b select-none transition-colors ${
           isLight
-            ? "bg-[#F3F3ED] border-[#E5E5DC] text-[#6A7078]"
-            : "bg-[#080A0F] border-white/[0.06] text-slate-400"
+            ? "bg-[#F4F2EC] border-[#E3DFD5] text-[#5A6068]"
+            : "bg-[#070A12] border-white/[0.06] text-slate-400"
         }`}
       >
         {provider === "yahoo" ? (
           <div className="flex items-center justify-center space-x-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] shrink-0"></span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                isLight ? "bg-[#0D6343]" : "bg-[#22C55E]"
+              }`}
+            ></span>
             <span className="truncate">
-              Data Live Yahoo Finance &bull; Riset Pasar Modal BEI
+              Live Yahoo Finance &bull; Market Research BEI &amp; 3D Global Pulse
             </span>
           </div>
         ) : (
@@ -615,17 +681,17 @@ function HomeContent() {
         )}
       </div>
 
-      {/* 2. Ticker bar: HANYA TAMPIL DI TERMINAL (tidak di mode Berita) */}
-      {currentMode === "terminal" && (
-        <div className="relative z-10">
-          <MarketTicker
-            provider={provider}
-            tickers={macroTickers}
-            isMacroFallback={isMacroFallback}
-            isLoading={isLoading}
-          />
-        </div>
-      )}
+      {/* 2. Orbital Velocity Telemetry Ribbon (Light FT di Berita, Dark Obsidian di Terminal) */}
+      <div className="relative z-10">
+        <MarketTicker
+          provider={provider}
+          tickers={macroTickers}
+          isMacroFallback={isMacroFallback}
+          isLoading={isLoading}
+          theme={isLight ? "light" : "dark"}
+          onSelectSymbol={handleSelectTickerSymbol}
+        />
+      </div>
 
       {/* 3. Header navigasi permanen dengan toggle Berita/Terminal */}
       <Navbar
@@ -634,6 +700,7 @@ function HomeContent() {
         onOpenAiModal={() => setIsAiModalOpen((prev) => !prev)}
         watchlistBuySummary={watchlistBuySummary}
         onSelectBuySignalTicker={handleSelectTicker}
+        surfaceTheme={isLight ? "light" : "dark"}
       />
 
       {/* 4. Area Konten Utama */}
@@ -641,7 +708,7 @@ function HomeContent() {
         className={`flex-1 w-full mx-auto ${
           currentMode === "terminal"
             ? "max-w-[1520px] px-2.5 sm:px-4 py-2.5"
-            : "max-w-7xl px-4 sm:px-6 lg:px-8 py-4"
+            : "w-full"
         }`}
       >
         {currentMode === "terminal" ? (
@@ -922,36 +989,55 @@ function HomeContent() {
             />
           </MotionConfig>
         ) : (
-          /* TAMPILAN BERITA TERANG PENUH */
-          <div className="w-full">
-            <NewsView
-              provider={provider}
-              macroTickers={macroTickers}
-              isMacroFallback={isMacroFallback}
-              isMacroLoading={isLoading}
-              liveNewsItems={liveNews.items}
-              isLiveNewsLoading={liveNews.isLoading}
-              liveNewsUpdatedAtWib={liveNews.updatedAtWib}
-              onRefreshLiveNews={liveNews.refresh}
-              watchlistTickers={customWatchlist}
-              onOpenTerminalWatchlist={() => handleModeChange("terminal")}
-              aiMarketBrief={liveNews.aiBrief}
-              aiBriefNotice={liveNews.aiBriefNotice}
-              isAiBriefLoading={liveNews.isAiBriefLoading}
-              onRequestAiBrief={(items, tickers) => {
-                void liveNews.requestAiBrief(items, tickers, aiCustomApiKey);
-              }}
-              onSelectStockFromNews={handleSelectStockFromNews}
-              onAskAiLiveNews={(item) => {
-                setAllocationAiSummary(null);
-                setActiveLiveNewsForAi(item);
-                runAiAnalysis(
-                  `Bedah dampak pasar & saham terkait dari berita: "${item.title}"`,
-                  buildLiveNewsArticleContext(item)
-                );
-              }}
-            />
-          </div>
+          /* TAMPILAN BERITA: FULL-BLEED FT EDITORIAL 3D GLOBE + INTERACTIVE INK TRAIL CURSOR */
+          <MotionConfig reducedMotion="user">
+            <EditorialCursorField />
+            <div className="w-full">
+              <NewsWorldScrollytelling
+                globalItems={globalNews.items}
+                domesticItems={liveNews.items}
+                isLoading={globalNews.isLoading}
+                isFallback={globalNews.isFallback}
+                updatedAtWib={globalNews.updatedAtWib || liveNews.updatedAtWib}
+                onRefresh={globalNews.refresh}
+                onSelectBeiStock={handleSelectTicker}
+                onAskAiGlobalNews={handleAskAiGlobalNews}
+                onJumpToEditorial={scrollToEditorialPaper}
+                jumpRequest={newsChapterJump}
+              />
+
+              <EditorialPaperCurtain onBackToGlobe={scrollToNewsWorldHero}>
+                <NewsView
+                  provider={provider}
+                  macroTickers={macroTickers}
+                  isMacroFallback={isMacroFallback}
+                  isMacroLoading={isLoading}
+                  liveNewsItems={liveNews.items}
+                  isLiveNewsLoading={liveNews.isLoading}
+                  liveNewsUpdatedAtWib={liveNews.updatedAtWib}
+                  onRefreshLiveNews={liveNews.refresh}
+                  watchlistTickers={customWatchlist}
+                  onOpenTerminalWatchlist={() => handleModeChange("terminal")}
+                  aiMarketBrief={liveNews.aiBrief}
+                  aiBriefNotice={liveNews.aiBriefNotice}
+                  isAiBriefLoading={liveNews.isAiBriefLoading}
+                  onRequestAiBrief={(items, tickers) => {
+                    void liveNews.requestAiBrief(items, tickers, aiCustomApiKey);
+                  }}
+                  onSelectStockFromNews={handleSelectStockFromNews}
+                  onAskAiLiveNews={(item) => {
+                    setAllocationAiSummary(null);
+                    setActiveLiveNewsForAi(item);
+                    runAiAnalysis(
+                      `Bedah dampak pasar & saham terkait dari berita: "${item.title}"`,
+                      buildLiveNewsArticleContext(item)
+                    );
+                  }}
+                  hideEmbeddedTicker
+                />
+              </EditorialPaperCurtain>
+            </div>
+          </MotionConfig>
         )}
       </main>
 

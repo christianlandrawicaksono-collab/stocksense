@@ -13,6 +13,7 @@ interface NavbarProps {
   onOpenAiModal?: () => void;
   watchlistBuySummary?: WatchlistTargetSummary;
   onSelectBuySignalTicker?: (ticker: string) => void;
+  surfaceTheme?: "dark" | "light";
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -21,8 +22,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAiModal,
   watchlistBuySummary,
   onSelectBuySignalTicker,
+  surfaceTheme,
 }) => {
-  const isLight = currentMode === "berita";
+  const isLight = surfaceTheme ? surfaceTheme === "light" : currentMode === "berita";
   const [isBuyMenuOpen, setIsBuyMenuOpen] = useState(false);
   const buyMenuRef = useRef<HTMLDivElement>(null);
 

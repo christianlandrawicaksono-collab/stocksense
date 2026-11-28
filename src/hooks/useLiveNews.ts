@@ -57,7 +57,10 @@ export function useLiveNews(
     }
 
     let cancelled = false;
-    getLiveMarketNews(undefined, enrichedWatchlist)
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 12_000);
+
+    getLiveMarketNews(undefined, enrichedWatchlist, controller.signal)
       .then((res) => {
         if (!cancelled) {
           lastFetchedAtRef.current = Date.now();
@@ -77,10 +80,15 @@ export function useLiveNews(
             updatedAtWib: prev.updatedAtWib,
           }));
         }
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
       });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [provider, isWatchlistReady, requestKey, newsState.fetchedKey, enrichedWatchlist]);
 
