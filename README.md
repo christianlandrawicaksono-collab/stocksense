@@ -1,5 +1,7 @@
 # 📈 StocksSense — Indonesian Stock & Global Macro Intelligence Terminal
 
+> 🌐 **English** | [Bahasa Indonesia](README.id.md)
+
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-blue?style=for-the-badge&logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
@@ -8,134 +10,134 @@
 [![Vitest](https://img.shields.io/badge/Vitest-84_Tests-6E9F18?style=for-the-badge&logo=vitest)](https://vitest.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-**StocksSense** adalah platform riset saham Indonesia (BEI/IHSG) dan intelijen makro global berbasis web yang memadukan **warta pasar modal real-time**, **peta bola dunia 3D interaktif**, **analitik teknikal-fundamental berdensitas tinggi**, serta **asisten riset Gemini AI** dalam satu aplikasi **Dual-Mode** yang terisolasi bersih:
+**StocksSense** is an Indonesian stock market (IDX / IHSG) and global macro intelligence web platform that combines **real-time capital market news**, an **interactive 3D global markets globe**, **high-density technical & fundamental analytics**, and a **contextual Gemini AI analyst** inside a cleanly isolated **Dual-Mode** architecture:
 
-1. **Mode Berita (Editorial Broadsheet — Light Theme `#FBFBFA`):** Pengalaman membaca berita pasar modal bergaya koran finansial modern dengan agregasi RSS multi-sumber 3 hari, ringkasan **AI Market Brief**, pratinjau cepat, bookmark tersimpan, dan tautan ticker langsung ke Terminal.
-2. **Mode Terminal (Unified Obsidian Workstation — Dark Theme `#080A0F`):** Satu ruang kerja top-down terpadu bergaya Matte Obsidian + StocksSense Teal yang menyatukan **3D Interactive World Globe (Three.js)**, **Ikhtisar Pasar BEI**, dan **Workstation Riset Saham BEI** dengan **Dual Parallax Mapping**.
+1. **News Mode (Editorial Broadsheet — Light Theme `#FBFBFA`):** A financial-broadsheet reading experience powered by 3-day multi-source RSS aggregation, **AI Market Brief** summaries, quick wire hover previews, persistent bookmarks, and direct ticker navigation into the Terminal.
+2. **Terminal Mode (Unified Obsidian Workstation — Dark Theme `#080A0F`):** A single top-down Matte Obsidian + StocksSense Teal command center unifying a **3D Interactive World Globe (Three.js)**, **IDX Market Overview**, and **IDX Stock Research Workstation** with **Dual Parallax Mapping**.
 
 ---
 
-## 🌟 Fitur Utama
+## 🌟 Key Features
 
-### 1. 🌍 Unified Terminal: 3D World Globe + Ikhtisar BEI + Riset Saham
+### 1. 🌍 Unified Terminal: 3D World Globe + IDX Overview + Stock Research
 * **3D Interactive World Globe (Three.js + PBR Relief):**
-  * Memantau **10 pusat pasar global** (`ID`, `US`, `JP`, `HK`, `SG`, `KR`, `CN`, `UK`, `DE`, `AU`) beserta indeks utama dan **40 saham blue-chip live** (`NVDA`, `AAPL`, `Toyota`, `Tencent`, `DBS`, `Samsung`, `AstraZeneca`, `SAP`, `BHP`, `BBCA`, `BMRI`, dll.) dengan normalisasi mata uang lokal (`IDR`, `USD`, `JPY`, `HKD`, `SGD`, `KRW`, `CNY`, `GBP`, `EUR`, `AUD`).
-  * Tekstur bumi prosedural lokal dari poligon geografis asli `world-atlas` (*albedo + night-lights*, *topography bump-relief*, *ocean roughness*), atmosfer Fresnel teal, highlight poligon negara aktif, *animated 3D capital-flow arcs* ke Jakarta (`IDX`), status jam bursa real-time lintas timezone, *smooth fly-to*, anti-overlap pin labels, dan auto-pause GPU (`IntersectionObserver`).
+  * Tracks **10 major global financial hubs** (`ID`, `US`, `JP`, `HK`, `SG`, `KR`, `CN`, `UK`, `DE`, `AU`) with benchmark indices and **40 live blue-chip equities** (`NVDA`, `AAPL`, `Toyota`, `Tencent`, `DBS`, `Samsung`, `AstraZeneca`, `SAP`, `BHP`, `BBCA`, `BMRI`, etc.) with automatic local-currency formatting (`IDR`, `USD`, `JPY`, `HKD`, `SGD`, `KRW`, `CNY`, `GBP`, `EUR`, `AUD` — including `GBp → GBP` normalization for LSE equities).
+  * Procedurally synthesizes local PBR textures directly from real `world-atlas` geographic polygons (*obsidian albedo + night-lights*, *topographic bump-relief*, and *ocean roughness*), paired with a custom GLSL teal Fresnel atmosphere halo, glowing active-country borders, animated 3D great-circle capital-flow arcs into Jakarta (`IDX`), timezone-aware open/closed exchange pulses, smooth spherical fly-to rotation, screen-space anti-overlap badge repulsion, and automatic GPU pause (`IntersectionObserver`).
 * **Dual Parallax Mapping:**
-  * **Scroll-Linked Parallax Curtain (`framer-motion` `useScroll` + `useTransform`):** Saat menggulir dari Radar Global 3D ke Workstation Riset BEI, globe mundur halus disertai *scroll-coupled camera pitch* sementara lembar riset BEI naik dan terkunci stabil untuk analisis angka.
-  * **3D Surface Relief & Pointer Parallax:** Efek relief permukaan kontinen dan pergeseran kedalaman kamera/starfield mengikuti kursor.
-* **Ikhtisar Pasar BEI Terpadu:**
-  * Panel ringkasan denyut BEI (`Naik/Turun`, `Sektor Kuat`, `Sinyal Area Beli`), **Sector Heatmap BEI** 1-klik, **Top Movers** (`Naik` / `Turun` / `Area Beli`), dan **Kurva Performa Relatif** (`IHSG` vs `S&P 500`, `Gold`, `Brent`).
-* **Workstation Riset Saham BEI:**
-  * **5-Pillar Stock Health Ribbon:** 5 kartu kesehatan interaktif (**Valuasi P/E**, **Profitabilitas ROE**, **Struktur DER** sadar sektor perbankan, **Dividen Yield**, dan **Target Beli**) yang terhubung langsung ke tab analisis/editor target.
-  * **Grafik Interaktif (`lightweight-charts` v5):** Mode `Lilin` (*candlestick*) & `Garis`, rentang `1Bl`–`Semua`, overlay `MA20`, `MA50`, `RSI`, `Volume`, penanda dividen, serta garis **Harga Wajar** & **Target Beli**.
-  * **Valuasi P/E & Interactive Valuation Gauge Arc:** Meteran deviasi P/E interaktif (`-2 SD` s.d. `+2 SD`) dengan simulasi *implied price* & upside/downside, tabel pita deviasi (kurasi maupun estimasi dinamis 5 tahun untuk emiten kustom BEI), dan Nilai Intrinsik **Benjamin Graham**.
-  * **Simulasi Strategi DCA & Lump-Sum:** Backtest kuartalan berbasis riwayat Yahoo Finance nyata (penyesuaian *stock split* + opsi **DRIP**) dibandingkan IHSG.
-  * **Multi-Saham Compare & Alokasi Modal Watchlist:** Perbandingan head-to-head kurva relatif & rasio fundamental, serta kalkulator alokasi lot BEI, proyeksi dividen, dan keseimbangan sektor.
-  * **Quick Research Rail & Watchlist Screener:** Slider anggaran interaktif (`Rp 1 Jt – 100 Jt`) dengan proyeksi nilai terhadap Harga Wajar/Target Beli, Watchlist kustom hingga 15 saham BEI (tersimpan di `localStorage` dengan target beli, catatan pribadi, serta ekspor/impor backup JSON).
+  * **Scroll-Linked Parallax Curtain (`framer-motion` `useScroll` + `useTransform`):** Scrolling from the 3D Global Command Deck down to the IDX Research Workstation smoothly recedes the globe with scroll-coupled camera pitch while the research workstation glides up and locks rock-solid for numerical analysis.
+  * **3D Surface Relief & Pointer Parallax:** Subtle continental bump relief and pointer-driven 3D camera/starfield depth motion.
+* **Integrated IDX Market Overview:**
+  * Compact breadth summary (`Advancers/Decliners`, `Strongest Sector`, `Buy-Zone Signals`), 1-click **IDX Sector Heatmap**, **Top Movers** (`Gainers` / `Losers` / `Buy Zone`), and a multi-series **Relative Performance Chart** (`IHSG` vs `S&P 500`, `Gold`, `Brent`).
+* **IDX Stock Research Workstation:**
+  * **5-Pillar Stock Health Ribbon:** Interactive health pods (**P/E Valuation**, **ROE Profitability**, **Banking-Aware DER**, **Dividend Yield**, and **Target Buy Price**) linking directly to their analysis tabs or inline target editor.
+  * **Interactive Charting (`lightweight-charts` v5):** `Candlestick` & `Line` modes, `1M`–`All` timeframes, `MA20`, `MA50`, `RSI`, `Volume`, dividend markers, plus **Fair Value** and **Target Buy** price lines.
+  * **P/E Valuation & Interactive Valuation Gauge Arc:** Semi-circular P/E deviation meter (`-2 SD` to `+2 SD`) with clickable/hoverable stops projecting implied price and upside/downside, curated & dynamic 5-year P/E bands (for custom IDX stocks), and **Benjamin Graham Intrinsic Value**.
+  * **DCA & Lump-Sum Backtest Simulator:** Quarterly accumulation simulation powered by real split-adjusted Yahoo Finance price & dividend history with optional **DRIP** reinvestment benchmarked against IHSG.
+  * **Multi-Stock Comparison & Watchlist Allocation:** Side-by-side relative return curves & fundamental metrics, plus IDX lot allocation, dividend projection, and sector concentration analysis.
+  * **Quick Research Rail & Watchlist Screener:** Interactive budget slider (`Rp 1M – 100M`) with real-time Fair Value / Target Buy upside simulation, persistent custom Watchlist (up to 15 IDX stocks with target prices, research notes, and JSON backup export/import).
 
-### 2. ⌨️ Navigasi & Pintasan Keyboard Terminal
-* **Top Sub-Bar & Persistent Bottom Utility Dock:** Toggle cepat panel, Workspace Presets (`Fokus` / `Standar` / `Penuh`), telemetri ticker aktif, dan auto-offset dock saat panel AI terbuka.
-* **Global Command Search (`S` atau `⌘K` / `Ctrl+K`):** Pencarian instan seluruh emiten BEI (termasuk live search Yahoo Finance) dengan filter `Semua` / `Watchlist` / `Kurasi`, mini sparkline SVG, P/E, dan navigasi keyboard (`↑`/`↓`/`Enter`/`Esc`).
-* **Pintasan Cepat:**
-  * `S` atau `⌘K` / `Ctrl+K` — Buka Command Search emiten
-  * `G` — Lipat / buka Radar Global 3D & Ikhtisar BEI
-  * `[` — Tampilkan / sembunyikan Watchlist
-  * `]` — Tampilkan / sembunyikan Panel Lot & Target (Quick Rail)
-  * `F` — Toggle mode Fokus Chart penuh
+### 2. ⌨️ Navigation & Terminal Keyboard Shortcuts
+* **Top Sub-Bar & Persistent Bottom Utility Dock:** Quick panel toggles, Workspace Layout Presets (`Focus` / `Standard` / `Full`), live active ticker telemetry, and automatic dock right-offset when the AI side drawer opens.
+* **Global Command Search (`S` or `⌘K` / `Ctrl+K`):** Instant search across all IDX stocks (including live Yahoo Finance lookup) with `All` / `Watchlist` / `Curated` tabs, inline SVG sparklines, P/E badges, and full keyboard navigation (`↑`/`↓`/`Enter`/`Esc`).
+* **Terminal Shortcuts:**
+  * `S` or `⌘K` / `Ctrl+K` — Open Stock Command Search
+  * `G` — Collapse / expand the 3D Global & Overview Command Deck
+  * `[` — Toggle Watchlist sidebar
+  * `]` — Toggle Right Quick Research Rail (Lot & Target)
+  * `F` — Toggle full-width Focus Chart preset
 
-### 3. 📰 Mode Berita (Editorial Broadsheet)
-* **Agregasi RSS Pasar Modal Multi-Sumber (3 Hari Terakhir):** Pengelompokan kategori, deteksi ticker BEI otomatis, filter Watchlist & kategori, bookmark artikel, reading progress, dan *hover preview*.
-* **AI Market Brief:** Ringkasan makro & implikasi sektoral harian yang dapat di-generate sesuai berita terbaru dan isi Watchlist pengguna.
-* **Isolasi Tema & Bundle:** Berjalan di tema kertas terang `#FBFBFA` tanpa memuat chunk Three.js maupun permintaan `/api/global-markets`.
+### 3. 📰 News Mode (Editorial Broadsheet)
+* **Multi-Source 3-Day Capital Market RSS Pipeline:** Automatic category classification, IDX ticker detection, Watchlist & category filters, article bookmarks, reading progress bar, and hover previews.
+* **AI Market Brief:** On-demand daily macro & sector synthesis tailored to the latest headlines and user Watchlist tickers.
+* **Strict Theme & Bundle Isolation:** Runs purely in `#FBFBFA` editorial paper styling without loading Three.js chunks or calling `/api/global-markets`.
 
-### 4. 🤖 Asisten Konsultasi Gemini AI
-* Side panel konsultasi kontekstual (`POST /api/ai/analyze`) yang otomatis membaca saham aktif, metrik valuasi, Watchlist, berita terkait, alokasi portofolio, hingga sentimen bursa negara dari 3D Globe (*"Bedah Dampak Pasar Negara ke IHSG"*).
-* Mendukung kunci API server (`GEMINI_API_KEY`) maupun kunci pribadi (BYOK) di browser.
+### 4. 🤖 Integrated Gemini AI Analyst
+* Contextual research side panel (`POST /api/ai/analyze`) automatically aware of the active stock, valuation metrics, Watchlist targets, related news, portfolio allocation, and global hub sentiment (*"Analyze Country Market Impact on IHSG"*).
+* Supports both server-configured keys (`GEMINI_API_KEY`) and client-side Bring-Your-Own-Key (BYOK).
 
 ---
 
-## 🛠️ Tech Stack & Arsitektur
+## 🛠️ Tech Stack & Architecture
 
-* **Framework:** [Next.js 16](https://nextjs.org/) (App Router, Cache Components `"use cache"`, Webpack production build)
+* **Framework:** [Next.js 16](https://nextjs.org/) (App Router, `"use cache"` Cache Components, Webpack production build)
 * **Runtime & Language:** [React 19](https://react.dev/), [TypeScript 5](https://www.typescriptlang.org/)
 * **Styling & Motion:** [Tailwind CSS v4](https://tailwindcss.com/), [Framer Motion](https://www.framer.com/motion/), [Lucide Icons](https://lucide.dev/)
-* **Visualisasi 3D & Grafik:** [Three.js](https://threejs.org/) (`world-atlas` + `topojson-client`), [TradingView Lightweight Charts v5](https://tradingview.github.io/lightweight-charts/)
-* **Data Pasar & Berita:** [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2) + Multi-source RSS server parser + Google Gemini API
-* **Pengujian:** [Vitest](https://vitest.dev/) (`84` unit tests pada `19` file uji)
-* **Tipografi & Lokalisasi:** *Literata*, *IBM Plex Sans*, *IBM Plex Mono* (`tabular-nums`), format angka standar Indonesia (`id-ID`) melalui [src/lib/format.ts](src/lib/format.ts).
+* **3D & Financial Charts:** [Three.js](https://threejs.org/) (`world-atlas` + `topojson-client`), [TradingView Lightweight Charts v5](https://tradingview.github.io/lightweight-charts/)
+* **Market Data & AI:** [yahoo-finance2](https://github.com/gadicc/node-yahoo-finance2), Multi-source RSS aggregator, Google Gemini API
+* **Testing:** [Vitest](https://vitest.dev/) (`84` unit tests across `19` test files)
+* **Typography & Localization:** *Literata*, *IBM Plex Sans*, *IBM Plex Mono* (`tabular-nums`), centralized Indonesian number formatting (`id-ID`) in [src/lib/format.ts](src/lib/format.ts).
 
 ```text
 stocksense/
 ├── src/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── ai/analyze/route.ts         # Konsultasi Gemini AI kontekstual
-│   │   │   ├── global-markets/route.ts     # Snapshot 10 bursa global + 40 blue chips
-│   │   │   ├── history/[ticker]/route.ts   # Riwayat OHLCV & dividen (Yahoo / ilustrasi)
-│   │   │   ├── macro/route.ts              # Indikator makro (IHSG, USD/IDR, S&P500, Gold, Brent)
-│   │   │   ├── news/route.ts               # Agregasi RSS pasar modal 3 hari
-│   │   │   ├── news/brief/route.ts         # Ringkasan AI Market Brief
-│   │   │   ├── quotes/route.ts             # Batch live quotes emiten BEI
-│   │   │   └── stocks/                     # Profil fundamental & pencarian emiten BEI
-│   │   ├── page.tsx                        # Orkestrator Dual-Mode (Unified Terminal & Berita)
-│   │   └── terminal/page.tsx               # Permalink redirect ke Mode Terminal
+│   │   │   ├── ai/analyze/route.ts         # Contextual Gemini AI analyst endpoint
+│   │   │   ├── global-markets/route.ts     # 10 global exchanges + 40 blue chips snapshot
+│   │   │   ├── history/[ticker]/route.ts   # OHLCV & dividend history (Yahoo / illustrative)
+│   │   │   ├── macro/route.ts              # Macro tickers (IHSG, USD/IDR, S&P500, Gold, Brent)
+│   │   │   ├── news/route.ts               # 3-day multi-source capital market RSS pipeline
+│   │   │   ├── news/brief/route.ts         # On-demand AI Market Brief generator
+│   │   │   ├── quotes/route.ts             # Batched live IDX equity quotes
+│   │   │   └── stocks/                     # IDX company fundamentals & live ticker search
+│   │   ├── page.tsx                        # Dual-Mode orchestrator (Unified Terminal & News)
+│   │   └── terminal/page.tsx               # Permalink redirect into Terminal Mode
 │   ├── components/
-│   │   ├── ai/GeminiAiModal.tsx            # Side panel asisten analisis Gemini AI
-│   │   ├── layout/                         # Navbar & MarketTicker makro
+│   │   ├── ai/GeminiAiModal.tsx            # Contextual Gemini AI side drawer
+│   │   ├── layout/                         # Navbar & macro MarketTicker bar
 │   │   ├── news/                           # Editorial Broadsheet, AI Brief, Reader Drawer, Dock
 │   │   └── terminal/
 │   │       ├── WorldGlobe3D.tsx            # 3D Interactive World Globe (Three.js + PBR)
-│   │       ├── UnifiedGlobalCommandDeck.tsx# Command Deck 3D + Ikhtisar BEI + Scroll Parallax
+│   │       ├── UnifiedGlobalCommandDeck.tsx# 3D Command Deck + IDX Overview + Scroll Parallax
 │   │       ├── TerminalTopBar.tsx          # Top Sub-Bar & Workspace Layout Presets
 │   │       ├── TerminalBottomDock.tsx      # Persistent Bottom Utility Dock
-│   │       ├── TerminalCommandSearch.tsx   # Modal Command Search (S / ⌘K)
-│   │       ├── TerminalMainPane.tsx        # Header harga, chart, tab Valuasi/DCA/Profil/Berita
-│   │       ├── StockHealthRibbon.tsx       # 5 pilar kesehatan saham interaktif
-│   │       ├── ValuationGaugeArc.tsx       # Busur deviasi P/E interaktif (-2 SD..+2 SD)
-│   │       ├── LightweightPriceChart.tsx   # Grafik Candlestick/Line + indikator teknikal
-│   │       ├── QuickResearchRail.tsx       # Slider anggaran lot BEI & proyeksi harga wajar
-│   │       ├── TerminalWatchlist.tsx       # Watchlist, screener, alert target & backup JSON
-│   │       ├── MarketOverviewPane.tsx      # Heatmap sektor BEI, Top Movers & Kurva Relatif
-│   │       ├── StockCompareTab.tsx         # Perbandingan multi-saham head-to-head
-│   │       └── StockAllocationTab.tsx      # Simulasi alokasi modal & lot Watchlist
+│   │       ├── TerminalCommandSearch.tsx   # Command-Palette Search modal (S / ⌘K)
+│   │       ├── TerminalMainPane.tsx        # Price header, chart, Valuation/DCA/Profile/News tabs
+│   │       ├── StockHealthRibbon.tsx       # 5 interactive stock health pods
+│   │       ├── ValuationGaugeArc.tsx       # Interactive P/E deviation arc (-2 SD..+2 SD)
+│   │       ├── LightweightPriceChart.tsx   # Candlestick/Line chart + technical overlays
+│   │       ├── QuickResearchRail.tsx       # Interactive lot budget slider & upside simulator
+│   │       ├── TerminalWatchlist.tsx       # Watchlist, screener, target alerts & JSON backup
+│   │       ├── MarketOverviewPane.tsx      # IDX sector heatmap, Top Movers & Relative Chart
+│   │       ├── StockCompareTab.tsx         # Head-to-head multi-stock comparison
+│   │       └── StockAllocationTab.tsx      # Watchlist capital & IDX lot allocation simulator
 │   ├── hooks/                              # useMarketData, useGlobalMarkets, useLiveNews, useAiChat
-│   ├── data/                               # Dataset kurasi BEI & makro fallback
-│   └── lib/                                # Cache Yahoo, market hours, valuasi, global markets & __tests__/
+│   ├── data/                               # Curated IDX reference & fallback macro datasets
+│   └── lib/                                # Yahoo cache, market hours, valuation, global markets & __tests__/
 └── package.json
 ```
 
 ---
 
-## 🚀 Cara Menjalankan Secara Lokal
+## 🚀 Getting Started Locally
 
-Pastikan Anda telah memasang [Node.js](https://nodejs.org/) **v22+** (atau v20+).
+Make sure you have [Node.js](https://nodejs.org/) **v22+** (or v20+) installed.
 
-1. **Clone repository & instal dependensi:**
+1. **Clone the repository and install dependencies:**
    ```bash
    git clone https://github.com/christianlandrawicaksono-collab/stocksense.git
    cd stocksense
    npm install
    ```
 
-2. **Konfigurasi Environment Variables (opsional, buat file `.env.local`):**
+2. **Configure Environment Variables (optional — create `.env.local`):**
    ```env
-   # Gunakan "yahoo" untuk data pasar live & RSS berita, atau "illustrative" untuk mode data ilustrasi lokal
+   # Use "yahoo" for live market quotes & RSS news, or "illustrative" for offline reference data
    MARKET_DATA_PROVIDER=yahoo
 
-   # Opsional: kunci Google Gemini API untuk fitur AI Analis & AI Market Brief
+   # Optional: Google Gemini API key for AI Analyst & AI Market Brief
    GEMINI_API_KEY=your_gemini_api_key_here
    GEMINI_MODEL=gemini-3-flash-preview
    ```
-   > Tanpa `.env.local`, aplikasi tetap berjalan mulus dalam mode `illustrative` menggunakan dataset acuan bawaan, dan pengguna tetap bisa memasukkan kunci Gemini pribadi langsung dari panel AI.
+   > Without `.env.local`, the app runs cleanly out of the box in `illustrative` mode using built-in reference datasets, and users can still supply a personal Gemini API key directly inside the AI side panel.
 
-3. **Jalankan development server:**
+3. **Start the development server:**
    ```bash
    npm run dev
    ```
-   Buka `http://localhost:3000` (Mode Berita) atau `http://localhost:3000/?mode=terminal` (Unified Terminal 3D).
+   Open `http://localhost:3000` (News Mode) or `http://localhost:3000/?mode=terminal` (Unified 3D Terminal).
 
-4. **Verifikasi Test, Lint, dan Production Build:**
+4. **Run Tests, Linting, and Production Build:**
    ```bash
    npm test
    npx eslint src
@@ -144,13 +146,13 @@ Pastikan Anda telah memasang [Node.js](https://nodejs.org/) **v22+** (atau v20+)
 
 ---
 
-## ⚖️ Integritas Data & Disclaimer
+## ⚖️ Data Integrity & Disclaimer
 
-1. **Sumber Data Transparan:** Saat `MARKET_DATA_PROVIDER=yahoo` aktif, harga saham BEI, indeks global, dan saham unggulan negara lain bersumber dari **Yahoo Finance** (~10–15 menit tertunda sesuai bursa) dengan cache server terkelola, serta berita dari umpan **RSS pasar modal**. Bila penyedia eksternal tidak tersedia atau mode `illustrative` dipakai, aplikasi secara eksplisit menampilkan label **Ilustrasi / Data Acuan**.
-2. **Bukan Rekomendasi Finansial:** Seluruh visualisasi, metrik valuasi, simulasi DCA/lot, serta analisis AI pada platform ini ditujukan untuk **riset dan edukasi pasar modal**, bukan anjuran transaksi beli/jual saham atau nasihat keuangan berlisensi.
+1. **Transparent Data Sourcing:** When `MARKET_DATA_PROVIDER=yahoo` is enabled, IDX equities, global benchmark indices, and international blue-chip quotes are fetched via **Yahoo Finance** (~10–15 minute delayed depending on exchange) with server-side caching, while market news is aggregated from public **capital-market RSS feeds**. Whenever an upstream source is unavailable or `illustrative` mode is active, the UI explicitly labels metrics as **Illustrative / Reference Data**.
+2. **Not Financial Advice:** All charts, valuation models, DCA/lot simulations, and AI-generated outputs are provided strictly for **research and educational purposes** and do not constitute licensed investment advice or buy/sell recommendations.
 
 ---
 
-## 📄 Lisensi
+## 📄 License
 
-Proyek ini dilisensikan di bawah [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
