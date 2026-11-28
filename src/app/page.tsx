@@ -1,27 +1,38 @@
 "use client";
 
-import React, { useState, useMemo, useSyncExternalStore, Suspense } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  Suspense,
+} from "react";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Navbar, AppMode } from "@/components/layout/Navbar";
 import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
 import { TerminalMainPane, type CustomStockAiMetrics } from "@/components/terminal/TerminalMainPane";
 import { QuickResearchRail } from "@/components/terminal/QuickResearchRail";
-import { MarketOverviewPane } from "@/components/terminal/MarketOverviewPane";
+import { UnifiedGlobalCommandDeck } from "@/components/terminal/UnifiedGlobalCommandDeck";
+import { TerminalTopBar, type TerminalWorkspacePreset } from "@/components/terminal/TerminalTopBar";
+import { TerminalBottomDock } from "@/components/terminal/TerminalBottomDock";
+import { TerminalCommandSearch } from "@/components/terminal/TerminalCommandSearch";
+import { EASE_TERMINAL, TerminalAmbientBackdrop } from "@/components/terminal/terminalMotion";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
-import {
-  CandlestickChart,
-  Globe,
-  ListFilter,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRight,
-  Sparkles,
-} from "lucide-react";
+import { ArrowUp, Search } from "lucide-react";
 import { useMarketData } from "@/hooks/useMarketData";
+import { useGlobalMarkets } from "@/hooks/useGlobalMarkets";
 import { useLiveNews } from "@/hooks/useLiveNews";
 import { useAiChat } from "@/hooks/useAiChat";
+import {
+  GlobalMarketHubSnapshot,
+  formatGlobalCurrency,
+  formatGlobalIndexValue,
+} from "@/lib/global-markets";
+import { formatPersen, formatRupiah } from "@/lib/format";
 import { STOCKS_DATA } from "@/data/stocksData";
 import {
   MAX_CUSTOM_WATCHLIST,
@@ -42,7 +53,6 @@ import {
 } from "@/lib/watchlist";
 import type { AiArticleContext, AiMarketContext } from "@/app/api/ai/analyze/route";
 import type { LiveMarketNewsItem } from "@/types/market";
-import { formatRupiah } from "@/lib/format";
 
 function buildLiveNewsArticleContext(item: LiveMarketNewsItem): AiArticleContext {
   return {
@@ -75,12 +85,14 @@ function HomeContent() {
   const rawView = searchParams.get("view");
   const currentMode: AppMode =
     rawMode === "terminal" || (!rawMode && !!rawSaham) ? "terminal" : "berita";
-  const terminalView: "riset" | "pasar" = rawView === "pasar" ? "pasar" : "riset";
+  const preferBeiOverviewTab = rawView === "pasar";
   const selectedTicker = rawSaham || "BBCA";
 
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [isGlobalDeckOpen, setIsGlobalDeckOpen] = useState<boolean>(true);
   const [isWatchlistCollapsed, setIsWatchlistCollapsed] = useState<boolean>(false);
   const [isQuickRailOpen, setIsQuickRailOpen] = useState<boolean>(true);
+  const [isCommandSearchOpen, setIsCommandSearchOpen] = useState<boolean>(false);
   const [activeLiveNewsForAi, setActiveLiveNewsForAi] = useState<LiveMarketNewsItem | null>(null);
   const [allocationAiSummary, setAllocationAiSummary] = useState<string | null>(null);
   const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
@@ -125,6 +137,11 @@ function HomeContent() {
 
   const { quotes, macroTickers, isMacroFallback, isLoading, provider, marketStatus } =
     useMarketData(trackedTickers);
+
+  const globalMarkets = useGlobalMarkets(
+    provider,
+    currentMode === "terminal" && isGlobalDeckOpen
+  );
 
   const liveNews = useLiveNews(provider, customWatchlist, isHydrated);
 
@@ -347,12 +364,48 @@ function HomeContent() {
     }
   };
 
-  const handleTerminalViewChange = (nextView: "riset" | "pasar") => {
-    updateUrlParams({
-      mode: "terminal",
-      saham: selectedTicker,
-      view: nextView,
-    });
+  const scrollToResearchWorkstation = useCallback(() => {
+    document
+      .getElementById("terminal-research-workstation")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const scrollToGlobalDeck = useCallback(() => {
+    if (!isGlobalDeckOpen) {
+      setIsGlobalDeckOpen(true);
+      setTimeout(() => {
+        document
+          .getElementById("terminal-global-deck")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 60);
+    } else {
+      document
+        .getElementById("terminal-global-deck")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [isGlobalDeckOpen]);
+
+  const handleAskAiGlobalHub = (hub: GlobalMarketHubSnapshot) => {
+    setActiveLiveNewsForAi(null);
+    setAllocationAiSummary(null);
+    const stockSummary = hub.stocks
+      .map(
+        (s) =>
+          `${s.displayTicker} (${s.name}) ${formatGlobalCurrency(s.price, s.currency)} (${formatPersen(
+            s.changePercent,
+            1,
+            true
+          )})`
+      )
+      .join(", ");
+    const idxText = `${hub.primaryIndex.name} di ${formatGlobalIndexValue(
+      hub.primaryIndex.value
+    )} (${formatPersen(hub.primaryIndex.changePercent, 2, true)})`;
+    const prompt =
+      hub.id === "ID"
+        ? `Analisis sentimen IHSG saat ini (${idxText}) dan saham penggerak utamanya (${stockSummary}). Apa strategi selektif yang masuk akal untuk investor BEI?`
+        : `Pasar ${hub.countryName} (${hub.exchange}, status ${hub.session.statusLabel}) mencatat ${idxText} dengan saham unggulan: ${stockSummary}. Bedah dampak sentimen dan aliran dana asing (foreign flow) dari pergerakan ini terhadap IHSG dan sektor-sektor utama di BEI.`;
+    runAiAnalysis(prompt);
   };
 
   // Navigate from News ticker link to Terminal without altering custom watchlist unexpectedly
@@ -366,11 +419,13 @@ function HomeContent() {
     updateUrlParams({
       mode: "terminal",
       saham: ticker,
-      view: "riset",
+      view: null,
     });
     setTimeout(() => {
-      document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 60);
+      document
+        .getElementById("terminal-research-workstation")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
   };
 
   // Select stock with auto-scroll to chart on mobile layout
@@ -378,10 +433,12 @@ function HomeContent() {
     updateUrlParams({
       mode: "terminal",
       saham: ticker,
-      view: "riset",
+      view: null,
     });
     setTimeout(() => {
-      document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (typeof window !== "undefined" && window.innerWidth < 1024) {
+        document.getElementById("terminal-chart-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }, 40);
   };
 
@@ -416,33 +473,121 @@ function HomeContent() {
     const q = quotes[selectedTicker];
     const isLive = Boolean(provider === "yahoo" && q && !q.isFallback);
     const price = q && q.price > 0 ? q.price : provider !== "yahoo" ? curated?.currentPrice ?? 0 : 0;
+    const changePercent = q?.changePercent ?? curated?.change1D ?? 0;
     const dividendYield =
       isLive && q?.dividendYield !== undefined && q.dividendYield >= 0
         ? q.dividendYield
         : curated?.dividendYield ?? 0;
     const companyName = q?.name || curated?.name || selectedTicker;
-    return { price, dividendYield, companyName };
-  }, [selectedTicker, quotes, provider]);
+    const activeEps =
+      isLive && q?.eps && q.eps > 0
+        ? q.eps
+        : curated
+        ? curated.currentPrice / curated.peRatio
+        : 0;
+    const targetMeanPrice =
+      curated && activeEps > 0
+        ? Math.round(activeEps * curated.historicalPeMean)
+        : customAiMetrics?.ticker === selectedTicker
+        ? customAiMetrics.targetMeanPrice
+        : undefined;
+    return { price, changePercent, dividendYield, companyName, targetMeanPrice };
+  }, [selectedTicker, quotes, provider, customAiMetrics]);
+
+  const workspacePreset: TerminalWorkspacePreset = useMemo(() => {
+    const isQuickVisible = isQuickRailOpen && !isAiModalOpen;
+    if (isWatchlistCollapsed && !isQuickVisible) return "focus";
+    if (!isWatchlistCollapsed && isQuickVisible) return "full";
+    return "standard";
+  }, [isWatchlistCollapsed, isQuickRailOpen, isAiModalOpen]);
+
+  const handleSelectWorkspacePreset = useCallback((preset: TerminalWorkspacePreset) => {
+    if (preset === "focus") {
+      setIsWatchlistCollapsed(true);
+      setIsQuickRailOpen(false);
+    } else if (preset === "standard") {
+      setIsWatchlistCollapsed(false);
+      setIsQuickRailOpen(false);
+    } else {
+      setIsWatchlistCollapsed(false);
+      setIsQuickRailOpen(true);
+      setIsAiModalOpen(false);
+    }
+  }, []);
+
+  // Pintasan keyboard Terminal Workstation (⌘K/Ctrl+K, S, G, [, ], F)
+  useEffect(() => {
+    if (currentMode !== "terminal") return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+
+      if ((event.metaKey || event.ctrlKey) && key === "k") {
+        event.preventDefault();
+        setIsCommandSearchOpen((prev) => !prev);
+        return;
+      }
+
+      if (event.metaKey || event.ctrlKey || event.altKey || isCommandSearchOpen) return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toUpperCase();
+      if (
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (key === "s") {
+        event.preventDefault();
+        setIsCommandSearchOpen(true);
+      } else if (key === "g") {
+        event.preventDefault();
+        setIsGlobalDeckOpen((prev) => !prev);
+      } else if (key === "[") {
+        event.preventDefault();
+        setIsWatchlistCollapsed((prev) => !prev);
+      } else if (key === "]") {
+        event.preventDefault();
+        setIsQuickRailOpen((prev) => !prev);
+      } else if (key === "f") {
+        event.preventDefault();
+        if (isWatchlistCollapsed && !isQuickRailOpen) {
+          setIsWatchlistCollapsed(false);
+          setIsQuickRailOpen(true);
+        } else {
+          setIsWatchlistCollapsed(true);
+          setIsQuickRailOpen(false);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentMode, isCommandSearchOpen, isWatchlistCollapsed, isQuickRailOpen]);
 
   return (
     <div
       className={`min-h-screen flex flex-col font-sans transition-[colors,padding] duration-200 ${
         isLight
           ? "bg-[#FBFBFA] text-[#1D1F23]"
-          : "bg-[#0C1017] text-slate-100"
+          : "bg-[#080A0F] text-slate-100"
       } ${isAiModalOpen ? "xl:pr-[440px]" : ""}`}
     >
       {/* 1. Satu strip tipis disclaimer di bagian paling atas */}
       <div
-        className={`px-4 py-1 text-center text-xs font-sans border-b select-none ${
+        className={`relative z-10 px-4 py-1 text-center text-xs font-sans border-b select-none ${
           isLight
             ? "bg-[#F3F3ED] border-[#E5E5DC] text-[#6A7078]"
-            : "bg-[#0A0D14] border-[#1E2736] text-slate-400"
+            : "bg-[#080A0F] border-white/[0.06] text-slate-400"
         }`}
       >
         {provider === "yahoo" ? (
           <div className="flex items-center justify-center space-x-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#2EB886] shrink-0"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] shrink-0"></span>
             <span className="truncate">
               Data Live Yahoo Finance &bull; Riset Pasar Modal BEI
             </span>
@@ -454,12 +599,14 @@ function HomeContent() {
 
       {/* 2. Ticker bar: HANYA TAMPIL DI TERMINAL (tidak di mode Berita) */}
       {currentMode === "terminal" && (
-        <MarketTicker
-          provider={provider}
-          tickers={macroTickers}
-          isMacroFallback={isMacroFallback}
-          isLoading={isLoading}
-        />
+        <div className="relative z-10">
+          <MarketTicker
+            provider={provider}
+            tickers={macroTickers}
+            isMacroFallback={isMacroFallback}
+            isLoading={isLoading}
+          />
+        </div>
       )}
 
       {/* 3. Header navigasi permanen dengan toggle Berita/Terminal */}
@@ -473,287 +620,261 @@ function HomeContent() {
 
       {/* 4. Area Konten Utama */}
       <main
-        className={`flex-1 w-full mx-auto px-4 sm:px-6 py-4 ${
-          currentMode === "terminal" ? "max-w-[1460px]" : "max-w-7xl lg:px-8"
+        className={`flex-1 w-full mx-auto ${
+          currentMode === "terminal"
+            ? "max-w-[1520px] px-2.5 sm:px-4 py-2.5"
+            : "max-w-7xl px-4 sm:px-6 lg:px-8 py-4"
         }`}
       >
         {currentMode === "terminal" ? (
-          /* TAMPILAN WORKSTATION TERMINAL GELAP */
-          <div className="flex flex-col lg:flex-row gap-3 items-start">
-            {/* Bar Sub-Halaman Terminal Mobile/Tablet (< lg) */}
-            <div className="lg:hidden w-full flex items-center justify-between gap-2">
-              <div className="inline-flex bg-[#0E131C] p-1 rounded-xl border border-[#1E2736] text-xs">
-                <button
-                  type="button"
-                  onClick={() => handleTerminalViewChange("riset")}
-                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition ${
-                    terminalView === "riset"
-                      ? "bg-[#1E7B85] text-white font-medium shadow-sm"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <CandlestickChart className="w-3.5 h-3.5" />
-                  <span>Riset Saham</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleTerminalViewChange("pasar")}
-                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition ${
-                    terminalView === "pasar"
-                      ? "bg-[#1E7B85] text-white font-medium shadow-sm"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>Ikhtisar Pasar</span>
-                </button>
-              </div>
-              {terminalView === "riset" && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    document
-                      .getElementById("terminal-watchlist-section")
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                  }
-                  className="px-2.5 py-2 rounded-xl bg-[#111622] border border-[#1E2736] text-xs text-slate-300 inline-flex items-center space-x-1"
-                >
-                  <ListFilter className="w-3.5 h-3.5 text-[#2DD4BF]" />
-                  <span>Watchlist</span>
-                </button>
-              )}
-            </div>
+          /* TAMPILAN UNIFIED WORKSTATION TERMINAL (3D GLOBE + IKHTISAR + RISET SAHAM) */
+          <MotionConfig reducedMotion="user">
+            <TerminalAmbientBackdrop />
+            <div className="relative z-10 flex flex-col gap-2">
+              {/* Top Sub-Bar: Toggle Radar Global 3D (G) + Command Search (⌘K / S) + Workspace Layout Presets */}
+              <TerminalTopBar
+                isGlobalDeckOpen={isGlobalDeckOpen}
+                onToggleGlobalDeck={() => setIsGlobalDeckOpen((prev) => !prev)}
+                onJumpToResearch={scrollToResearchWorkstation}
+                workspacePreset={workspacePreset}
+                onSelectWorkspacePreset={handleSelectWorkspacePreset}
+                onOpenCommandSearch={() => setIsCommandSearchOpen(true)}
+                selectedTicker={selectedTicker}
+                marketStatus={marketStatus}
+              />
 
-            {/* Left Slim Icon Navigation Rail (Desktop lg+) */}
-            <aside
-              aria-label="Navigasi Workstation Terminal"
-              className="hidden lg:flex flex-col items-center justify-between w-12 shrink-0 py-2.5 px-1.5 bg-[#0E131C] border border-[#1E2736] rounded-xl min-h-[750px] sticky top-16"
-            >
-              <div className="flex flex-col items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleTerminalViewChange("riset")}
-                  title="Riset Saham (Chart, Valuasi, DCA & Alokasi)"
-                  aria-label="Riset Saham"
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
-                    terminalView === "riset"
-                      ? "bg-[#1E7B85]/25 border-[#1E7B85] text-[#2DD4BF] shadow-sm"
-                      : "bg-[#111622] border-transparent text-slate-400 hover:text-white hover:border-[#232F42]"
-                  }`}
-                >
-                  <CandlestickChart className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleTerminalViewChange("pasar")}
-                  title="Ikhtisar Pasar (Indeks, Heat Map Kurasi & Penggerak)"
-                  aria-label="Ikhtisar Pasar"
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
-                    terminalView === "pasar"
-                      ? "bg-[#1E7B85]/25 border-[#1E7B85] text-[#2DD4BF] shadow-sm"
-                      : "bg-[#111622] border-transparent text-slate-400 hover:text-white hover:border-[#232F42]"
-                  }`}
-                >
-                  <Globe className="w-4 h-4" />
-                </button>
-
-                {terminalView === "riset" && (
-                  <>
-                    <div className="w-6 h-px bg-[#1E2736] my-1" />
-                    <button
-                      type="button"
-                      onClick={() => setIsWatchlistCollapsed((c) => !c)}
-                      title={isWatchlistCollapsed ? "Tampilkan Sidebar Watchlist" : "Sembunyikan Sidebar Watchlist"}
-                      aria-label={isWatchlistCollapsed ? "Tampilkan Watchlist" : "Sembunyikan Watchlist"}
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
-                        !isWatchlistCollapsed
-                          ? "bg-[#171F2C] border-[#25354A] text-slate-200 hover:text-white"
-                          : "bg-[#111622] border-transparent text-slate-500 hover:text-slate-200 hover:border-[#232F42]"
-                      }`}
-                    >
-                      {isWatchlistCollapsed ? (
-                        <PanelLeftOpen className="w-4 h-4" />
-                      ) : (
-                        <PanelLeftClose className="w-4 h-4" />
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsQuickRailOpen((o) => !o)}
-                      title={isQuickRailOpen ? "Sembunyikan Panel Kanan (Aksi & Lot)" : "Tampilkan Panel Kanan (Aksi & Lot)"}
-                      aria-label="Toggle Panel Riset Kanan"
-                      className={`hidden xl:flex w-9 h-9 rounded-lg items-center justify-center border transition ${
-                        isQuickRailOpen && !isAiModalOpen
-                          ? "bg-[#171F2C] border-[#25354A] text-[#2DD4BF]"
-                          : "bg-[#111622] border-transparent text-slate-500 hover:text-slate-200 hover:border-[#232F42]"
-                      }`}
-                    >
-                      <PanelRight className="w-4 h-4" />
-                    </button>
-                  </>
+              {/* LAYER ATAS (COLLAPSIBLE): 3D WORLD GLOBE + IKHTISAR PASAR DENGAN SCROLL-LINKED PARALLAX */}
+              <AnimatePresence initial={false}>
+                {isGlobalDeckOpen && (
+                  <motion.div
+                    key="unified-global-deck"
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.25, ease: EASE_TERMINAL }}
+                    className="relative z-10"
+                  >
+                    <UnifiedGlobalCommandDeck
+                      hubs={globalMarkets.hubs}
+                      isGlobalFallback={globalMarkets.isFallback}
+                      isGlobalLoading={globalMarkets.isLoading}
+                      onRefreshGlobal={globalMarkets.refresh}
+                      provider={provider}
+                      quotes={quotes}
+                      macroTickers={macroTickers}
+                      customWatchlist={customWatchlist}
+                      watchlistNotes={watchlistNotes}
+                      liveNewsItems={liveNews.items}
+                      onSelectBeiStock={handleSelectTicker}
+                      onAskAiGlobalHub={handleAskAiGlobalHub}
+                      onJumpToResearch={scrollToResearchWorkstation}
+                      onSwitchToNews={() => handleModeChange("berita")}
+                      defaultRightTab={preferBeiOverviewTab ? "bei" : "country"}
+                    />
+                  </motion.div>
                 )}
-              </div>
+              </AnimatePresence>
 
-              <button
-                type="button"
-                onClick={() => setIsAiModalOpen((prev) => !prev)}
-                title="Buka / Tutup Konsultasi AI"
-                aria-label="Konsultasi AI"
-                className={`w-9 h-9 rounded-lg flex items-center justify-center border transition ${
-                  isAiModalOpen
-                    ? "bg-[#2EB886]/20 border-[#2EB886]/60 text-[#2EB886]"
-                    : "bg-[#111622] border-[#1E2736] text-slate-400 hover:text-[#2DD4BF] hover:border-[#1E7B85]/50"
+              {/* LAYER BAWAH (ELEVATED PARALLAX CURTAIN): CORE RESEARCH WORKSTATION BEI */}
+              <section
+                id="terminal-research-workstation"
+                aria-label="Workstation Riset Saham BEI"
+                className={`relative z-20 scroll-mt-14 transition-all ${
+                  isGlobalDeckOpen
+                    ? "-mt-1 pt-2.5 px-1.5 sm:px-2 pb-1 rounded-t-2xl bg-[#080A0F]/95 border-t border-[#2DD4BF]/25 shadow-[0_-22px_52px_rgba(0,0,0,0.75)]"
+                    : ""
                 }`}
               >
-                <Sparkles className="w-4 h-4" />
-              </button>
-            </aside>
-
-            {terminalView === "pasar" ? (
-              <div className="flex-1 min-w-0 w-full">
-                <MarketOverviewPane
-                  provider={provider}
-                  quotes={quotes}
-                  macroTickers={macroTickers}
-                  customWatchlist={customWatchlist}
-                  watchlistNotes={watchlistNotes}
-                  liveNewsItems={liveNews.items}
-                  onSelectStock={handleSelectTicker}
-                  onSwitchToNews={() => handleModeChange("berita")}
-                />
-              </div>
-            ) : (
-              <div className="flex-1 min-w-0 w-full flex flex-col lg:flex-row gap-3 items-start">
-                {/* Kolom Watchlist (Collapsible di desktop lg+) */}
-                <div
-                  id="terminal-watchlist-section"
-                  className={`w-full h-[550px] lg:h-[750px] shrink-0 ${
-                    isWatchlistCollapsed
-                      ? "lg:hidden"
-                      : "lg:w-[292px]"
-                  }`}
-                >
-                  <TerminalWatchlist
-                    selectedTicker={selectedTicker}
-                    onSelectTicker={handleSelectTicker}
-                    quotes={quotes}
-                    provider={provider}
-                    customWatchlist={customWatchlist}
-                    watchlistNotes={watchlistNotes}
-                    onToggleWatchlist={handleToggleWatchlist}
-                    onAddToWatchlist={handleAddToWatchlist}
-                    maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
-                  />
-                </div>
-
-                {/* Kolom Utama: Grafik + Stat Grid + Panel Tab Analisis */}
-                <div id="terminal-chart-section" className="flex-1 min-w-0 w-full min-h-[750px]">
-                  {/* Tombol navigasi kembali ke watchlist di HP */}
-                  <div className="lg:hidden mb-3">
+                {isGlobalDeckOpen && (
+                  <div className="flex items-center justify-between gap-2 px-1 pb-2 text-[11px] font-sans">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#2DD4BF]" />
+                      <span className="font-semibold text-slate-200">
+                        Workstation Riset Saham BEI
+                      </span>
+                      <span className="hidden sm:inline text-slate-500">
+                        &bull; Watchlist, Grafik Interaktif, Valuasi P/E &amp; Kalkulator Lot
+                      </span>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        document.getElementById("terminal-watchlist-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }}
-                      className="w-full min-h-[44px] px-3.5 py-2.5 bg-[#111622] hover:bg-[#161D2B] active:bg-[#1E2736] border border-[#1E2736] rounded-xl text-xs font-sans text-slate-300 hover:text-white flex items-center justify-between transition shadow-sm"
+                      onClick={scrollToGlobalDeck}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#0F131C] hover:bg-[#161C29] border border-white/[0.08] text-slate-300 hover:text-[#2DD4BF] transition text-[10.5px]"
                     >
-                      <div className="flex items-center space-x-2">
-                        <span className="text-slate-400">Saham aktif:</span>
-                        <span className="font-mono text-white font-bold text-sm">{selectedTicker}</span>
-                      </div>
-                      <span className="text-[#2DD4BF] font-medium flex items-center space-x-1.5">
-                        <span>↑ Ganti saham (ke daftar)</span>
-                      </span>
+                      <ArrowUp className="w-3 h-3" aria-hidden="true" />
+                      <span>Ke Globe 3D</span>
                     </button>
                   </div>
+                )}
 
-                  <TerminalMainPane
-                    selectedTicker={selectedTicker}
-                    originLiveNews={originLiveNews}
-                    liveNewsItems={liveNews.items}
-                    onSelectTicker={handleSelectTicker}
-                    onBackToLiveNews={handleBackToLiveNews}
-                    onCloseOriginPanel={() => setOriginLiveNews(null)}
-                    onAskAiStock={(t) => {
-                      setActiveLiveNewsForAi(null);
-                      setAllocationAiSummary(null);
-                      const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
-                      runAiAnalysis(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
-                    }}
-                    onAskAiTerminalNews={(item) => {
-                      setActiveLiveNewsForAi(null);
-                      setAllocationAiSummary(null);
-                      runAiAnalysis(
-                        `Bedah dampak berita "${item.title}" terhadap prospek & valuasi saham ${selectedTicker}.`,
-                        buildLiveNewsArticleContext(item)
-                      );
-                    }}
-                    onAskAiCompare={(tickers) => {
-                      setActiveLiveNewsForAi(null);
-                      setAllocationAiSummary(null);
-                      runAiAnalysis(
-                        `Bandingkan saham ${tickers.join(" vs ")} dari sisi valuasi P/E, PBV, Dividend Yield, ROE, DER, dan prospek risikonya.`
-                      );
-                    }}
-                    onAskAiAllocation={(summaryText) => {
-                      setActiveLiveNewsForAi(null);
-                      setAllocationAiSummary(summaryText);
-                      runAiAnalysis(
-                        "Evaluasi rencana alokasi portofolio Watchlist ini dari sisi keseimbangan sektor, valuasi P/E-PBV, potensi dividen, dan risiko konsentrasinya.",
-                        undefined,
-                        summaryText
-                      );
-                    }}
-                    onCustomAiMetrics={setCustomAiMetrics}
-                    isInWatchlist={customWatchlist.includes(selectedTicker)}
-                    isWatchlistFull={isWatchlistFull}
-                    onToggleWatchlist={handleToggleWatchlist}
-                    quote={quotes[selectedTicker]}
-                    allQuotes={quotes}
-                    customWatchlist={customWatchlist}
-                    watchlistNotes={watchlistNotes}
-                    onSaveWatchlistMeta={handleSaveWatchlistMeta}
-                    isQuickRailOpen={isQuickRailOpen && !isAiModalOpen}
-                    onToggleQuickRail={() => setIsQuickRailOpen((o) => !o)}
-                    provider={provider}
-                    marketStatus={marketStatus}
-                  />
-                </div>
-
-                {/* Kolom Kanan Opsional: Quick Research Rail (Hitung Lot & Sinyal/Berita) */}
-                {isQuickRailOpen && !isAiModalOpen && (
-                  <div className="hidden xl:block w-[256px] shrink-0">
-                    <QuickResearchRail
-                      ticker={selectedTicker}
-                      companyName={quickRailStockMeta.companyName}
-                      currentPrice={quickRailStockMeta.price}
-                      dividendYield={quickRailStockMeta.dividendYield}
-                      targetBuyPrice={watchlistNotes[selectedTicker]?.targetBuyPrice}
-                      note={watchlistNotes[selectedTicker]?.note}
-                      isInWatchlist={customWatchlist.includes(selectedTicker)}
-                      isWatchlistFull={isWatchlistFull}
-                      watchlistBuySummary={watchlistBuySummary}
-                      liveNewsItems={liveNews.items}
-                      onToggleWatchlist={handleToggleWatchlist}
-                      onSaveWatchlistMeta={handleSaveWatchlistMeta}
+                <div className="flex-1 min-w-0 w-full flex flex-col lg:flex-row gap-1.5 items-start">
+                  {/* Kolom Watchlist (Collapsible di desktop lg+) */}
+                  <div
+                    id="terminal-watchlist-section"
+                    className={`w-full h-[520px] lg:h-[760px] shrink-0 ${
+                      isWatchlistCollapsed ? "lg:hidden" : "lg:w-[276px]"
+                    }`}
+                  >
+                    <TerminalWatchlist
+                      selectedTicker={selectedTicker}
                       onSelectTicker={handleSelectTicker}
+                      quotes={quotes}
+                      provider={provider}
+                      customWatchlist={customWatchlist}
+                      watchlistNotes={watchlistNotes}
+                      onToggleWatchlist={handleToggleWatchlist}
+                      onAddToWatchlist={handleAddToWatchlist}
+                      maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
+                    />
+                  </div>
+
+                  {/* Kolom Utama: Grafik + Health Ribbon + Panel Tab Analisis */}
+                  <div id="terminal-chart-section" className="scroll-mt-16 flex-1 min-w-0 w-full min-h-[760px]">
+                    {/* Tombol cepat ganti emiten di HP (langsung buka Command Search) */}
+                    <div className="lg:hidden mb-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsCommandSearchOpen(true)}
+                        className="w-full min-h-[42px] px-3 py-2 bg-[#0F131C] hover:bg-[#161C29] border border-white/[0.07] rounded-lg text-xs font-sans text-slate-300 hover:text-white flex items-center justify-between transition"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Search className="w-3.5 h-3.5 text-[#2DD4BF]" />
+                          <span className="text-slate-400">Saham aktif:</span>
+                          <span className="font-mono text-white font-bold text-sm">{selectedTicker}</span>
+                        </div>
+                        <span className="text-[#2DD4BF] font-medium text-[11px]">
+                          Cari &amp; ganti saham →
+                        </span>
+                      </button>
+                    </div>
+
+                    <TerminalMainPane
+                      selectedTicker={selectedTicker}
+                      originLiveNews={originLiveNews}
+                      liveNewsItems={liveNews.items}
+                      onSelectTicker={handleSelectTicker}
+                      onBackToLiveNews={handleBackToLiveNews}
+                      onCloseOriginPanel={() => setOriginLiveNews(null)}
                       onAskAiStock={(t) => {
                         setActiveLiveNewsForAi(null);
                         setAllocationAiSummary(null);
-                        const p =
-                          quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
+                        const p = quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
+                        runAiAnalysis(`Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`);
+                      }}
+                      onAskAiTerminalNews={(item) => {
+                        setActiveLiveNewsForAi(null);
+                        setAllocationAiSummary(null);
                         runAiAnalysis(
-                          `Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`
+                          `Bedah dampak berita "${item.title}" terhadap prospek & valuasi saham ${selectedTicker}.`,
+                          buildLiveNewsArticleContext(item)
                         );
                       }}
-                      onClose={() => setIsQuickRailOpen(false)}
+                      onAskAiCompare={(tickers) => {
+                        setActiveLiveNewsForAi(null);
+                        setAllocationAiSummary(null);
+                        runAiAnalysis(
+                          `Bandingkan saham ${tickers.join(" vs ")} dari sisi valuasi P/E, PBV, Dividend Yield, ROE, DER, dan prospek risikonya.`
+                        );
+                      }}
+                      onAskAiAllocation={(summaryText) => {
+                        setActiveLiveNewsForAi(null);
+                        setAllocationAiSummary(summaryText);
+                        runAiAnalysis(
+                          "Evaluasi rencana alokasi portofolio Watchlist ini dari sisi keseimbangan sektor, valuasi P/E-PBV, potensi dividen, dan risiko konsentrasinya.",
+                          undefined,
+                          summaryText
+                        );
+                      }}
+                      onCustomAiMetrics={setCustomAiMetrics}
+                      isInWatchlist={customWatchlist.includes(selectedTicker)}
+                      isWatchlistFull={isWatchlistFull}
+                      onToggleWatchlist={handleToggleWatchlist}
+                      quote={quotes[selectedTicker]}
+                      allQuotes={quotes}
+                      customWatchlist={customWatchlist}
+                      watchlistNotes={watchlistNotes}
+                      onSaveWatchlistMeta={handleSaveWatchlistMeta}
+                      isQuickRailOpen={isQuickRailOpen && !isAiModalOpen}
+                      onToggleQuickRail={() => setIsQuickRailOpen((o) => !o)}
+                      provider={provider}
+                      marketStatus={marketStatus}
                     />
                   </div>
-                )}
-              </div>
-            )}
-          </div>
+
+                  {/* Kolom Kanan Opsional: Quick Research Rail (Hitung Lot + Slider + Simulasi Target) */}
+                  {isQuickRailOpen && !isAiModalOpen && (
+                    <div className="hidden xl:block w-[264px] shrink-0">
+                      <QuickResearchRail
+                        ticker={selectedTicker}
+                        companyName={quickRailStockMeta.companyName}
+                        currentPrice={quickRailStockMeta.price}
+                        dividendYield={quickRailStockMeta.dividendYield}
+                        fairValuePrice={quickRailStockMeta.targetMeanPrice}
+                        targetBuyPrice={watchlistNotes[selectedTicker]?.targetBuyPrice}
+                        note={watchlistNotes[selectedTicker]?.note}
+                        isInWatchlist={customWatchlist.includes(selectedTicker)}
+                        isWatchlistFull={isWatchlistFull}
+                        watchlistBuySummary={watchlistBuySummary}
+                        liveNewsItems={liveNews.items}
+                        onToggleWatchlist={handleToggleWatchlist}
+                        onSaveWatchlistMeta={handleSaveWatchlistMeta}
+                        onSelectTicker={handleSelectTicker}
+                        onAskAiStock={(t) => {
+                          setActiveLiveNewsForAi(null);
+                          setAllocationAiSummary(null);
+                          const p =
+                            quotes[t]?.price ?? STOCKS_DATA.find((s) => s.ticker === t)?.currentPrice ?? 0;
+                          runAiAnalysis(
+                            `Evaluasi valuasi, kekuatan, dan risiko saham ${t} pada harga ${formatRupiah(p)}.`
+                          );
+                        }}
+                        onClose={() => setIsQuickRailOpen(false)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            {/* Persistent Bottom Utility Dock ala Rax Trade */}
+            <TerminalBottomDock
+              selectedTicker={selectedTicker}
+              activePrice={quickRailStockMeta.price}
+              changePercent={quickRailStockMeta.changePercent}
+              provider={provider}
+              isGlobalDeckOpen={isGlobalDeckOpen}
+              isWatchlistVisible={!isWatchlistCollapsed}
+              isQuickRailVisible={isQuickRailOpen && !isAiModalOpen}
+              isAiModalOpen={isAiModalOpen}
+              watchlistCount={customWatchlist.length}
+              actionableSignalCount={watchlistBuySummary.totalActionable}
+              onToggleGlobalDeck={() => setIsGlobalDeckOpen((prev) => !prev)}
+              onToggleWatchlistPane={() => setIsWatchlistCollapsed((prev) => !prev)}
+              onToggleQuickRail={() => {
+                if (isAiModalOpen) {
+                  setIsAiModalOpen(false);
+                  setIsQuickRailOpen(true);
+                } else {
+                  setIsQuickRailOpen((prev) => !prev);
+                }
+              }}
+              onToggleAiModal={() => setIsAiModalOpen((prev) => !prev)}
+              onOpenCommandSearch={() => setIsCommandSearchOpen(true)}
+            />
+
+            {/* Global Command-Palette Stock Search (⌘K / S) */}
+            <TerminalCommandSearch
+              isOpen={isCommandSearchOpen}
+              onClose={() => setIsCommandSearchOpen(false)}
+              selectedTicker={selectedTicker}
+              onSelectTicker={handleSelectTicker}
+              quotes={quotes}
+              provider={provider}
+              customWatchlist={customWatchlist}
+              isWatchlistFull={isWatchlistFull}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          </MotionConfig>
         ) : (
           /* TAMPILAN BERITA TERANG PENUH */
           <div className="w-full">
@@ -790,10 +911,10 @@ function HomeContent() {
 
       {/* 5. Footer Bersih yang Menyesuaikan Tema */}
       <footer
-        className={`border-t py-4 text-xs font-sans transition-colors ${
+        className={`relative z-10 border-t py-4 text-xs font-sans transition-colors ${
           isLight
             ? "border-[#E5E5DC] bg-[#F3F3ED] text-[#6A7078]"
-            : "border-[#1A2230] bg-[#0A0D14] text-slate-400"
+            : "border-white/[0.07] bg-[#080A0F] text-slate-400 pb-14"
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -840,7 +961,7 @@ export default function Home() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-[#0C1017] text-slate-400 text-xs">
+        <div className="min-h-screen flex items-center justify-center bg-[#080A0F] text-slate-400 text-xs">
           Memuat StocksSense...
         </div>
       }
