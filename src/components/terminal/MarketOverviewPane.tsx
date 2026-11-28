@@ -55,6 +55,7 @@ interface MarketOverviewPaneProps {
   liveNewsItems: LiveMarketNewsItem[];
   onSelectStock: (ticker: string) => void;
   onSwitchToNews?: () => void;
+  compact?: boolean;
 }
 
 const BENCHMARK_LINE_COLORS = ["#2DD4BF", "#F59E0B", "#A855F7", "#38BDF8"] as const;
@@ -111,10 +112,12 @@ export const MarketOverviewPane: React.FC<MarketOverviewPaneProps> = ({
   liveNewsItems,
   onSelectStock,
   onSwitchToNews,
+  compact = false,
 }) => {
   const [chartRange, setChartRange] = useState<"3Bl" | "6Bl" | "1Th">("3Bl");
   const [selectedSector, setSelectedSector] = useState<string>("ALL");
   const [moverMode, setMoverMode] = useState<MoverFilterMode>("gainers");
+  const [compactSubTab, setCompactSubTab] = useState<"heatmap" | "movers" | "benchmark">("heatmap");
   const [benchmarkHistState, setBenchmarkHistState] = useState<{
     key: string;
     data: Record<string, MarketHistoryPoint[]>;
@@ -182,11 +185,12 @@ export const MarketOverviewPane: React.FC<MarketOverviewPaneProps> = ({
     }
 
     const container = chartContainerRef.current;
+    const chartHeight = compact ? 185 : 220;
     const chart = createChart(container, {
       width: container.clientWidth || 540,
-      height: 220,
+      height: chartHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#0C1017" },
+        background: { type: ColorType.Solid, color: "#0B0E15" },
         textColor: "#94A3B8",
         fontFamily: "var(--font-sans), system-ui, sans-serif",
         fontSize: 11,
@@ -195,11 +199,11 @@ export const MarketOverviewPane: React.FC<MarketOverviewPaneProps> = ({
         priceFormatter: (val: number) => formatPersen(val, 1, true),
       },
       grid: {
-        vertLines: { color: "#1A2230", style: 2 },
-        horzLines: { color: "#1A2230", style: 2 },
+        vertLines: { color: "rgba(255,255,255,0.045)", style: 2 },
+        horzLines: { color: "rgba(255,255,255,0.045)", style: 2 },
       },
-      rightPriceScale: { borderColor: "#1E2736" },
-      timeScale: { borderColor: "#1E2736", timeVisible: false },
+      rightPriceScale: { borderColor: "rgba(255,255,255,0.07)" },
+      timeScale: { borderColor: "rgba(255,255,255,0.07)", timeVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
     });
 
@@ -225,7 +229,7 @@ export const MarketOverviewPane: React.FC<MarketOverviewPaneProps> = ({
       if (!entries[0]?.contentRect) return;
       const w = Math.round(entries[0].contentRect.width);
       if (w > 0 && chartRef.current) {
-        chartRef.current.applyOptions({ width: w, height: 220 });
+        chartRef.current.applyOptions({ width: w, height: chartHeight });
       }
     });
     ro.observe(container);
@@ -237,7 +241,7 @@ export const MarketOverviewPane: React.FC<MarketOverviewPaneProps> = ({
         chartRef.current = null;
       }
     };
-  }, [normalizedBenchmarks]);
+  }, [normalizedBenchmarks, compact, compactSubTab]);
 
   const stockPool = useMemo(
     () =>
@@ -270,6 +274,276 @@ export const MarketOverviewPane: React.FC<MarketOverviewPaneProps> = ({
   );
   const pulseSummary = useMemo(() => buildMarketPulseSummary(stockPool), [stockPool]);
   const todayWibKey = getJakartaDateKey(new Date());
+
+  if (compact) {
+    return (
+      <div className="flex flex-col h-full space-y-2.5 text-xs font-sans">
+        {/* Ringkasan Denyut BEI Compact */}
+        <div className="grid grid-cols-3 gap-1.5">
+          <div className="px-2.5 py-2 rounded-lg bg-[#0B0E15] border border-white/[0.06]">
+            <span className="text-[10px] text-slate-400 block">Naik / Turun</span>
+            <div className="font-mono text-xs font-semibold tnum mt-0.5">
+              <span className="text-[#22C55E]">{pulseSummary.advancers}</span>
+              <span className="text-slate-600 mx-1">/</span>
+              <span className="text-[#EF4444]">{pulseSummary.decliners}</span>
+            </div>
+          </div>
+          <div className="px-2.5 py-2 rounded-lg bg-[#0B0E15] border border-white/[0.06]">
+            <span className="text-[10px] text-slate-400 block">Sektor Kuat</span>
+            <span className="text-[11px] font-semibold text-slate-100 truncate block mt-0.5">
+              {pulseSummary.strongestSector?.sector || "-"}
+            </span>
+          </div>
+          <div className="px-2.5 py-2 rounded-lg bg-[#0B0E15] border border-white/[0.06]">
+            <span className="text-[10px] text-slate-400 block">Area Beli</span>
+            <span className="font-mono text-xs font-semibold text-[#2DD4BF] tnum block mt-0.5">
+              {pulseSummary.buyZoneCount} saham
+            </span>
+          </div>
+        </div>
+
+        {/* Sub-tab Compact BEI Overview */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex bg-[#080A0F] p-0.5 rounded-md border border-white/[0.06] text-[11px]">
+            {(
+              [
+                { id: "heatmap", label: "Heatmap BEI" },
+                { id: "movers", label: "Penggerak" },
+                { id: "benchmark", label: "Kurva Global" },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setCompactSubTab(tab.id)}
+                className={`px-2.5 py-1 rounded transition ${
+                  compactSubTab === tab.id
+                    ? "bg-[#161C29] text-[#2DD4BF] font-semibold border border-[#1E7B85]/50"
+                    : "text-slate-400 hover:text-slate-200 border border-transparent"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {compactSubTab === "heatmap" && sectorNames.length > 1 && (
+            <select
+              id="compact-overview-sector"
+              name="compactOverviewSector"
+              aria-label="Filter sektor heat map"
+              value={effectiveSector}
+              onChange={(e) => setSelectedSector(e.target.value)}
+              className="max-w-[130px] px-2 py-1 rounded bg-[#080A0F] border border-white/[0.08] text-[10.5px] text-slate-200 focus:outline-none focus:border-[#2DD4BF] truncate"
+            >
+              <option value="ALL">Semua Sektor</option>
+              {sectorNames.map((sec) => (
+                <option key={sec} value={sec}>
+                  {sec}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Konten Sub-Tab Compact */}
+        {compactSubTab === "heatmap" && (
+          <div className="flex-1 overflow-y-auto terminal-scroll pr-0.5 space-y-2.5 max-h-[305px]">
+            {displayedSectors.map((group) => (
+              <div key={group.sector} className="space-y-1">
+                <div className="flex items-center justify-between text-[10.5px]">
+                  <span className="font-medium text-slate-300 truncate">{group.sector}</span>
+                  <span
+                    className={`font-mono tnum ${
+                      group.avgChangePercent >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
+                    }`}
+                  >
+                    {formatPersen(group.avgChangePercent, 1, true)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {group.tiles.map((tile) => {
+                    const style = getHeatmapTileStyle(tile.changePercent);
+                    return (
+                      <button
+                        key={tile.ticker}
+                        type="button"
+                        onClick={() => onSelectStock(tile.ticker)}
+                        className={`px-2 py-1.5 rounded-md border text-left transition ${style.bg} ${style.border}`}
+                        title={`Buka ${tile.ticker} (${tile.name}) di Workstation Riset`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono font-bold text-white text-[11px]">
+                            {tile.ticker}
+                          </span>
+                          {tile.targetStatus === "hit" && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full bg-[#22C55E]"
+                              title="Masuk Area Beli"
+                            />
+                          )}
+                        </div>
+                        <div className={`font-mono font-semibold text-[11px] tnum ${style.text}`}>
+                          {formatPersen(tile.changePercent, 1, true)}
+                        </div>
+                        <div className="text-[9.5px] text-slate-300/80 font-mono tnum">
+                          {formatRupiah(tile.price)}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {compactSubTab === "movers" && (
+          <div className="flex-1 flex flex-col space-y-2 min-h-0">
+            <div className="grid grid-cols-3 gap-1 bg-[#080A0F] p-0.5 rounded-md border border-white/[0.06] text-[10.5px]">
+              <button
+                type="button"
+                onClick={() => setMoverMode("gainers")}
+                className={`py-1 rounded transition flex items-center justify-center space-x-1 ${
+                  moverMode === "gainers"
+                    ? "bg-[#22C55E]/20 text-[#22C55E] font-semibold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <TrendingUp className="w-3 h-3" />
+                <span>Naik</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMoverMode("losers")}
+                className={`py-1 rounded transition flex items-center justify-center space-x-1 ${
+                  moverMode === "losers"
+                    ? "bg-[#EF4444]/20 text-[#EF4444] font-semibold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <TrendingDown className="w-3 h-3" />
+                <span>Turun</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMoverMode("buy_zone")}
+                className={`py-1 rounded transition flex items-center justify-center space-x-1 ${
+                  moverMode === "buy_zone"
+                    ? "bg-[#1E7B85] text-white font-semibold"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Target className="w-3 h-3" />
+                <span>Area Beli</span>
+              </button>
+            </div>
+
+            <div className="divide-y divide-white/[0.05] overflow-y-auto terminal-scroll max-h-[268px] rounded-lg border border-white/[0.06] bg-[#0B0E15]">
+              {movers.length === 0 ? (
+                <div className="p-5 text-center text-slate-400 text-[11px]">
+                  {moverMode === "buy_zone"
+                    ? "Belum ada saham Watchlist di Area Beli / dekat target."
+                    : "Belum ada data emiten tersedia."}
+                </div>
+              ) : (
+                movers.slice(0, 8).map((m) => (
+                  <button
+                    key={m.ticker}
+                    type="button"
+                    onClick={() => onSelectStock(m.ticker)}
+                    className="w-full px-3 py-2 flex items-center justify-between gap-2 hover:bg-[#161C29] text-left transition"
+                  >
+                    <div className="min-w-0">
+                      <span className="font-mono font-bold text-slate-100">{m.ticker}</span>
+                      <span className="text-[10px] text-slate-400 truncate block">{m.name}</span>
+                    </div>
+                    <div className="text-right font-mono tnum shrink-0">
+                      <div className="text-slate-200 font-medium">{formatNumber(m.price)}</div>
+                      <div
+                        className={`text-[10.5px] font-semibold ${
+                          moverMode === "buy_zone"
+                            ? m.targetStatus === "hit"
+                              ? "text-[#22C55E]"
+                              : "text-amber-300"
+                            : m.changePercent >= 0
+                            ? "text-[#22C55E]"
+                            : "text-[#EF4444]"
+                        }`}
+                      >
+                        {moverMode === "buy_zone"
+                          ? formatPersen(m.targetDiffPercent, 1, true)
+                          : formatPersen(m.changePercent, 1, true)}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {compactSubTab === "benchmark" && (
+          <div className="flex-1 flex flex-col space-y-2 rounded-lg bg-[#0B0E15] border border-white/[0.06] p-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] tnum">
+                {normalizedBenchmarks.map((s, idx) => (
+                  <span
+                    key={s.ticker}
+                    className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-[#0F131C] border border-white/[0.06]"
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        backgroundColor:
+                          BENCHMARK_LINE_COLORS[idx % BENCHMARK_LINE_COLORS.length],
+                      }}
+                    />
+                    <span className="text-slate-200 font-semibold">{s.ticker}</span>
+                    <span
+                      className={
+                        s.totalReturnPct >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
+                      }
+                    >
+                      {formatPersen(s.totalReturnPct, 1, true)}
+                    </span>
+                  </span>
+                ))}
+              </div>
+              <div className="flex items-center space-x-0.5 bg-[#080A0F] p-0.5 rounded border border-white/[0.06]">
+                {OVERVIEW_RANGES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setChartRange(r)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] transition ${
+                      chartRange === r
+                        ? "bg-[#1E7B85] text-white font-medium"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {isChartLoading && normalizedBenchmarks.length === 0 ? (
+              <div className="h-[185px] flex items-center justify-center text-slate-400 text-[11px]">
+                Memuat kurva perbandingan indeks...
+              </div>
+            ) : normalizedBenchmarks.length === 0 ? (
+              <div className="h-[185px] flex items-center justify-center text-slate-400 text-[11px]">
+                Data historis indeks belum tersedia.
+              </div>
+            ) : (
+              <div ref={chartContainerRef} className="w-full h-[185px]" />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 text-xs font-sans">

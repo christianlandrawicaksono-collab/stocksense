@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { motion } from "framer-motion";
 import { STOCKS_DATA } from "@/data/stocksData";
+import { SPRING_SNAP } from "./terminalMotion";
 import { formatNumber, formatMultiple, formatPersen, formatRupiah } from "@/lib/format";
 import {
   MAX_CUSTOM_WATCHLIST,
@@ -384,36 +386,44 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg font-sans">
+    <div className="h-full flex flex-col bg-[#0F131C] border border-white/[0.07] rounded-lg overflow-hidden font-sans">
       {/* Pane Header, Tab Pemisah & Search */}
-      <div className="p-3 border-b border-[#1E2736] bg-[#0E131C] space-y-2.5">
+      <div className="p-2.5 border-b border-white/[0.07] bg-[#0B0E15] space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center space-x-2">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                provider === "yahoo" ? "bg-[#2EB886]" : "bg-[#1E7B85]"
+                provider === "yahoo" ? "bg-[#22C55E]" : "bg-[#2DD4BF]"
               }`}
             ></span>
-            <span className="text-xs font-semibold text-slate-300">
-              Daftar pantau dan penyaring
+            <span className="text-[11px] font-mono uppercase tracking-wider font-semibold text-slate-300">
+              Watchlist &amp; Screener
             </span>
           </div>
-          <span className="text-[11px] text-slate-400 font-mono tnum">
-            {filteredAndSortedStocks.length} dari {activeRows.length} saham
+          <span className="text-[10.5px] text-slate-400 font-mono tnum">
+            {filteredAndSortedStocks.length}/{activeRows.length}
           </span>
         </div>
 
-        {/* Pemisah Tegas: Watchlist Saya vs Saham Kurasi */}
-        <div className="grid grid-cols-2 gap-1 bg-[#080B10] p-1 rounded-lg border border-[#20293A] text-[11px]">
+        {/* Pemisah Tegas: Watchlist Saya vs Saham Kurasi dengan layoutId */}
+        <div className="grid grid-cols-2 gap-1 bg-[#080A0F] p-0.5 rounded-md border border-white/[0.07] text-[11px]">
           <button
             type="button"
             onClick={() => setListTabPref("watchlist")}
-            className={`px-1.5 py-1.5 rounded-md font-medium transition flex items-center justify-center space-x-1 whitespace-nowrap ${
+            className={`relative z-10 px-1.5 py-1.5 rounded font-medium transition-colors flex items-center justify-center space-x-1 whitespace-nowrap ${
               activeTab === "watchlist"
-                ? "bg-[#1E7B85] text-white shadow-sm"
+                ? "text-white font-semibold"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
+            {activeTab === "watchlist" && (
+              <motion.span
+                layoutId="watchlist-tab-pill"
+                transition={SPRING_SNAP}
+                aria-hidden="true"
+                className="absolute inset-0 rounded bg-[#1E7B85] -z-10"
+              />
+            )}
             <Star
               className={`w-3 h-3 shrink-0 ${
                 activeTab === "watchlist"
@@ -423,7 +433,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
                   : "text-slate-500"
               }`}
             />
-            <span>Watchlist Saya</span>
+            <span>Watchlist</span>
             <span className="font-mono text-[10px] opacity-90 tnum">
               ({customWatchlist.length})
             </span>
@@ -432,14 +442,22 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
           <button
             type="button"
             onClick={() => setListTabPref("curated")}
-            className={`px-1.5 py-1.5 rounded-md font-medium transition flex items-center justify-center space-x-1 whitespace-nowrap ${
+            className={`relative z-10 px-1.5 py-1.5 rounded font-medium transition-colors flex items-center justify-center space-x-1 whitespace-nowrap ${
               activeTab === "curated"
-                ? "bg-[#1E7B85] text-white shadow-sm"
+                ? "text-white font-semibold"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
+            {activeTab === "curated" && (
+              <motion.span
+                layoutId="watchlist-tab-pill"
+                transition={SPRING_SNAP}
+                aria-hidden="true"
+                className="absolute inset-0 rounded bg-[#1E7B85] -z-10"
+              />
+            )}
             <Bookmark className="w-3 h-3 shrink-0" />
-            <span>Saham Kurasi</span>
+            <span>Kurasi IDX</span>
             <span className="font-mono text-[10px] opacity-90 tnum">
               ({CURATED_TICKERS.length})
             </span>
@@ -564,7 +582,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
       </div>
 
       {/* Table Column Headers */}
-      <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,0.85fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] gap-1 px-3 py-2 bg-[#0C1017] border-b border-[#1E2736] text-[11px] text-slate-400 select-none">
+      <div className="grid grid-cols-[minmax(0,1.55fr)_minmax(0,0.85fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] gap-1 px-3 py-1.5 bg-[#0B0E15] border-b border-white/[0.07] text-[10.5px] font-mono text-slate-500 select-none">
         <button
           onClick={() => handleSort("ticker")}
           className="flex items-center space-x-1 text-left hover:text-slate-200"
@@ -588,7 +606,7 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
               : "Perubahan harga hari ini (data ilustrasi)"
           }
         >
-          <span className="truncate">Hari ini</span>
+          <span className="truncate">1H</span>
           <ArrowUpDown className="w-2.5 h-2.5 shrink-0" />
         </button>
         <button
@@ -600,13 +618,13 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
               : "Rasio P/E dan Dividen Yield (data fundamental ilustrasi)"
           }
         >
-          <span className="truncate">{provider === "yahoo" ? "P/E (Live)" : "P/E (ilus)"}</span>
+          <span className="truncate">P/E</span>
           <ArrowUpDown className="w-2.5 h-2.5 shrink-0" />
         </button>
       </div>
 
       {/* Table Rows */}
-      <div className="flex-1 overflow-y-auto terminal-scroll divide-y divide-[#1A2230]">
+      <div className="flex-1 overflow-y-auto terminal-scroll divide-y divide-white/[0.05]">
         {filteredAndSortedStocks.map((stock) => {
           const isSelected = selectedTicker === stock.ticker;
           const inWatchlist = watchlistSet.has(stock.ticker);
@@ -618,14 +636,14 @@ export const TerminalWatchlist: React.FC<TerminalWatchlistProps> = ({
             <div
               key={stock.ticker}
               onClick={() => onSelectTicker(stock.ticker)}
-              className={`grid grid-cols-[minmax(0,1.55fr)_minmax(0,0.85fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] gap-1 px-3 py-2 min-h-[46px] items-center cursor-pointer transition select-none text-xs ${
+              className={`grid grid-cols-[minmax(0,1.55fr)_minmax(0,0.85fr)_minmax(0,0.72fr)_minmax(0,0.88fr)] gap-1 px-3 py-2 min-h-[44px] items-center cursor-pointer transition select-none text-xs ${
                 isSelected
-                  ? "bg-[#1E7B85]/15 border-l-2 border-[#1E7B85]"
+                  ? "bg-[#1E7B85]/18 border-l-2 border-[#2DD4BF]"
                   : targetEval.status === "hit"
-                  ? "bg-[#2EB886]/[0.06] hover:bg-[#2EB886]/[0.12] border-l-2 border-[#2EB886]"
+                  ? "bg-[#22C55E]/[0.06] hover:bg-[#22C55E]/[0.11] border-l-2 border-[#22C55E]"
                   : targetEval.status === "near"
-                  ? "bg-amber-500/[0.04] hover:bg-[#151C2A] border-l-2 border-amber-400/70"
-                  : "hover:bg-[#151C2A] border-l-2 border-transparent"
+                  ? "bg-amber-500/[0.04] hover:bg-[#161C29] border-l-2 border-amber-400/70"
+                  : "hover:bg-[#161C29] border-l-2 border-transparent"
               }`}
             >
               <div className="flex items-center space-x-2 min-w-0 pr-1">

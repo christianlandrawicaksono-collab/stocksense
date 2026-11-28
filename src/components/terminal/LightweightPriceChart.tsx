@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useMemo, useSyncExternalStore } from "react";
+import { motion } from "framer-motion";
 import {
   createChart,
   LineSeries,
@@ -15,6 +16,7 @@ import {
   Time,
   SeriesMarker,
 } from "lightweight-charts";
+import { SPRING_SNAP } from "./terminalMotion";
 import { MarketHistoryPoint, HistoryRange, HISTORY_RANGES, MarketProvider } from "@/lib/market-data";
 import {
   getChartPrefsServerSnapshot,
@@ -187,7 +189,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       width: container.clientWidth || 600,
       height: container.clientHeight || 340,
       layout: {
-        background: { type: ColorType.Solid, color: "#111622" },
+        background: { type: ColorType.Solid, color: "#0B0E15" },
         textColor: "#94A3B8",
         fontFamily: "var(--font-sans), system-ui, -apple-system, sans-serif",
         fontSize: 11,
@@ -196,11 +198,11 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
         priceFormatter: (price: number) => formatNumber(price),
       },
       grid: {
-        vertLines: { color: "#1E2736", style: 2 },
-        horzLines: { color: "#1E2736", style: 2 },
+        vertLines: { color: "rgba(255, 255, 255, 0.045)", style: 2 },
+        horzLines: { color: "rgba(255, 255, 255, 0.045)", style: 2 },
       },
       rightPriceScale: {
-        borderColor: "#1E2736",
+        borderColor: "rgba(255, 255, 255, 0.08)",
         scaleMargins: hasValidVolume && showVolume
           ? { top: 0.1, bottom: 0.24 }
           : { top: 0.12, bottom: 0.12 },
@@ -507,39 +509,41 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
   const isDownBar = activeBar && activeBar.open !== undefined ? activeBar.close < activeBar.open : false;
 
   return (
-    <div className="flex flex-col bg-[#111622] rounded-xl overflow-hidden font-sans">
+    <div className="flex flex-col bg-[#0B0E15] overflow-hidden font-sans">
       {/* Sub-Header: Kontrol Tampilan, Indikator & Timeframe */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-[#0C1017] border-b border-[#1E2736] text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-[#0F131C] border-b border-white/[0.07] text-xs">
         {/* Kiri: Tipe Grafik, Toggle Indikator & Penanda Dividen Info */}
         <div className="flex flex-wrap items-center gap-2">
           {hasValidOHLC && (
-            <div className="flex items-center bg-[#080B10] p-0.5 rounded border border-[#1E2736]">
-              <button
-                type="button"
-                onClick={() => updateChartPreferencesStorage({ chartType: "line" })}
-                className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition ${
-                  chartType === "line"
-                    ? "bg-[#1E7B85] text-white font-medium"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="Grafik Garis"
-              >
-                <TrendingUp className="w-3 h-3" />
-                <span>Garis</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => updateChartPreferencesStorage({ chartType: "candle" })}
-                className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition ${
-                  chartType === "candle"
-                    ? "bg-[#1E7B85] text-white font-medium"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-                title="Grafik Lilin (Candlestick OHLC)"
-              >
-                <BarChart2 className="w-3 h-3" />
-                <span>Lilin</span>
-              </button>
+            <div className="flex items-center bg-[#080A0F] p-0.5 rounded-md border border-white/[0.07]">
+              {[
+                { id: "line" as const, label: "Garis", icon: <TrendingUp className="w-3 h-3" /> },
+                { id: "candle" as const, label: "Lilin", icon: <BarChart2 className="w-3 h-3" /> },
+              ].map((opt) => {
+                const isActive = chartType === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => updateChartPreferencesStorage({ chartType: opt.id })}
+                    className={`relative z-10 flex items-center space-x-1 px-2 py-1 rounded text-[11px] transition-colors ${
+                      isActive ? "text-white font-semibold" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                    title={opt.id === "line" ? "Grafik Garis" : "Grafik Lilin (Candlestick OHLC)"}
+                  >
+                    {isActive && (
+                      <motion.span
+                        layoutId="chart-type-pill"
+                        transition={SPRING_SNAP}
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded bg-[#1E7B85] -z-10"
+                      />
+                    )}
+                    {opt.icon}
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -635,30 +639,39 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
 
         {/* Kanan: Timeframe selector & Tombol Perbesar Kanvas */}
         <div className="flex items-center gap-1.5">
-          <div className="flex flex-wrap items-center gap-1 bg-[#080B10] p-1 rounded-lg border border-[#1E2736]">
-            {HISTORY_RANGES.map((tf) => (
-              <button
-                key={tf}
-                type="button"
-                onClick={() => onTimeframeChange(tf)}
-                className={`px-2 py-1 rounded text-[11px] sm:text-xs font-sans transition ${
-                  timeframe === tf
-                    ? "bg-[#1E7B85] text-white font-medium shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                {tf}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-0.5 bg-[#080A0F] p-0.5 rounded-md border border-white/[0.07]">
+            {HISTORY_RANGES.map((tf) => {
+              const isActive = timeframe === tf;
+              return (
+                <button
+                  key={tf}
+                  type="button"
+                  onClick={() => onTimeframeChange(tf)}
+                  className={`relative z-10 px-2 py-1 rounded text-[11px] font-mono transition-colors ${
+                    isActive ? "text-white font-semibold" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="chart-timeframe-pill"
+                      transition={SPRING_SNAP}
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded bg-[#1E7B85] -z-10 shadow-sm"
+                    />
+                  )}
+                  <span>{tf}</span>
+                </button>
+              );
+            })}
           </div>
 
           <button
             type="button"
             onClick={() => setIsExpanded((prev) => !prev)}
-            className={`p-1.5 rounded-lg border transition hidden sm:inline-flex items-center justify-center ${
+            className={`p-1.5 rounded-md border transition hidden sm:inline-flex items-center justify-center ${
               isExpanded
-                ? "bg-[#1E7B85]/20 border-[#1E7B85] text-[#2DD4BF]"
-                : "bg-[#080B10] border-[#1E2736] text-slate-400 hover:text-slate-200 hover:border-[#2B374C]"
+                ? "bg-[#1E7B85]/20 border-[#2DD4BF]/50 text-[#2DD4BF]"
+                : "bg-[#080A0F] border-white/[0.07] text-slate-400 hover:text-slate-200 hover:border-white/[0.15]"
             }`}
             title={isExpanded ? "Kembalikan ukuran grafik" : "Perbesar tinggi grafik"}
             aria-label={isExpanded ? "Kembalikan ukuran grafik" : "Perbesar tinggi grafik"}
@@ -669,7 +682,7 @@ export const LightweightPriceChart: React.FC<LightweightPriceChartProps> = ({
       </div>
 
       {/* Tooltip Bar di atas kanvas: Nilai saat crosshair aktif atau bar terakhir */}
-      <div className="px-4 py-1.5 bg-[#0A0E16] border-b border-[#1A2230] min-h-[34px] flex items-center justify-between gap-2 text-xs text-slate-300 font-mono tnum">
+      <div className="px-3.5 py-1.5 bg-[#0B0E15] border-b border-white/[0.06] min-h-[32px] flex items-center justify-between gap-2 text-xs text-slate-300 font-mono tnum">
         {activeBar ? (
           <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
             <span className="text-slate-400 font-sans text-[11px]">

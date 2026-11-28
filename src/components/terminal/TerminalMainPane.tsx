@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { STOCKS_DATA, HISTORICAL_SERIES, IHSG_HISTORICAL } from "@/data/stocksData";
 import {
   getChartPrefsServerSnapshot,
@@ -43,13 +44,27 @@ import {
   StickyNote,
   Copy,
   Check,
+  ChevronDown,
   PieChart,
   PanelRight,
 } from "lucide-react";
 import { buildStockResearchMarkdown } from "@/lib/research-export";
+import {
+  computeValuationGaugePosition,
+  evaluateStockHealthPillars,
+  type StockHealthPillar,
+} from "@/lib/stock-health";
 import { LightweightPriceChart } from "./LightweightPriceChart";
 import { StockCompareTab } from "./StockCompareTab";
 import { StockAllocationTab } from "./StockAllocationTab";
+import { StockHealthRibbon } from "./StockHealthRibbon";
+import { ValuationGaugeArc } from "./ValuationGaugeArc";
+import {
+  EASE_TERMINAL,
+  PriceTickFlash,
+  SPRING_SNAP,
+  TerminalSpotlightCard,
+} from "./terminalMotion";
 import {
   evaluateTargetBuyStatus,
   MAX_WATCHLIST_NOTE_LENGTH,
@@ -156,6 +171,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   marketStatus,
 }) => {
   const [activeTab, setActiveTab] = useState<TerminalTab>("valuation");
+  const [isMarketStatsOpen, setIsMarketStatsOpen] = useState<boolean>(false);
+  const tabsDeckRef = useRef<HTMLDivElement | null>(null);
   const chartPrefsJson = useSyncExternalStore(
     subscribeChartPrefsStorage,
     readChartPrefsStorageSnapshot,
@@ -876,8 +893,60 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     ? `Kode "${selectedTicker}" tidak ditemukan di Bursa Efek Indonesia / Yahoo Finance.`
     : historyError;
 
+  const healthPillars = useMemo(
+    () =>
+      evaluateStockHealthPillars({
+        sector: stock.sector,
+        price: activePrice,
+        peRatio: activePe,
+        pbvRatio: activePbv,
+        historicalPeMean: effectiveBands?.historicalPeMean,
+        peSd1Minus: effectiveBands?.peSd1Minus,
+        peSd2Minus: effectiveBands?.peSd2Minus,
+        peSd1Plus: effectiveBands?.peSd1Plus,
+        peSd2Plus: effectiveBands?.peSd2Plus,
+        roe: stock.roe,
+        der: stock.der,
+        dividendYield: activeDivYield,
+        targetBuyPrice: activeEntryMeta?.targetBuyPrice,
+      }),
+    [stock.sector, stock.roe, stock.der, activePrice, activePe, activePbv, effectiveBands, activeDivYield, activeEntryMeta?.targetBuyPrice]
+  );
+
+  const valuationGauge = useMemo(() => {
+    if (!effectiveBands || activePe <= 0) return null;
+    return computeValuationGaugePosition({
+      activePe,
+      activePrice,
+      historicalPeMean: effectiveBands.historicalPeMean,
+      peSd1Minus: effectiveBands.peSd1Minus,
+      peSd2Minus: effectiveBands.peSd2Minus,
+      peSd1Plus: effectiveBands.peSd1Plus,
+      peSd2Plus: effectiveBands.peSd2Plus,
+    });
+  }, [effectiveBands, activePe, activePrice]);
+
+  const handlePillarAction = useCallback(
+    (action: StockHealthPillar["targetAction"]) => {
+      if (action === "target") {
+        setTargetEditorState({
+          ticker: selectedTicker,
+          isOpen: true,
+          priceStr: activeEntryMeta?.targetBuyPrice
+            ? formatNumber(activeEntryMeta.targetBuyPrice)
+            : "",
+          noteStr: activeEntryMeta?.note || "",
+        });
+        return;
+      }
+      setActiveTab(action);
+      tabsDeckRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    },
+    [selectedTicker, activeEntryMeta]
+  );
+
   return (
-    <div className="flex flex-col space-y-4 font-sans">
+    <div className="flex flex-col space-y-1.5 font-sans">
       {/* Origin News Banner (if navigated from curated scenario or live RSS news) */}
       {activeOriginBanner && (
         <div className="bg-[#0E1622] border border-[#1E7B85]/60 rounded-xl p-3 sm:p-3.5 space-y-2.5 text-xs text-slate-200 shadow-md">
@@ -953,254 +1022,285 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
         </div>
       )}
 
-      {/* 1. TOP SECTION: PRICE CHART DENGAN LIGHTWEIGHT-CHARTS & STATUS PASAR */}
-      <div className="bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg">
-        {/* Header Bar: Baris 1 (Identitas & Harga) + Baris 2 (Aksi & Status Pasar) */}
-        <div className="p-4 border-b border-[#1E2736] bg-[#0E131C] space-y-3">
-          {/* Baris 1: Identitas Emiten (Kiri) & Harga Terkini (Kanan) */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xl font-bold text-white tnum">
-                  {stock.ticker}
-                </span>
-                <span className="px-2 py-0.5 rounded text-xs font-sans bg-[#1E7B85]/20 text-slate-200 border border-[#1E7B85]/40">
-                  {stock.sector}
+      {/* 1. TOP SECTION: ASSET CONTEXT RIBBON + 5-PILLAR HEALTH PODS + LIGHTWEIGHT CHART */}
+      <TerminalSpotlightCard className="rounded-lg overflow-hidden">
+        <div className="relative z-10">
+          {/* Header Bar: Identitas, Harga Live (Tick Flash), Aksi Ringkas & 5-Pillar Health Ribbon */}
+          <div className="p-3 sm:p-3.5 border-b border-white/[0.07] bg-[#0B0E15] space-y-2.5">
+            {/* Baris 1: Identitas Emiten (Kiri) + Harga Terkini & Aksi Utama (Kanan) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xl font-bold text-white tnum tracking-tight">
+                    {stock.ticker}
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[11px] font-sans bg-[#1E7B85]/18 text-[#2DD4BF] border border-[#2DD4BF]/30">
+                    {stock.sector}
+                  </span>
+                  <span className="text-xs text-slate-400 truncate max-w-[260px] hidden md:inline">
+                    {isMissingYahooTicker
+                      ? "Emiten tidak terdaftar di BEI / Yahoo Finance"
+                      : stock.name}
+                  </span>
+                </div>
+                <span className="text-xs text-slate-400 block mt-0.5 font-sans md:hidden">
+                  {isMissingYahooTicker
+                    ? "Emiten tidak terdaftar di BEI / Yahoo Finance"
+                    : stock.name}
                 </span>
               </div>
-              <span className="text-xs text-slate-400 block mt-0.5 font-sans">
-                {isMissingYahooTicker
-                  ? "Emiten tidak terdaftar di BEI / Yahoo Finance"
-                  : stock.name}
-              </span>
+
+              <div className="sm:text-right shrink-0">
+                {activePrice > 0 ? (
+                  <div className="flex items-baseline sm:justify-end space-x-2">
+                    <PriceTickFlash
+                      valueKey={`${stock.ticker}-${quote?.price ?? stock.currentPrice}`}
+                      isPositive={(quote?.changePercent ?? stock.change1D) >= 0}
+                      className="text-xl sm:text-2xl font-bold text-white font-mono tnum"
+                    >
+                      {formatRupiah(quote?.price ?? stock.currentPrice)}
+                    </PriceTickFlash>
+                    <span
+                      className={`text-xs font-semibold px-1.5 py-0.5 rounded font-mono tnum ${
+                        (quote?.changePercent ?? stock.change1D) >= 0
+                          ? "text-[#22C55E] bg-[#22C55E]/12 border border-[#22C55E]/25"
+                          : "text-[#EF4444] bg-[#EF4444]/12 border border-[#EF4444]/25"
+                      }`}
+                    >
+                      {formatPersen(quote?.changePercent ?? stock.change1D, 1, true)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-baseline sm:justify-end space-x-2">
+                    <span className="text-xl font-bold text-slate-400 font-mono tnum">-</span>
+                  </div>
+                )}
+                <span className="text-[10.5px] text-slate-500 font-sans block mt-0.5">
+                  {provider === "yahoo" && quote && !quote.isFallback && quote.price > 0
+                    ? "Yahoo Finance Live"
+                    : provider === "yahoo"
+                    ? "Data harga tidak tersedia"
+                    : "Data ilustrasi"}
+                  {(provider === "yahoo" && !quote?.isFallback ? quote?.lastUpdated : null) ||
+                  marketStatus?.formattedTime
+                    ? ` • ${(provider === "yahoo" && !quote?.isFallback ? quote?.lastUpdated : null) || marketStatus?.formattedTime}`
+                    : ""}
+                </span>
+              </div>
             </div>
 
-            <div className="sm:text-right shrink-0">
-              {activePrice > 0 ? (
-                <div className="flex items-baseline sm:justify-end space-x-2">
-                  <span className="text-xl sm:text-2xl font-bold text-slate-100 font-mono tnum">
-                    {formatRupiah(quote?.price ?? stock.currentPrice)}
-                  </span>
-                  <span
-                    className={`text-xs font-medium px-1.5 py-0.5 rounded font-mono tnum ${
-                      (quote?.changePercent ?? stock.change1D) >= 0
-                        ? "text-[#2EB886] bg-[#2EB886]/10"
-                        : "text-[#DC525F] bg-[#DC525F]/10"
+            {/* Baris 2: 5-Pillar Interactive Health Pods ala Rax Trade Score Pods */}
+            <StockHealthRibbon
+              ticker={stock.ticker}
+              pillars={healthPillars}
+              onTriggerPillarAction={handlePillarAction}
+            />
+
+            {/* Baris 3: Tombol Aksi Saham & Toggle Statistik Ringkas */}
+            <div className="pt-2 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {onToggleWatchlist && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleWatchlist(selectedTicker)}
+                    disabled={!isInWatchlist && isWatchlistFull}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-sans border transition disabled:opacity-50 ${
+                      isInWatchlist
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                        : "bg-[#161C29] border-white/[0.08] text-slate-300 hover:text-amber-300 hover:border-amber-500/40"
                     }`}
+                    title={
+                      isInWatchlist
+                        ? `Hapus ${selectedTicker} dari Watchlist Saya`
+                        : isWatchlistFull
+                        ? "Watchlist Saya penuh (maks. 15 saham)"
+                        : `Simpan ${selectedTicker} ke Watchlist Saya`
+                    }
                   >
-                    {formatPersen(quote?.changePercent ?? stock.change1D, 1, true)}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-baseline sm:justify-end space-x-2">
-                  <span className="text-xl font-bold text-slate-400 font-mono tnum">-</span>
-                </div>
-              )}
-              <span className="text-[11px] text-slate-400 font-sans block mt-0.5">
-                {provider === "yahoo" && quote && !quote.isFallback && quote.price > 0
-                  ? "Harga terakhir Yahoo Finance"
-                  : provider === "yahoo"
-                  ? "Data harga tidak tersedia"
-                  : "Harga acuan data ilustrasi"}
-                {(provider === "yahoo" && !quote?.isFallback ? quote?.lastUpdated : null) ||
-                marketStatus?.formattedTime
-                  ? ` • ${(provider === "yahoo" && !quote?.isFallback ? quote?.lastUpdated : null) || marketStatus?.formattedTime}`
-                  : ""}
-              </span>
-            </div>
-          </div>
-
-          {/* Grid Statistik Pasar Ringkas (Open / Low / High / 52W / Avg Vol / Mkt Cap / Div Yield) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2.5 border-t border-[#1A2230]">
-            {[
-              {
-                label: "Pembukaan",
-                value: quote?.open && quote.open > 0 ? formatRupiah(quote.open) : "-",
-              },
-              {
-                label: "Terendah",
-                value: quote?.dayLow && quote.dayLow > 0 ? formatRupiah(quote.dayLow) : "-",
-                tone: "text-[#DC525F]",
-              },
-              {
-                label: "Tertinggi",
-                value: quote?.dayHigh && quote.dayHigh > 0 ? formatRupiah(quote.dayHigh) : "-",
-                tone: "text-[#2EB886]",
-              },
-              {
-                label: "52W Rendah",
-                value:
-                  quote?.fiftyTwoWeekLow && quote.fiftyTwoWeekLow > 0
-                    ? formatRupiah(quote.fiftyTwoWeekLow)
-                    : "-",
-              },
-              {
-                label: "52W Tinggi",
-                value:
-                  quote?.fiftyTwoWeekHigh && quote.fiftyTwoWeekHigh > 0
-                    ? formatRupiah(quote.fiftyTwoWeekHigh)
-                    : "-",
-              },
-              {
-                label: "Avg Vol (3Bl)",
-                value: quote?.avgVolume3M ? formatCompactVolume(quote.avgVolume3M) : "-",
-              },
-              {
-                label: "Kap. Pasar",
-                value:
-                  ((quote?.marketCapTrillion ?? stock.marketCapTrillion) ?? 0) > 0
-                    ? `Rp ${formatDesimal((quote?.marketCapTrillion ?? stock.marketCapTrillion) ?? 0, 1)} T`
-                    : "-",
-              },
-              {
-                label: "Div Yield",
-                value: activeDivYield > 0 ? formatPersen(activeDivYield, 1) : "-",
-                tone: activeDivYield >= 5 ? "text-[#2EB886]" : undefined,
-              },
-            ].map((stat) => (
-              <div
-                key={stat.label}
-                className="px-2.5 py-1.5 rounded-lg bg-[#0A0E16]/80 border border-[#182030] flex flex-col justify-between"
-              >
-                <span className="text-[10px] text-slate-400 font-sans truncate">{stat.label}</span>
-                <span
-                  className={`text-xs font-mono font-semibold tnum truncate mt-0.5 ${
-                    stat.tone ?? "text-slate-200"
-                  }`}
-                >
-                  {stat.value}
-                </span>
+                    <Star className={`w-3 h-3 ${isInWatchlist ? "fill-amber-400 text-amber-400" : ""}`} />
+                    <span>{isInWatchlist ? "Di Watchlist" : "+ Watchlist"}</span>
+                  </button>
+                )}
+                {onSaveWatchlistMeta && (
+                  <button
+                    type="button"
+                    onClick={handleToggleTargetEditor}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-sans border transition ${
+                      targetBuyEval.status === "hit"
+                        ? "bg-[#22C55E]/20 border-[#22C55E]/50 text-[#22C55E]"
+                        : targetBuyEval.status === "near"
+                        ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                        : activeEntryMeta?.targetBuyPrice || activeEntryMeta?.note || isTargetEditorOpen
+                        ? "bg-[#1E7B85]/20 border-[#2DD4BF]/50 text-[#2DD4BF]"
+                        : "bg-[#161C29] border-white/[0.08] text-slate-300 hover:text-[#2DD4BF] hover:border-[#2DD4BF]/40"
+                    }`}
+                    title="Atur target harga beli & catatan pribadi untuk saham ini"
+                  >
+                    <Target className="w-3 h-3" />
+                    <span>
+                      {activeEntryMeta?.targetBuyPrice
+                        ? targetBuyEval.status === "hit"
+                          ? `Area Beli ≤${formatNumber(activeEntryMeta.targetBuyPrice)}`
+                          : `Target ${formatNumber(activeEntryMeta.targetBuyPrice)}`
+                        : activeEntryMeta?.note
+                        ? "Catatan"
+                        : "Target Beli"}
+                    </span>
+                  </button>
+                )}
+                {onAskAiStock && (
+                  <button
+                    type="button"
+                    onClick={() => onAskAiStock(selectedTicker)}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-sans bg-[#1E7B85] hover:bg-[#196770] text-white font-medium border border-[#2DD4BF]/35 transition"
+                    title={`Analisis AI kontekstual untuk ${selectedTicker}`}
+                  >
+                    <Sparkles className="w-3 h-3 text-[#5EEAD4]" />
+                    <span>Tanya AI</span>
+                  </button>
+                )}
+                {activePrice > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyResearch()}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-sans border transition ${
+                      copiedResearchTicker === stock.ticker
+                        ? "bg-[#22C55E]/20 border-[#22C55E]/50 text-[#22C55E]"
+                        : "bg-[#161C29] hover:bg-[#1D2434] border-white/[0.08] text-slate-300 hover:text-white"
+                    }`}
+                    title={`Salin ringkasan riset & valuasi ${selectedTicker} (Markdown)`}
+                  >
+                    {copiedResearchTicker === stock.ticker ? (
+                      <>
+                        <Check className="w-3 h-3" />
+                        <span>Tersalin</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Salin Riset</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
 
-          {/* Baris 2: Tombol Aksi Saham & Status Bursa */}
-          <div className="pt-2.5 border-t border-[#1A2230] flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {onToggleWatchlist && (
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
                 <button
                   type="button"
-                  onClick={() => onToggleWatchlist(selectedTicker)}
-                  disabled={!isInWatchlist && isWatchlistFull}
-                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans border transition disabled:opacity-50 ${
-                    isInWatchlist
-                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
-                      : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-amber-300 hover:border-amber-500/40"
+                  aria-expanded={isMarketStatsOpen}
+                  onClick={() => setIsMarketStatsOpen((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border transition ${
+                    isMarketStatsOpen
+                      ? "bg-[#161C29] border-[#2DD4BF]/50 text-[#2DD4BF]"
+                      : "bg-[#161C29] border-white/[0.08] text-slate-300 hover:text-white"
                   }`}
-                  title={
-                    isInWatchlist
-                      ? `Hapus ${selectedTicker} dari Watchlist Saya`
-                      : isWatchlistFull
-                      ? "Watchlist Saya penuh (maks. 15 saham)"
-                      : `Simpan ${selectedTicker} ke Watchlist Saya`
-                  }
                 >
-                  <Star className={`w-3 h-3 ${isInWatchlist ? "fill-amber-400 text-amber-400" : ""}`} />
-                  <span>{isInWatchlist ? "Di Watchlist" : "+ Watchlist"}</span>
+                  <span>Statistik Pasar</span>
+                  <motion.span
+                    animate={{ rotate: isMarketStatsOpen ? 180 : 0 }}
+                    transition={{ duration: 0.2, ease: EASE_TERMINAL }}
+                    className="inline-flex"
+                    aria-hidden="true"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </motion.span>
                 </button>
-              )}
-              {onSaveWatchlistMeta && (
-                <button
-                  type="button"
-                  onClick={handleToggleTargetEditor}
-                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans border transition ${
-                    targetBuyEval.status === "hit"
-                      ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
-                      : targetBuyEval.status === "near"
-                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
-                      : activeEntryMeta?.targetBuyPrice || activeEntryMeta?.note || isTargetEditorOpen
-                      ? "bg-[#1E7B85]/20 border-[#1E7B85]/50 text-[#2DD4BF]"
-                      : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-[#2DD4BF] hover:border-[#1E7B85]/50"
-                  }`}
-                  title="Atur target harga beli & catatan pribadi untuk saham ini"
-                >
-                  <Target className="w-3 h-3" />
-                  <span>
-                    {activeEntryMeta?.targetBuyPrice
-                      ? targetBuyEval.status === "hit"
-                        ? `Area Beli ≤${formatNumber(activeEntryMeta.targetBuyPrice)}`
-                        : `Target ${formatNumber(activeEntryMeta.targetBuyPrice)}`
-                      : activeEntryMeta?.note
-                      ? "Catatan"
-                      : "Target Beli"}
-                  </span>
-                </button>
-              )}
-              {onAskAiStock && (
-                <button
-                  type="button"
-                  onClick={() => onAskAiStock(selectedTicker)}
-                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans bg-[#1E7B85]/15 hover:bg-[#1E7B85]/30 text-[#2DD4BF] border border-[#1E7B85]/40 transition"
-                  title={`Analisis AI kontekstual untuk ${selectedTicker}`}
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Tanya AI</span>
-                </button>
-              )}
-              {activePrice > 0 && (
-                <button
-                  type="button"
-                  onClick={() => void handleCopyResearch()}
-                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-[11px] font-sans border transition ${
-                    copiedResearchTicker === stock.ticker
-                      ? "bg-[#2EB886]/20 border-[#2EB886]/50 text-[#2EB886]"
-                      : "bg-[#171F2C] hover:bg-[#1E2736] border-[#25354A] text-slate-300 hover:text-white"
-                  }`}
-                  title={`Salin ringkasan riset & valuasi ${selectedTicker} (Markdown)`}
-                >
-                  {copiedResearchTicker === stock.ticker ? (
-                    <>
-                      <Check className="w-3 h-3" />
-                      <span>Tersalin</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>Salin Riset</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-              {onToggleQuickRail && (
-                <button
-                  type="button"
-                  onClick={onToggleQuickRail}
-                  className={`hidden xl:inline-flex items-center space-x-1 px-2.5 py-1 rounded-md border transition ${
-                    isQuickRailOpen
-                      ? "bg-[#1E7B85]/20 border-[#1E7B85]/50 text-[#2DD4BF]"
-                      : "bg-[#171F2C] border-[#25354A] text-slate-300 hover:text-white"
-                  }`}
-                  title={isQuickRailOpen ? "Sembunyikan panel riset kanan" : "Tampilkan panel Target & Lot Cepat di kanan"}
-                >
-                  <PanelRight className="w-3 h-3" />
-                  <span>Panel Kanan</span>
-                </button>
-              )}
-              <div
-                className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-sans border ${
-                  marketStatus?.isOpen
-                    ? "bg-[#2EB886]/10 border-[#2EB886]/30 text-[#2EB886]"
-                    : "bg-[#1E2736]/60 border-[#283548] text-slate-400"
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    marketStatus?.isOpen ? "bg-[#2EB886] animate-pulse" : "bg-slate-500"
-                  }`}
-                />
-                <span className="font-medium">
-                  {marketStatus?.isOpen ? "Pasar Buka" : "Pasar Tutup"}
-                </span>
-                <span className="text-[11px] text-slate-400 hidden md:inline">
-                  &bull; {marketStatus?.isOpen ? marketStatus?.sessionText : `Di luar jam bursa (${marketStatus?.dateWib || ''})`}
-                </span>
+                {onToggleQuickRail && (
+                  <button
+                    type="button"
+                    onClick={onToggleQuickRail}
+                    className={`hidden xl:inline-flex items-center space-x-1 px-2.5 py-1 rounded-full border transition ${
+                      isQuickRailOpen
+                        ? "bg-[#1E7B85]/20 border-[#2DD4BF]/45 text-[#2DD4BF]"
+                        : "bg-[#161C29] border-white/[0.08] text-slate-300 hover:text-white"
+                    }`}
+                    title={isQuickRailOpen ? "Sembunyikan panel riset kanan (])" : "Tampilkan panel Target & Lot Cepat di kanan (])"}
+                  >
+                    <PanelRight className="w-3 h-3" />
+                    <span>Panel Kanan</span>
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Collapsible 8-Stat Grid (default tertutup agar chart duduk tinggi above the fold) */}
+            <AnimatePresence initial={false}>
+              {isMarketStatsOpen && (
+                <motion.div
+                  key="market-stats-drawer"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.24, ease: EASE_TERMINAL }}
+                  className="overflow-hidden"
+                >
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-2 border-t border-white/[0.06]">
+                    {[
+                      {
+                        label: "Pembukaan",
+                        value: quote?.open && quote.open > 0 ? formatRupiah(quote.open) : "-",
+                      },
+                      {
+                        label: "Terendah",
+                        value: quote?.dayLow && quote.dayLow > 0 ? formatRupiah(quote.dayLow) : "-",
+                        tone: "text-[#EF4444]",
+                      },
+                      {
+                        label: "Tertinggi",
+                        value: quote?.dayHigh && quote.dayHigh > 0 ? formatRupiah(quote.dayHigh) : "-",
+                        tone: "text-[#22C55E]",
+                      },
+                      {
+                        label: "52W Rendah",
+                        value:
+                          quote?.fiftyTwoWeekLow && quote.fiftyTwoWeekLow > 0
+                            ? formatRupiah(quote.fiftyTwoWeekLow)
+                            : "-",
+                      },
+                      {
+                        label: "52W Tinggi",
+                        value:
+                          quote?.fiftyTwoWeekHigh && quote.fiftyTwoWeekHigh > 0
+                            ? formatRupiah(quote.fiftyTwoWeekHigh)
+                            : "-",
+                      },
+                      {
+                        label: "Avg Vol (3Bl)",
+                        value: quote?.avgVolume3M ? formatCompactVolume(quote.avgVolume3M) : "-",
+                      },
+                      {
+                        label: "Kap. Pasar",
+                        value:
+                          ((quote?.marketCapTrillion ?? stock.marketCapTrillion) ?? 0) > 0
+                            ? `Rp ${formatDesimal((quote?.marketCapTrillion ?? stock.marketCapTrillion) ?? 0, 1)} T`
+                            : "-",
+                      },
+                      {
+                        label: "PBV Ratio",
+                        value: activePbv > 0 ? formatMultiple(activePbv, 2) : "-",
+                      },
+                    ].map((stat) => (
+                      <div
+                        key={stat.label}
+                        className="px-2.5 py-1.5 rounded-md bg-[#080A0F]/90 border border-white/[0.06] flex flex-col justify-between"
+                      >
+                        <span className="text-[10px] text-slate-500 font-sans truncate">{stat.label}</span>
+                        <span
+                          className={`text-xs font-mono font-semibold tnum truncate mt-0.5 ${
+                            stat.tone ?? "text-slate-200"
+                          }`}
+                        >
+                          {stat.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-        </div>
 
         {/* Inline Editor & Preview Target Harga Beli / Catatan Pribadi */}
         {isTargetEditorOpen ? (
@@ -1318,110 +1418,98 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           error={effectiveHistoryError}
           onRetry={handleRetry}
         />
-      </div>
+        </div>
+      </TerminalSpotlightCard>
 
       {/* 2. BOTTOM SECTION: TABBED MULTI-PANEL (VALUATION, SIMULATOR, FUNDAMENTAL) */}
-      <div className="bg-[#111622] border border-[#1E2736] rounded-xl overflow-hidden shadow-lg flex-1 flex flex-col">
-        {/* Navigation Tabs Header (Ringkas agar muat tanpa scroll di desktop) */}
-        <div className="flex items-center overflow-x-auto terminal-scroll border-b border-[#1E2736] bg-[#0E131C] px-3">
-          <button
-            type="button"
-            onClick={() => setActiveTab("valuation")}
-            title="Valuasi dan P/E Band"
-            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
-              activeTab === "valuation"
-                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Valuasi</span>
-            <span className="hidden sm:inline">Valuasi &amp; P/E</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("simulator")}
-            title="Simulasi Strategi DCA"
-            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
-              activeTab === "simulator"
-                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Calculator className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Simulasi</span>
-            <span className="hidden sm:inline">Simulasi DCA</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("fundamental")}
-            title="Profil Fundamental"
-            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
-              activeTab === "fundamental"
-                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Info className="w-3.5 h-3.5" />
-            <span>Profil</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("news")}
-            title="Berita Terkait Emiten"
-            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
-              activeTab === "news"
-                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Newspaper className="w-3.5 h-3.5" />
-            <span>Berita</span>
-            {relatedNewsBadgeCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-[#1E7B85]/25 text-[#2DD4BF] font-mono text-[10px] tnum">
-                {relatedNewsBadgeCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("compare")}
-            title="Bandingkan Saham Head-to-Head"
-            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
-              activeTab === "compare"
-                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <GitCompareArrows className="w-3.5 h-3.5" />
-            <span>Bandingkan</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("allocation")}
-            title="Simulasi Alokasi Modal & Lot Watchlist"
-            className={`flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition border-b-2 whitespace-nowrap ${
-              activeTab === "allocation"
-                ? "border-[#1E7B85] text-white bg-[#1E7B85]/10"
-                : "border-transparent text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <PieChart className="w-3.5 h-3.5" />
-            <span>Alokasi</span>
-          </button>
+      <div ref={tabsDeckRef} className="scroll-mt-16 flex-1 flex flex-col">
+      <TerminalSpotlightCard className="rounded-lg overflow-hidden flex-1 flex flex-col">
+        <div className="relative z-10 flex-1 flex flex-col">
+        {/* Navigation Tabs Header ala Rax Trade dengan sliding layoutId indicator */}
+        <div className="flex items-center overflow-x-auto terminal-scroll border-b border-white/[0.07] bg-[#0B0E15] px-2">
+          {[
+            {
+              id: "valuation" as const,
+              shortLabel: "Valuasi",
+              fullLabel: "Valuasi & P/E",
+              title: "Valuasi dan P/E Band",
+              icon: <Layers className="w-3.5 h-3.5" />,
+            },
+            {
+              id: "simulator" as const,
+              shortLabel: "Simulasi",
+              fullLabel: "Simulasi DCA",
+              title: "Simulasi Strategi DCA",
+              icon: <Calculator className="w-3.5 h-3.5" />,
+            },
+            {
+              id: "fundamental" as const,
+              shortLabel: "Profil",
+              fullLabel: "Profil",
+              title: "Profil Fundamental",
+              icon: <Info className="w-3.5 h-3.5" />,
+            },
+            {
+              id: "news" as const,
+              shortLabel: "Berita",
+              fullLabel: "Berita",
+              title: "Berita Terkait Emiten",
+              icon: <Newspaper className="w-3.5 h-3.5" />,
+              badge: relatedNewsBadgeCount,
+            },
+            {
+              id: "compare" as const,
+              shortLabel: "Bandingkan",
+              fullLabel: "Bandingkan",
+              title: "Bandingkan Saham Head-to-Head",
+              icon: <GitCompareArrows className="w-3.5 h-3.5" />,
+            },
+            {
+              id: "allocation" as const,
+              shortLabel: "Alokasi",
+              fullLabel: "Alokasi",
+              title: "Simulasi Alokasi Modal & Lot Watchlist",
+              icon: <PieChart className="w-3.5 h-3.5" />,
+            },
+          ].map((tab) => {
+            const isSelected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                title={tab.title}
+                className={`relative flex items-center space-x-1.5 px-3 sm:px-3.5 py-2.5 text-xs font-sans font-medium transition-colors whitespace-nowrap ${
+                  isSelected ? "text-white font-semibold" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {tab.icon}
+                <span className="sm:hidden">{tab.shortLabel}</span>
+                <span className="hidden sm:inline">{tab.fullLabel}</span>
+                {tab.badge && tab.badge > 0 ? (
+                  <span className="px-1.5 py-0.2 rounded-full bg-[#1E7B85]/25 text-[#2DD4BF] font-mono text-[10px] tnum">
+                    {tab.badge}
+                  </span>
+                ) : null}
+                {isSelected && (
+                  <motion.span
+                    layoutId="terminal-main-tab-underline"
+                    transition={SPRING_SNAP}
+                    aria-hidden="true"
+                    className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#2DD4BF]"
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* TAB 1: VALUASI & P/E BAND */}
         {activeTab === "valuation" && (
           <div className="p-4 md:p-5 space-y-4">
             {/* Notice data valuasi */}
-            <div className="bg-[#0C1017] border border-[#1E2736] rounded-lg p-2.5 flex items-start space-x-2 text-xs text-slate-400">
-              <Info className="w-3.5 h-3.5 text-[#1E7B85] shrink-0 mt-0.5" />
+            <div className="bg-[#0B0E15] border border-white/[0.07] rounded-lg p-2.5 flex items-start space-x-2 text-xs text-slate-400">
+              <Info className="w-3.5 h-3.5 text-[#2DD4BF] shrink-0 mt-0.5" />
               <div>
                 <span className="text-slate-300 font-medium">Catatan data valuasi: </span>
                 {isLiveValuation
@@ -1429,45 +1517,122 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                   : `Pita deviasi P/E dan diagnosis Benjamin Graham dihitung dari harga acuan ilustrasi (${formatRupiah(activePrice)}) dan EPS acuan (${formatRupiah(activeEps)}). Seluruh persentase "Potensi" dihitung terhadap harga acuan tersebut.`}
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1E2736]">
-              <div>
-                <span className="text-xs text-slate-400 block font-sans">
-                  {isLiveValuation
-                    ? `Diagnosis valuasi P/E pada harga live Yahoo (${formatRupiah(activePrice)})`
-                    : `Diagnosis valuasi P/E pada harga acuan ilustrasi (${formatRupiah(activePrice)})`}
-                </span>
-                <span className="text-sm font-semibold text-slate-100 mt-0.5 block font-sans">
-                  {valuationDiagnosis.verdict}
-                </span>
-              </div>
-              <div className={`px-3 py-1.5 rounded-lg border text-xs font-sans shadow-sm self-start sm:self-center ${valuationDiagnosis.color}`}>
-                {valuationDiagnosis.label}
-              </div>
-            </div>
 
-            {/* P/E Deviation Band Table (Kurasi atau Estimasi 5Th Otomatis) + Fair Value */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Interactive Valuation Gauge Arc + Verdict */}
+            {valuationGauge && effectiveBands ? (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+                <div className="lg:col-span-5">
+                  <ValuationGaugeArc
+                    ticker={stock.ticker}
+                    activePe={activePe}
+                    activePrice={activePrice}
+                    gauge={valuationGauge}
+                    bandKindLabel={
+                      effectiveBands.kind === "dynamic"
+                        ? `Estimasi 5Th (${effectiveBands.sampleCount} mgg)`
+                        : "Pita Deviasi Historis Kurasi"
+                    }
+                  />
+                </div>
+                <div className="lg:col-span-7 p-4 rounded-xl bg-[#0B0E15] border border-white/[0.07] flex flex-col justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                        Diagnosis Valuasi P/E
+                      </span>
+                      <span
+                        className={`px-2.5 py-1 rounded-md border text-[11px] font-sans ${valuationDiagnosis.color}`}
+                      >
+                        {valuationDiagnosis.label}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-slate-100 leading-relaxed font-sans">
+                      {valuationDiagnosis.verdict}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.06] font-mono tnum">
+                    <div className="p-2.5 rounded-lg bg-[#0F131C] border border-white/[0.06]">
+                      <span className="block text-[10px] font-sans text-slate-400">
+                        Target Harga Wajar (Mean)
+                      </span>
+                      <span className="text-base font-bold text-white block mt-0.5">
+                        {formatRupiah(targetMeanPrice)}
+                      </span>
+                      <span
+                        className={`text-[11px] font-semibold ${
+                          meanUpside >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
+                        }`}
+                      >
+                        Potensi {formatPersen(meanUpside, 1, true)}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-[#0F131C] border border-white/[0.06]">
+                      <span className="block text-[10px] font-sans text-slate-400">
+                        Nilai Intrinsik Graham
+                      </span>
+                      <span className="text-base font-bold text-white block mt-0.5">
+                        {grahamNumber > 0 ? formatRupiah(grahamNumber) : "Tidak tersedia"}
+                      </span>
+                      {grahamNumber > 0 ? (
+                        <span
+                          className={`text-[11px] font-semibold ${
+                            grahamUpside >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"
+                          }`}
+                        >
+                          Potensi {formatPersen(grahamUpside, 1, true)}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-sans text-slate-500">
+                          Butuh EPS &amp; BVPS positif
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.07]">
+                <div>
+                  <span className="text-xs text-slate-400 block font-sans">
+                    {isLiveValuation
+                      ? `Diagnosis valuasi P/E pada harga live Yahoo (${formatRupiah(activePrice)})`
+                      : `Diagnosis valuasi P/E pada harga acuan ilustrasi (${formatRupiah(activePrice)})`}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-100 mt-0.5 block font-sans">
+                    {valuationDiagnosis.verdict}
+                  </span>
+                </div>
+                <div className={`px-3 py-1.5 rounded-lg border text-xs font-sans shadow-sm self-start sm:self-center ${valuationDiagnosis.color}`}>
+                  {valuationDiagnosis.label}
+                </div>
+              </div>
+            )}
+
+            {/* P/E Deviation Band Table (Kurasi atau Estimasi 5Th Otomatis) + Ringkasan Valuasi */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Left */}
               {effectiveBands ? (
-                <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
+                <div className="p-3.5 bg-[#0B0E15] rounded-xl border border-white/[0.07] space-y-2 text-xs">
                   <span className="text-xs text-slate-400 block mb-1">
                     {effectiveBands.kind === "dynamic"
                       ? `Pita estimasi P/E 5Th (EPS TTM: ${formatRupiah(activeEps)}, ${effectiveBands.sampleCount} mgg)`
                       : `Pita deviasi P/E (berdasarkan EPS ${isLiveValuation ? "TTM Yahoo" : "acuan"}: ${formatRupiah(activeEps)})`}
                   </span>
-                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                  <div className="flex justify-between py-1 border-b border-white/[0.05] text-slate-400">
                     <span>+2 SD (Mahal ekstrim - {formatMultiple(effectiveBands.peSd2Plus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2PlusPrice)}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                  <div className="flex justify-between py-1 border-b border-white/[0.05] text-slate-400">
                     <span>+1 SD (Di atas rerata - {formatMultiple(effectiveBands.peSd1Plus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1PlusPrice)}</span>
                   </div>
-                  <div className="flex justify-between py-1.5 border-b border-[#1E7B85]/30 bg-[#1E7B85]/10 px-1 rounded text-slate-100 font-medium">
+                  <div className="flex justify-between py-1.5 border-b border-[#1E7B85]/35 bg-[#1E7B85]/12 px-1.5 rounded text-slate-100 font-medium">
                     <span>Mean (Harga wajar acuan - {formatMultiple(effectiveBands.historicalPeMean, 1)})</span>
-                    <span className="font-mono tnum">{formatRupiah(targetMeanPrice)}</span>
+                    <span className="font-mono tnum text-[#2DD4BF]">{formatRupiah(targetMeanPrice)}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                  <div className="flex justify-between py-1 border-b border-white/[0.05] text-slate-400">
                     <span>-1 SD (Area undervalued - {formatMultiple(effectiveBands.peSd1Minus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd1MinusPrice)}</span>
                   </div>
@@ -1475,32 +1640,25 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                     <span>-2 SD (Diskon ekstrim - {formatMultiple(effectiveBands.peSd2Minus, 1)})</span>
                     <span className="text-slate-200 font-mono tnum">{formatRupiah(targetSd2MinusPrice)}</span>
                   </div>
-                  {effectiveBands.kind === "dynamic" && (
-                    <div className="pt-2 mt-1 border-t border-slate-900 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400 font-mono tnum">
-                      <span>BVPS: {activeBvps > 0 ? formatRupiah(activeBvps) : "-"}</span>
-                      <span>PBV: {activePbv > 0 ? formatMultiple(activePbv, 2) : "-"}</span>
-                      <span>Div: {activeDivYield > 0 ? formatPersen(activeDivYield, 1) : "-"}</span>
-                    </div>
-                  )}
                 </div>
               ) : (
-                <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736] space-y-2 text-xs">
+                <div className="p-3.5 bg-[#0B0E15] rounded-xl border border-white/[0.07] space-y-2 text-xs">
                   <span className="text-xs text-slate-400 block mb-1">
                     Metrik valuasi langsung (Yahoo Finance — Emiten Kustom)
                   </span>
-                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                  <div className="flex justify-between py-1 border-b border-white/[0.05] text-slate-400">
                     <span>EPS TTM</span>
                     <span className="text-slate-200 font-mono tnum">{activeEps > 0 ? formatRupiah(activeEps) : "-"}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                  <div className="flex justify-between py-1 border-b border-white/[0.05] text-slate-400">
                     <span>BVPS (Nilai Buku / Saham)</span>
                     <span className="text-slate-200 font-mono tnum">{activeBvps > 0 ? formatRupiah(activeBvps) : "-"}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                  <div className="flex justify-between py-1 border-b border-white/[0.05] text-slate-400">
                     <span>P/E Ratio (TTM)</span>
                     <span className="text-slate-200 font-mono tnum">{activePe > 0 ? formatMultiple(activePe, 1) : "-"}</span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-900 text-slate-400">
+                  <div className="flex justify-between py-1 border-b border-white/[0.05] text-slate-400">
                     <span>PBV Ratio</span>
                     <span className="text-slate-200 font-mono tnum">{activePbv > 0 ? formatMultiple(activePbv, 2) : "-"}</span>
                   </div>
@@ -1511,51 +1669,82 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
                 </div>
               )}
 
-              {/* Right: Fair Value Target Cards */}
-              <div className="space-y-3">
-                {effectiveBands && (
-                  <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736]">
+              {/* Right: Detail Basis Valuasi (tanpa duplikasi kartu saat Gauge aktif) */}
+              {valuationGauge && effectiveBands ? (
+                <div className="p-3.5 bg-[#0B0E15] rounded-xl border border-white/[0.07] flex flex-col justify-between space-y-3 text-xs">
+                  <div className="space-y-2">
+                    <span className="text-xs text-slate-400 block">
+                      Basis Rasio &amp; Metrik Pendukung
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 font-mono tnum">
+                      <div className="p-2 rounded-lg bg-[#0F131C] border border-white/[0.06]">
+                        <span className="block text-[10px] font-sans text-slate-500">EPS TTM</span>
+                        <span className="text-xs font-semibold text-slate-100">
+                          {activeEps > 0 ? formatRupiah(activeEps) : "-"}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[#0F131C] border border-white/[0.06]">
+                        <span className="block text-[10px] font-sans text-slate-500">BVPS / Saham</span>
+                        <span className="text-xs font-semibold text-slate-100">
+                          {activeBvps > 0 ? formatRupiah(activeBvps) : "-"}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[#0F131C] border border-white/[0.06]">
+                        <span className="block text-[10px] font-sans text-slate-500">PBV Saat Ini</span>
+                        <span className="text-xs font-semibold text-slate-100">
+                          {activePbv > 0 ? formatMultiple(activePbv, 2) : "-"}
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-lg bg-[#0F131C] border border-white/[0.06]">
+                        <span className="block text-[10px] font-sans text-slate-500">Dividend Yield</span>
+                        <span className="text-xs font-semibold text-[#22C55E]">
+                          {activeDivYield > 0 ? formatPersen(activeDivYield, 1) : "-"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-white/[0.06] text-[11px] text-slate-400 font-sans leading-relaxed space-y-1">
+                    <p>
+                      Acuan harga:{" "}
+                      <span className="text-slate-200 font-mono tnum">
+                        {formatRupiah(activePrice)}
+                      </span>{" "}
+                      ({isLiveValuation ? "live Yahoo" : "acuan ilustrasi"}
+                      {quote?.financialCurrency && quote.financialCurrency !== "IDR"
+                        ? `; BVPS dikonversi ${quote.financialCurrency}→IDR`
+                        : ""}
+                      ).
+                    </p>
+                    <p className="text-slate-500">
+                      Catatan Graham: Formula √(22,5 × EPS × BVPS) kurang relevan untuk perbankan dan saham pertumbuhan.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3.5 bg-[#0B0E15] rounded-xl border border-white/[0.07]">
                     <span className="text-xs text-slate-400 block mb-0.5">
-                      {effectiveBands.kind === "dynamic"
-                        ? "Target harga wajar (estimasi 5Th):"
-                        : "Target harga wajar (mean acuan):"}
+                      Nilai intrinsik Benjamin Graham:
                     </span>
                     <span className="text-lg font-bold font-mono text-slate-100 tnum">
-                      {formatRupiah(targetMeanPrice)}
+                      {grahamNumber > 0 ? formatRupiah(grahamNumber) : "Tidak tersedia"}
                     </span>
-                    <span className={`text-xs block mt-0.5 font-mono tnum ${meanUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
-                      Potensi: {formatPersen(meanUpside, 1, true)}{" "}
-                      <span className="text-[10px] text-slate-400 font-sans block">
-                        {isLiveValuation
-                          ? `(vs harga live ${formatRupiah(activePrice)})`
-                          : `(vs harga acuan ${formatRupiah(activePrice)}, bukan harga live)`}
+                    {grahamNumber > 0 && (
+                      <span className={`text-xs block mt-0.5 font-mono tnum ${grahamUpside >= 0 ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
+                        Potensi: {formatPersen(grahamUpside, 1, true)}{" "}
+                        <span className="text-[10px] text-slate-400 font-sans block">
+                          {isLiveValuation
+                            ? `(vs harga live ${formatRupiah(activePrice)}${quote?.financialCurrency && quote.financialCurrency !== "IDR" ? `; BVPS dikonversi ${quote.financialCurrency}→IDR` : ""})`
+                            : `(vs harga acuan ${formatRupiah(activePrice)}, bukan harga live)`}
+                        </span>
                       </span>
+                    )}
+                    <span className="text-xs text-slate-400 block mt-2 font-sans leading-normal">
+                      Catatan: Kurang relevan untuk perbankan dan saham pertumbuhan.
                     </span>
                   </div>
-                )}
-
-                <div className="p-3.5 bg-[#0C1017] rounded-xl border border-[#1E2736]">
-                  <span className="text-xs text-slate-400 block mb-0.5">
-                    Nilai intrinsik Benjamin Graham:
-                  </span>
-                  <span className="text-lg font-bold font-mono text-slate-100 tnum">
-                    {grahamNumber > 0 ? formatRupiah(grahamNumber) : "Tidak tersedia"}
-                  </span>
-                  {grahamNumber > 0 && (
-                    <span className={`text-xs block mt-0.5 font-mono tnum ${grahamUpside >= 0 ? "text-[#2EB886]" : "text-[#DC525F]"}`}>
-                      Potensi: {formatPersen(grahamUpside, 1, true)}{" "}
-                      <span className="text-[10px] text-slate-400 font-sans block">
-                        {isLiveValuation
-                          ? `(vs harga live ${formatRupiah(activePrice)}${quote?.financialCurrency && quote.financialCurrency !== "IDR" ? `; BVPS dikonversi ${quote.financialCurrency}→IDR` : ""})`
-                          : `(vs harga acuan ${formatRupiah(activePrice)}, bukan harga live)`}
-                      </span>
-                    </span>
-                  )}
-                  <span className="text-xs text-slate-400 block mt-2 font-sans leading-normal">
-                    Catatan: Kurang relevan untuk perbankan dan saham pertumbuhan.
-                  </span>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -2099,6 +2288,8 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             onAskAiAllocation={onAskAiAllocation}
           />
         )}
+        </div>
+      </TerminalSpotlightCard>
       </div>
     </div>
   );
