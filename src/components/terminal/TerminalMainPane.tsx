@@ -105,6 +105,7 @@ interface TerminalMainPaneProps {
   onAskAiCompare?: (tickers: string[]) => void;
   onAskAiAllocation?: (allocationSummary: string) => void;
   onCustomAiMetrics?: (metrics: CustomStockAiMetrics | null) => void;
+  onActiveHistoryChange?: (ticker: string, points: MarketHistoryPoint[]) => void;
   isInWatchlist?: boolean;
   isWatchlistFull?: boolean;
   onToggleWatchlist?: (ticker: string) => void;
@@ -157,6 +158,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
   onAskAiCompare,
   onAskAiAllocation,
   onCustomAiMetrics,
+  onActiveHistoryChange,
   isInWatchlist = false,
   isWatchlistFull = false,
   onToggleWatchlist,
@@ -209,14 +211,21 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
             if (res.points.length === 0 || res.isFallback) {
               setHistoryPoints([]);
               setHistoryError("Riwayat harga tidak tersedia saat ini dari penyedia data.");
+              onActiveHistoryChange?.(selectedTicker, []);
             } else {
               setHistoryPoints(res.points);
               setHistoryError(null);
+              onActiveHistoryChange?.(selectedTicker, res.points);
             }
           } else {
             // Mode illustrative
-            setHistoryPoints(res.points.length > 0 ? res.points : getIllustrativeHistoryPoints(selectedTicker, chartTf));
+            const nextPoints =
+              res.points.length > 0
+                ? res.points
+                : getIllustrativeHistoryPoints(selectedTicker, chartTf);
+            setHistoryPoints(nextPoints);
             setHistoryError(null);
+            onActiveHistoryChange?.(selectedTicker, nextPoints);
           }
           setIsHistoryFallback(res.isFallback);
           setIsHistoryLoading(false);
@@ -228,8 +237,11 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
           if (provider === "yahoo") {
             setHistoryPoints([]);
             setHistoryError("Koneksi ke penyedia data gagal. Silakan coba lagi.");
+            onActiveHistoryChange?.(selectedTicker, []);
           } else {
-            setHistoryPoints(getIllustrativeHistoryPoints(selectedTicker, chartTf));
+            const fallbackPts = getIllustrativeHistoryPoints(selectedTicker, chartTf);
+            setHistoryPoints(fallbackPts);
+            onActiveHistoryChange?.(selectedTicker, fallbackPts);
           }
           setIsHistoryFallback(true);
           setIsHistoryLoading(false);
@@ -239,7 +251,7 @@ export const TerminalMainPane: React.FC<TerminalMainPaneProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [selectedTicker, chartTf, provider, retryTrigger]);
+  }, [selectedTicker, chartTf, provider, retryTrigger, onActiveHistoryChange]);
 
   const activeLiveOrigin = originLiveNews;
 

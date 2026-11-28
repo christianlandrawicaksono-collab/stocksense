@@ -15,11 +15,18 @@ import { MarketTicker } from "@/components/layout/MarketTicker";
 import { TerminalWatchlist } from "@/components/terminal/TerminalWatchlist";
 import { TerminalMainPane, type CustomStockAiMetrics } from "@/components/terminal/TerminalMainPane";
 import { QuickResearchRail } from "@/components/terminal/QuickResearchRail";
+import { LeftIntelligenceDock } from "@/components/terminal/LeftIntelligenceDock";
+import { RightTradingDeskDock } from "@/components/terminal/RightTradingDeskDock";
 import { UnifiedGlobalCommandDeck } from "@/components/terminal/UnifiedGlobalCommandDeck";
 import { TerminalTopBar, type TerminalWorkspacePreset } from "@/components/terminal/TerminalTopBar";
 import { TerminalBottomDock } from "@/components/terminal/TerminalBottomDock";
 import { TerminalCommandSearch } from "@/components/terminal/TerminalCommandSearch";
-import { EASE_TERMINAL, TerminalAmbientBackdrop } from "@/components/terminal/terminalMotion";
+import {
+  EASE_TERMINAL,
+  TerminalAmbientBackdrop,
+  TerminalCursorField,
+} from "@/components/terminal/terminalMotion";
+import type { MarketHistoryPoint } from "@/lib/market-data";
 import { NewsView } from "@/components/news/NewsView";
 import { GeminiAiModal } from "@/components/ai/GeminiAiModal";
 import { ArrowUp, Search } from "lucide-react";
@@ -97,6 +104,17 @@ function HomeContent() {
   const [allocationAiSummary, setAllocationAiSummary] = useState<string | null>(null);
   const [originLiveNews, setOriginLiveNews] = useState<LiveMarketNewsItem | null>(null);
   const [customAiMetrics, setCustomAiMetrics] = useState<CustomStockAiMetrics | null>(null);
+  const [activeHistoryState, setActiveHistoryState] = useState<{
+    ticker: string;
+    points: MarketHistoryPoint[];
+  }>({ ticker: "", points: [] });
+
+  const handleActiveHistoryChange = useCallback(
+    (ticker: string, points: MarketHistoryPoint[]) => {
+      setActiveHistoryState({ ticker, points });
+    },
+    []
+  );
 
   const watchlistJson = useSyncExternalStore(
     subscribeWatchlistStorage,
@@ -630,6 +648,7 @@ function HomeContent() {
           /* TAMPILAN UNIFIED WORKSTATION TERMINAL (3D GLOBE + IKHTISAR + RISET SAHAM) */
           <MotionConfig reducedMotion="user">
             <TerminalAmbientBackdrop />
+            <TerminalCursorField />
             <div className="relative z-10 flex flex-col gap-2">
               {/* Top Sub-Bar: Toggle Radar Global 3D (G) + Command Search (⌘K / S) + Workspace Layout Presets */}
               <TerminalTopBar
@@ -708,23 +727,42 @@ function HomeContent() {
                 )}
 
                 <div className="flex-1 min-w-0 w-full flex flex-col lg:flex-row gap-1.5 items-start">
-                  {/* Kolom Watchlist (Collapsible di desktop lg+) */}
+                  {/* Kolom Kiri: Watchlist + LeftIntelligenceDock (Snowflake, Teknikal, Pivot, ARA/ARB) */}
                   <div
                     id="terminal-watchlist-section"
-                    className={`w-full h-[520px] lg:h-[760px] shrink-0 ${
+                    className={`w-full shrink-0 flex flex-col gap-1.5 ${
                       isWatchlistCollapsed ? "lg:hidden" : "lg:w-[276px]"
                     }`}
                   >
-                    <TerminalWatchlist
-                      selectedTicker={selectedTicker}
-                      onSelectTicker={handleSelectTicker}
-                      quotes={quotes}
-                      provider={provider}
-                      customWatchlist={customWatchlist}
-                      watchlistNotes={watchlistNotes}
-                      onToggleWatchlist={handleToggleWatchlist}
-                      onAddToWatchlist={handleAddToWatchlist}
-                      maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
+                    <div className="w-full h-[480px] lg:h-[510px]">
+                      <TerminalWatchlist
+                        selectedTicker={selectedTicker}
+                        onSelectTicker={handleSelectTicker}
+                        quotes={quotes}
+                        provider={provider}
+                        customWatchlist={customWatchlist}
+                        watchlistNotes={watchlistNotes}
+                        onToggleWatchlist={handleToggleWatchlist}
+                        onAddToWatchlist={handleAddToWatchlist}
+                        maxWatchlistSize={MAX_CUSTOM_WATCHLIST}
+                      />
+                    </div>
+                    <LeftIntelligenceDock
+                      ticker={selectedTicker}
+                      quote={quotes[selectedTicker]}
+                      historyPoints={
+                        activeHistoryState.ticker === selectedTicker
+                          ? activeHistoryState.points
+                          : []
+                      }
+                      targetBuyPrice={watchlistNotes[selectedTicker]?.targetBuyPrice}
+                      onSetTargetBuyPrice={(t, price) => {
+                        const existing = watchlistNotes[t];
+                        handleSaveWatchlistMeta(t, {
+                          ...(existing || {}),
+                          targetBuyPrice: price,
+                        });
+                      }}
                     />
                   </div>
 
@@ -786,6 +824,7 @@ function HomeContent() {
                         );
                       }}
                       onCustomAiMetrics={setCustomAiMetrics}
+                      onActiveHistoryChange={handleActiveHistoryChange}
                       isInWatchlist={customWatchlist.includes(selectedTicker)}
                       isWatchlistFull={isWatchlistFull}
                       onToggleWatchlist={handleToggleWatchlist}
@@ -801,9 +840,9 @@ function HomeContent() {
                     />
                   </div>
 
-                  {/* Kolom Kanan Opsional: Quick Research Rail (Hitung Lot + Slider + Simulasi Target) */}
+                  {/* Kolom Kanan: Quick Research Rail + RightTradingDeskDock (Risk/Reward & Paper Trading) */}
                   {isQuickRailOpen && !isAiModalOpen && (
-                    <div className="hidden xl:block w-[264px] shrink-0">
+                    <div className="hidden xl:flex flex-col gap-1.5 w-[264px] shrink-0">
                       <QuickResearchRail
                         ticker={selectedTicker}
                         companyName={quickRailStockMeta.companyName}
@@ -829,6 +868,13 @@ function HomeContent() {
                           );
                         }}
                         onClose={() => setIsQuickRailOpen(false)}
+                      />
+                      <RightTradingDeskDock
+                        ticker={selectedTicker}
+                        currentPrice={quickRailStockMeta.price}
+                        fairValuePrice={quickRailStockMeta.targetMeanPrice}
+                        quotes={quotes}
+                        onSelectTicker={handleSelectTicker}
                       />
                     </div>
                   )}
